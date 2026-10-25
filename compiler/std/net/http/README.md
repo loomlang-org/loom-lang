@@ -171,6 +171,11 @@ lease, not the transport; caller-managed transport cleanup remains necessary.
 The buffered `read_request`/`read_response` functions collect this same body
 stream rather than maintaining a second framing implementation. Streamed
 requests and responses need no language/runtime extension or ownership syntax.
+`collect(incoming).await` collects the remaining body and trailers of an already
+scoped incoming request or response, allowing header policy before body reads.
+Previously consumed chunks are not replayed; message headers remain unchanged.
+`close_reader(input)` retires all cursor copies without copying an unread
+suffix; an active message reports Busy and must first finish or drain.
 
 ## Limits and failure policy
 
@@ -212,3 +217,6 @@ Applications must validate Host/target semantics for their routing policy and
 handle trailer-specific rules. TCP/TLS acquisition and trust remain separate;
 this package does not weaken TLS verification or silently send credentials over
 an unencrypted transport.
+The separate [server connection helper](server/README.md) adds explicit authority
+authorization, bounded sequential serving and Connection-close policy. Transport
+cleanup, routing, deadlines and accept-loop concurrency remain caller policy.

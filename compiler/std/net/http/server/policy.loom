@@ -1,0 +1,241 @@
+record Destination {
+    authority Text
+    target Text
+}
+
+fn scheme(secure Bool) Text {
+    if secure {
+        "https://"
+    } else {
+        "http://"
+    }
+}
+
+fn canonical_authority(value Text, secure Bool) Option[Text] {
+    var index = 0
+    while index < length(value) {
+        let current = byte(value, index)
+        if current == 47 || current == 63 || current == 35 {
+            return Option.None
+        }
+        index = index + 1
+    }
+    match parse(concat(scheme(secure), concat(value, "/"))) {
+        Result.Ok(endpoint) => Option.Some(endpoint.authority)
+        Result.Err(_) => Option.None
+    }
+}
+
+fn prepare(configuration Options) Option[Options] {
+    let maximum = configuration.limits
+    if configuration.max_requests <= 0 || std.list.length(configuration.authorities) == 0 ||
+    maximum.line_bytes < 0 || maximum.metadata_bytes < 0 || maximum.body_bytes < 0 {
+        return Option.None
+    }
+    let authorities = std.list.new[Text]()
+    var index = 0
+    while index < std.list.length(configuration.authorities) {
+        match canonical_authority(configuration.authorities[index], configuration.secure) {
+            Option.Some(value) => push(authorities, value)
+            Option.None => {
+                return Option.None
+            }
+        }
+        index = index + 1
+    }
+    Option.Some(Options {
+            authorities = authorities
+            ..configuration
+        })
+}
+
+fn has_header(fields List[Header], name Text) Bool {
+    var index = 0
+    while index < std.list.length(fields) {
+        if header_named(fields[index], name) {
+            return true
+        }
+        index = index + 1
+    }
+    false
+}
+
+fn checked_target(method Text, target Text, fields List[Header], configuration Options) Result[Destination, Rejection] {
+    if method == "CONNECT" || has_header(fields, "Upgrade") {
+        return Result.Err(Rejection.Unsupported)
+    }
+    var host = ""
+    var hosts = 0
+    var index = 0
+    while index < std.list.length(fields) {
+        if header_named(fields[index], "Host") {
+            let text = match std.bytes.decode_utf8(fields[index].value) {
+                Result.Ok(value) => value
+                Result.Err(_) => {
+                    return Result.Err(Rejection.Authority)
+                }
+            }
+            host = match canonical_authority(text, configuration.secure) {
+                Option.Some(value) => value
+                Option.None => {
+                    return Result.Err(Rejection.Authority)
+                }
+            }
+            hosts = hosts + 1
+        }
+        index = index + 1
+    }
+    if hosts != 1 || length(target) == 0 || std.text.contains(target, "#") {
+        return Result.Err(Rejection.Target)
+    }
+    let destination = if target == "*" && method == "OPTIONS" {
+        Destination {
+            authority = host
+            target = target
+        }
+    } else {
+        let absolute = byte(target, 0) != 47
+        let address = if absolute {
+            target
+        } else {
+            concat(scheme(configuration.secure), concat(host, target))
+        }
+        let endpoint = match parse(address) {
+            Result.Ok(value) => value
+            Result.Err(_) => {
+                return Result.Err(Rejection.Target)
+            }
+        }
+        if endpoint.secure != configuration.secure {
+            return Result.Err(Rejection.Target)
+        }
+        Destination {
+            authority = endpoint.authority
+            target = endpoint.target
+        }
+    }
+    index = 0
+    while index < std.list.length(configuration.authorities) {
+        if destination.authority == configuration.authorities[index] {
+            return Result.Ok(destination)
+        }
+        index = index + 1
+    }
+    Result.Err(Rejection.Authority)
+}
+
+fn routed_headers(fields List[Header], authority Text) List[Header] {
+    let output = std.list.new[Header]()
+    var index = 0
+    while index < std.list.length(fields) {
+        let field = fields[index]
+        push(output, if header_named(field, "Host") {
+                Header {
+                    name = "Host"
+                    value = to_bytes(authority)
+                }
+            } else {
+                field
+            })
+        index = index + 1
+    }
+    output
+}
+
+fn response_headers(fields List[Header]) List[Header] {
+    let output = std.list.new[Header]()
+    let count = std.list.length(fields)
+    var index = 0
+    while index < count {
+        let field = fields[index]
+        push(output, Header {
+                value = clone(field.value)
+                ..field
+            })
+        index = index + 1
+    }
+    output
+}
+
+fn token(value Int) Bool {
+    (value >= 48 && value <= 57) || (value >= 65 && value <= 90) ||
+    (value >= 97 && value <= 122) || value == 33 || value == 35 || value == 36 ||
+    value == 37 || value == 38 || value == 39 || value == 42 || value == 43 ||
+    value == 45 || value == 46 || value == 94 || value == 95 || value == 96 ||
+    value == 124 || value == 126
+}
+
+fn field_tokens(fields List[Header], name Text) Result[List[Text], ProtocolError] {
+    let output = std.list.new[Text]()
+    var field = 0
+    while field < std.list.length(fields) {
+        if header_named(fields[field], name) {
+            let value = fields[field].value
+            var index = 0
+            while index < std.bytes.length(value) {
+                while index < std.bytes.length(value) && (std.bytes.get(value, index) == 32 || std.bytes.get(value, index) == 9) {
+                    index = index + 1
+                }
+                let word = std.bytes.new()
+                while index < std.bytes.length(value) && token(std.bytes.get(value, index)) {
+                    let current = std.bytes.get(value, index)
+                    std.bytes.push(word, if current >= 65 && current <= 90 {
+                            current + 32
+                        } else {
+                            current
+                        })
+                    index = index + 1
+                }
+                while index < std.bytes.length(value) && (std.bytes.get(value, index) == 32 || std.bytes.get(value, index) == 9) {
+                    index = index + 1
+                }
+                if index < std.bytes.length(value) && std.bytes.get(value, index) != 44 {
+                    return Result.Err(ProtocolError.Syntax)
+                }
+                if std.bytes.length(word) != 0 {
+                    push(output, std.bytes.to_text(word))
+                }
+                if index < std.bytes.length(value) {
+                    index = index + 1
+                }
+            }
+        }
+        field = field + 1
+    }
+    Result.Ok(output)
+}
+
+fn closes(fields List[Header]) Result[Bool, ProtocolError] {
+    let words = field_tokens(fields, "Connection")?
+    var index = 0
+    while index < std.list.length(words) {
+        if words[index] == "close" {
+            return Result.Ok(true)
+        }
+        index = index + 1
+    }
+    Result.Ok(false)
+}
+
+fn continue_request(fields List[Header]) Result[Bool, Rejection] {
+    if !has_header(fields, "Expect") {
+        return Result.Ok(false)
+    }
+    let words = match field_tokens(fields, "Expect") {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            return Result.Err(Rejection.Unsupported)
+        }
+    }
+    if std.list.length(words) == 0 {
+        return Result.Err(Rejection.Unsupported)
+    }
+    var index = 0
+    while index < std.list.length(words) {
+        if words[index] != "100-continue" {
+            return Result.Err(Rejection.Unsupported)
+        }
+        index = index + 1
+    }
+    Result.Ok(true)
+}

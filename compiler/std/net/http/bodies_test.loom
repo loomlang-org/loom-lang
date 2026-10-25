@@ -42,6 +42,10 @@ test async fn streamed_http_bodies_bound_chunks_hold_the_message_lease_and_do_no
             Result.Ok(Option.Some(value)) => {
                 assert value.status == 200 && source.position[0] == 1
                 assert piece(value.body).await == "ab" && source.position[0] == 1
+                assert match close_reader(input) {
+                    Result.Err(ProtocolError.Busy) => true
+                    _ => false
+                }
                 assert match trailers(value.body) {
                     Result.Err(ProtocolError.Busy) => true
                     _ => false
@@ -66,6 +70,14 @@ test async fn streamed_http_bodies_bound_chunks_hold_the_message_lease_and_do_no
     }
     assert match read_response(input, "GET").await {
         Result.Ok(Option.Some(value)) => value.status == 204
+        _ => false
+    }
+    assert match close_reader(input) {
+        Result.Ok(value) => value
+        _ => false
+    }
+    assert match read_response(input, "GET").await {
+        Result.Err(ReadError.Protocol(ProtocolError.Closed)) => true
         _ => false
     }
 }
