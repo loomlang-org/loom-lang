@@ -12,7 +12,7 @@ test fn return_paths_only_propose_clauses_and_preserve_real_result_bindings() {
     assert exact_expression(get(loop_postconditions(computed), 0), goal)
     let choice = expression(ExprKind.If, 1, "", -1,
         [expression(ExprKind.Bool, 2, "true", -1, []), local(0), literal("1")])
-    assert exact_expression(get(loop_postconditions(fixture(choice, [], goal)), 0), goal)
+    assert exact_expression(get(loop_postconditions(fixture(choice, [], goal)), 0), operation("==", local(0), local(0)))
 }
 
 test fn nested_returns_propose_distinct_paths_without_rewriting_real_contracts() {
@@ -47,4 +47,30 @@ test fn nested_returns_propose_distinct_paths_without_rewriting_real_contracts()
     assert exact_expression(get(clauses, 0), operation("==", field, local(0)))
     assert exact_expression(get(clauses, 1), operation("==", local(0), local(0)))
     assert exact_expression(get(function.postconditions, 0), goal)
+    let choice = expression(ExprKind.If, 1, "", -1,
+        [expression(ExprKind.Bool, 2, "true", -1, []), field, local(0)])
+    let implicit = Expr {
+        ty = 1
+        arms = [Arm {
+                variant = 0
+                bindings = []
+                whole = -1
+                body = [local(3), choice]
+            }, Arm {
+                variant = 1
+                bindings = []
+                whole = -1
+                body = [field]
+            }]
+        ..branches
+    }
+    let selected = loop_postconditions(fixture(implicit, [], goal))
+    assert length(selected) == 2
+    assert exact_expression(get(selected, 0), get(clauses, 0))
+    assert exact_expression(get(selected, 1), get(clauses, 1))
+    let explicit = expression(ExprKind.Return, 0, "", -1, [choice])
+    let returned = loop_postconditions(fixture(explicit, [], goal))
+    assert length(returned) == 2
+    assert exact_expression(get(returned, 0), get(clauses, 0))
+    assert exact_expression(get(returned, 1), get(clauses, 1))
 }

@@ -3591,7 +3591,10 @@ therefore returns its List with `ensures ordered(result)` and
 `ensures permutation(result, old(values))`. These are hints, not an early result
 binding: entry/backedge proofs and every actual return still check the original
 clauses. Rebinding, early returns and cleanup cannot reuse a guessed result.
-Computed/conditional tails and unavailable body-local paths supply no such hint.
+Nested `if`/`match` tails contribute their terminal access paths, including inside
+explicit returns. Selection guards and preceding effects are not assumed or
+replayed. Calls, other computed values and unavailable body-local paths supply
+no such hint.
 
 The [copy and composition example](examples/smt_contracts/copies.loom) proves
 element equality and permutation for a fresh output, then returns a sorted copy

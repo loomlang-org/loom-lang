@@ -331,6 +331,9 @@ supported theories and boundaries. The central rules are:
   rechecks dependents. Quantified prefix/suffix cuts follow actual integer expressions, including
   symbolic offsets and finite pure-helper composition, not enumerated offsets.
   These suggestions supply no facts before induction succeeds.
+  Conditional result tails contribute terminal access paths through nested
+  `if`/`match` and explicit returns, without assuming selection guards or
+  rewriting the actual return contract. Computed calls remain conservative.
   Logical `old` snapshots preserve supported entry values and outer content
   versions without runtime copies or freezing mutable children.
   General termination, recursive predicates and arbitrary graph snapshots are
