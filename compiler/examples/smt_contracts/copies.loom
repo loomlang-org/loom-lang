@@ -16,6 +16,10 @@ fn identical(first List[Int], second List[Int]) Bool {
     length(first) == length(second) && matching(first, second)
 }
 
+fn passthrough[T](value T) T {
+    value
+}
+
 fn copied(values List[Int]) List[Int]
 ensures identical(result, old(values))
 ensures permutation(result, old(values))
@@ -27,7 +31,7 @@ ensures identical(values, old(values))
         push(output, get(values, index))
         index = index + 1
     }
-    output
+    passthrough(output)
 }
 
 fn sorted_copy(values List[Int]) List[Int]

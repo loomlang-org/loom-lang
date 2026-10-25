@@ -333,7 +333,9 @@ supported theories and boundaries. The central rules are:
   These suggestions supply no facts before induction succeeds.
   Conditional result tails contribute terminal access paths through nested
   `if`/`match` and explicit returns, without assuming selection guards or
-  rewriting the actual return contract. Computed calls remain conservative.
+  rewriting the actual return contract. Bounded pure-helper expansion and exact
+  result templates can expose paths without importing call facts; weak summaries,
+  unsupported effects and exhausted expansion remain conservative.
   Logical `old` snapshots preserve supported entry values and outer content
   versions without runtime copies or freezing mutable children.
   General termination, recursive predicates and arbitrary graph snapshots are

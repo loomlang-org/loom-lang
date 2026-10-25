@@ -803,9 +803,18 @@ fn copy_contracts_compose_and_cached_edits_cannot_retain_stale_heap_facts() {
             .replace("index < length(values)", "index < count"),
         program.replace("    sort(output)\n", "    discard sort(output)\n    [0]\n"),
         program.replace(
-            "    output\n}",
-            "    if length(values) > 0 {\n        set(values, 0, 99)\n    }\n    output\n}",
+            "    passthrough(output)\n}",
+            "    if length(values) > 0 {\n        set(values, 0, 99)\n    }\n    passthrough(output)\n}",
         ),
+        program
+            .replace(
+                "fn passthrough[T](value T) T {",
+                "fn passthrough[T](value T, ignored Int) T {",
+            )
+            .replace(
+                "passthrough(output)",
+                "passthrough(output, {\n        if length(values) > 0 {\n            set(values, 0, 99)\n        }\n        0\n    })",
+            ),
         program.replace("false => output", "false => new[Int]()"),
         program.replace(
             "        } else {\n            output\n        }",
@@ -825,6 +834,23 @@ fn copy_contracts_compose_and_cached_edits_cannot_retain_stale_heap_facts() {
             "unexpected failure: {error}"
         );
     }
+    fs::write(
+        &source,
+        program.replace(
+            "fn passthrough[T](value T) T {",
+            "fn passthrough[T](value T) T\nrequires false\n{",
+        ),
+    )
+    .unwrap();
+    success(&check());
+    let guarded = common::loom(&[
+        "test",
+        package.path().to_str().unwrap(),
+        "--filter",
+        "fresh_copy_and_sort_compose_proved_content_contracts",
+    ]);
+    assert!(!guarded.status.success());
+    assert!(String::from_utf8_lossy(&guarded.stderr).contains("precondition failed"));
     fs::write(&source, program).unwrap();
     success(&check());
     let construction = package.path().join("construction.loom");

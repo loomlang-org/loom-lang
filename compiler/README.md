@@ -3593,8 +3593,11 @@ binding: entry/backedge proofs and every actual return still check the original
 clauses. Rebinding, early returns and cleanup cannot reuse a guessed result.
 Nested `if`/`match` tails contribute their terminal access paths, including inside
 explicit returns. Selection guards and preceding effects are not assumed or
-replayed. Calls, other computed values and unavailable body-local paths supply
-no such hint.
+replayed. Finite pure helper bodies and exact declared result templates reuse
+the ordinary bounded suggestion expansion to expose such paths, including
+generic pass-through helpers. Opaque calls, other computed values and unavailable
+body-local paths supply no such hint. Call requirements, eager argument effects
+and actual return guarantees are still checked by ordinary execution.
 
 The [copy and composition example](examples/smt_contracts/copies.loom) proves
 element equality and permutation for a fresh output, then returns a sorted copy
