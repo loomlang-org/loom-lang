@@ -50,6 +50,28 @@ ensures length(target) - old(length(target)) == old(length(source))
     }
 }
 
+fn conditional_copy(values List[Int], original Bool, early Bool) List[Int]
+ensures identical(result, old(values))
+{
+    let output = new[Int]()
+    var index = 0
+    while index < length(values) {
+        push(output, get(values, index))
+        index = index + 1
+    }
+    if early {
+        return if original {
+            values
+        } else {
+            output
+        }
+    }
+    match original {
+        true => values
+        false => output
+    }
+}
+
 fn copy_cases() {
     let values = [3, -1, 2, -1]
     let copy = copied(values)
@@ -66,6 +88,17 @@ fn copy_cases() {
     assert identical(prefix, [8, 9, 3, -1, 2, -1])
     append_prefix(values, values)
     assert identical(values, [3, -1, 2, -1, 3, -1, 2, -1])
+    let source = [4, 5]
+    let first = conditional_copy(source, false, false)
+    let second = conditional_copy(source, false, true)
+    set(first, 0, 40)
+    set(second, 1, 50)
+    assert identical(source, [4, 5])
+    let alias = conditional_copy(source, true, false)
+    set(alias, 0, 6)
+    assert conditional_copy(source, true, true)[0] == 6
+    assert identical(source, [6, 5])
+    assert identical(conditional_copy([], false, false), [])
 }
 
 test fn fresh_copy_and_sort_compose_proved_content_contracts() {

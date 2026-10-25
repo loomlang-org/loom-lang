@@ -1,19 +1,14 @@
 // A terminal access path proposes postcondition-shaped loop invariants. It does
 // not identify the function result before it is evaluated: the ordinary entry,
 // backedge and return checks remain authoritative, including after rebinding,
-// early returns and cleanup. Calls and computed/conditional tails are not paths.
+// early returns and cleanup. Conditional tails contribute their access-path
+// leaves; calls and other computed values are not paths.
 fn loop_result_path(value Expr, result_local Int, depth Int) Option[Expr] {
     if depth <= 0 {
         return Option.None
     }
     if value.kind == ExprKind.Local && value.index != result_local {
         return Option.Some(value)
-    }
-    if value.kind == ExprKind.Block && length(value.children) != 0 {
-        return loop_result_path(get(value.children, length(value.children) - 1), result_local, depth - 1)
-    }
-    if value.kind == ExprKind.Return && length(value.children) == 1 {
-        return loop_result_path(get(value.children, 0), result_local, depth - 1)
     }
     if (value.kind == ExprKind.Field || value.kind == ExprKind.Coerce) && length(value.children) == 1 {
         let receiver = get(value.children, 0)
@@ -41,8 +36,35 @@ fn loop_replace_result(value Expr, result_local Int, replacement Expr) Expr {
     proof_expr(value, value.kind, value.ty, value.text, value.index, children)
 }
 
-fn loop_add_result_path(paths List[Expr], value Expr, result_local Int) {
-    match loop_result_path(value, result_local, 256) {
+fn loop_add_result_paths(paths List[Expr], value Expr, result_local Int, depth Int) {
+    if depth <= 0 || length(paths) >= 16 {
+        return
+    }
+    if value.kind == ExprKind.Block && length(value.children) != 0 {
+        loop_add_result_paths(paths, get(value.children, length(value.children) - 1), result_local, depth - 1)
+        return
+    }
+    if value.kind == ExprKind.Return && length(value.children) == 1 {
+        loop_add_result_paths(paths, get(value.children, 0), result_local, depth - 1)
+        return
+    }
+    if value.kind == ExprKind.If && length(value.children) == 3 {
+        loop_add_result_paths(paths, get(value.children, 1), result_local, depth - 1)
+        loop_add_result_paths(paths, get(value.children, 2), result_local, depth - 1)
+        return
+    }
+    if value.kind == ExprKind.Match {
+        var arm = 0
+        while arm < length(value.arms) && length(paths) < 16 {
+            let body = get(value.arms, arm).body
+            if length(body) != 0 {
+                loop_add_result_paths(paths, get(body, length(body) - 1), result_local, depth - 1)
+            }
+            arm = arm + 1
+        }
+        return
+    }
+    match loop_result_path(value, result_local, depth) {
         Option.Some(path) => {
             var index = 0
             while index < length(paths) {
@@ -65,7 +87,7 @@ fn loop_return_paths(value Expr, result_local Int, paths List[Expr], depth Int) 
         return
     }
     if value.kind == ExprKind.Return {
-        loop_add_result_path(paths, value, result_local)
+        loop_add_result_paths(paths, value, result_local, depth)
         return
     }
     var index = 0
@@ -90,7 +112,7 @@ fn loop_postconditions(function Function) List[Expr] {
         return function.postconditions
     }
     let paths = new[Expr]()
-    loop_add_result_path(paths, function.body, function.result_local)
+    loop_add_result_paths(paths, function.body, function.result_local, 256)
     loop_return_paths(function.body, function.result_local, paths, 256)
     if length(paths) == 0 {
         return function.postconditions

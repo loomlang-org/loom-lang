@@ -806,6 +806,15 @@ fn copy_contracts_compose_and_cached_edits_cannot_retain_stale_heap_facts() {
             "    output\n}",
             "    if length(values) > 0 {\n        set(values, 0, 99)\n    }\n    output\n}",
         ),
+        program.replace("false => output", "false => new[Int]()"),
+        program.replace(
+            "        } else {\n            output\n        }",
+            "        } else {\n            new[Int]()\n        }",
+        ),
+        program.replace(
+            "    match original {",
+            "    if length(values) > 0 {\n        set(values, 0, 99)\n    }\n    match original {",
+        ),
     ] {
         fs::write(&source, &changed).unwrap();
         let output = check();
