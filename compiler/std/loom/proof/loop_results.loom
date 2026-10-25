@@ -2,7 +2,7 @@
 // not identify the function result before it is evaluated: the ordinary entry,
 // backedge and return checks remain authoritative, including after rebinding,
 // early returns and cleanup. Conditional tails contribute their access-path
-// leaves; calls and other computed values are not paths.
+// leaves. Bounded helper expansion can suggest paths, never call guarantees.
 fn loop_result_path(value Expr, result_local Int, depth Int) Option[Expr] {
     if depth <= 0 {
         return Option.None
@@ -36,21 +36,21 @@ fn loop_replace_result(value Expr, result_local Int, replacement Expr) Expr {
     proof_expr(value, value.kind, value.ty, value.text, value.index, children)
 }
 
-fn loop_add_result_paths(paths List[Expr], value Expr, result_local Int, depth Int) {
+fn loop_add_result_paths(proof Verification, paths List[Expr], value Expr, budget List[Int], depth Int) {
     if depth <= 0 || length(paths) >= 16 {
         return
     }
     if value.kind == ExprKind.Block && length(value.children) != 0 {
-        loop_add_result_paths(paths, get(value.children, length(value.children) - 1), result_local, depth - 1)
+        loop_add_result_paths(proof, paths, get(value.children, length(value.children) - 1), budget, depth - 1)
         return
     }
     if value.kind == ExprKind.Return && length(value.children) == 1 {
-        loop_add_result_paths(paths, get(value.children, 0), result_local, depth - 1)
+        loop_add_result_paths(proof, paths, get(value.children, 0), budget, depth - 1)
         return
     }
     if value.kind == ExprKind.If && length(value.children) == 3 {
-        loop_add_result_paths(paths, get(value.children, 1), result_local, depth - 1)
-        loop_add_result_paths(paths, get(value.children, 2), result_local, depth - 1)
+        loop_add_result_paths(proof, paths, get(value.children, 1), budget, depth - 1)
+        loop_add_result_paths(proof, paths, get(value.children, 2), budget, depth - 1)
         return
     }
     if value.kind == ExprKind.Match {
@@ -58,13 +58,27 @@ fn loop_add_result_paths(paths List[Expr], value Expr, result_local Int, depth I
         while arm < length(value.arms) && length(paths) < 16 {
             let body = get(value.arms, arm).body
             if length(body) != 0 {
-                loop_add_result_paths(paths, get(body, length(body) - 1), result_local, depth - 1)
+                loop_add_result_paths(proof, paths, get(body, length(body) - 1), budget, depth - 1)
             }
             arm = arm + 1
         }
         return
     }
-    match loop_result_path(value, result_local, depth) {
+    if get(budget, 0) > 0 && !loop_call_free(value) {
+        // This isolated suggestion does not execute the call, satisfy its
+        // requirements or import effects into the caller's proof state.
+        match loop_affine_suggestion(proof, value, budget) {
+            Result.Ok(hint) => {
+                if !exact_expression(hint, value) {
+                    loop_add_result_paths(proof, paths, hint, budget, depth - 1)
+                    return
+                }
+            }
+            Result.Err(_) => {
+            }
+        }
+    }
+    match loop_result_path(value, proof.function.result_local, depth) {
         Option.Some(path) => {
             var index = 0
             while index < length(paths) {
@@ -82,17 +96,17 @@ fn loop_add_result_paths(paths List[Expr], value Expr, result_local Int, depth I
     }
 }
 
-fn loop_return_paths(value Expr, result_local Int, paths List[Expr], depth Int) {
+fn loop_return_paths(proof Verification, value Expr, paths List[Expr], budget List[Int], depth Int) {
     if depth <= 0 || length(paths) >= 16 {
         return
     }
     if value.kind == ExprKind.Return {
-        loop_add_result_paths(paths, value, result_local, depth)
+        loop_add_result_paths(proof, paths, value, budget, depth)
         return
     }
     var index = 0
     while index < length(value.children) {
-        loop_return_paths(get(value.children, index), result_local, paths, depth - 1)
+        loop_return_paths(proof, get(value.children, index), paths, budget, depth - 1)
         index = index + 1
     }
     index = 0
@@ -100,20 +114,22 @@ fn loop_return_paths(value Expr, result_local Int, paths List[Expr], depth Int) 
         let body = get(value.arms, index).body
         var item = 0
         while item < length(body) {
-            loop_return_paths(get(body, item), result_local, paths, depth - 1)
+            loop_return_paths(proof, get(body, item), paths, budget, depth - 1)
             item = item + 1
         }
         index = index + 1
     }
 }
 
-fn loop_postconditions(function Function) List[Expr] {
+fn loop_postconditions(proof Verification) List[Expr] {
+    let function = proof.function
     if function.result == 0 || length(function.postconditions) == 0 {
         return function.postconditions
     }
     let paths = new[Expr]()
-    loop_add_result_paths(paths, function.body, function.result_local, 256)
-    loop_return_paths(function.body, function.result_local, paths, 256)
+    let budget = [256]
+    loop_add_result_paths(proof, paths, function.body, budget, 256)
+    loop_return_paths(proof, function.body, paths, budget, 256)
     if length(paths) == 0 {
         return function.postconditions
     }

@@ -533,7 +533,7 @@ fn entered_loop(proof Verification, expr Expr, entry State, writes List[Bool], d
     let clauses = if length(proof.preservation) != 0 {
         proof.preservation
     } else {
-        loop_postconditions(proof.function)
+        loop_postconditions(proof)
     }
     let observed = loop_query_views(proof, clauses, entry)
     let resized = loop_storage_targets(proof, expr, observed, writes, false)?
