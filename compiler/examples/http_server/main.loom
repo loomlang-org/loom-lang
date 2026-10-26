@@ -1,0 +1,160 @@
+import std.result.Result
+import std.option.Option
+import std.net.http.Request
+import std.net.http.Response
+import std.net.http.Header
+import std.net.http.limits
+import std.net.http.encode_request
+import std.net.http.read_response
+import std.net.http.reader
+import std.net.http.server.Options
+import std.net.http.server.serve
+import std.net.tcp.Stream
+import std.net.tcp.TcpError
+import std.net.tcp.listen
+import std.net.tcp.local_address
+import std.net.tcp.connect
+import std.net.tcp.accept
+import std.net.tcp.close_stream
+import std.net.tcp.write_bytes
+import std.net.tcp.chunks.read
+import std.text.to_bytes
+import std.bytes.length
+import std.bytes.to_text
+import std.list.length
+import std.process.arguments
+import std.io.write_text
+
+fn field(name Text, value Text) Header {
+    Header {
+        name = name
+        value = to_bytes(value)
+    }
+}
+
+fn packet(value Result[Bytes, TcpError]) Result[Bytes, TcpError] {
+    value
+}
+
+async fn handle(request Request) Result[Response, Text] {
+    if std.bytes.to_text(request.headers[0].value) != "local.test" {
+        return Result.Err("unexpected authority")
+    }
+    Result.Ok(Response {
+            status = 200
+            reason = to_bytes("OK")
+            headers = if request.method == "HEAD" {
+                [field("Content-Length", "3")]
+            } else {
+                []
+            }
+            body = if request.method == "HEAD" {
+                to_bytes("")
+            } else {
+                request.body
+            }
+            trailers = []
+        })
+}
+
+async fn serving(connection Stream) Bool {
+    let sink = async fn(value Bytes) Result[Int, TcpError] {
+        write_bytes(connection, value).await
+    }
+    match serve(read(connection, 7), packet, sink, handle, Options {
+            secure = false
+            authorities = ["local.test"]
+            max_requests = 2
+            limits = limits()
+        }).await {
+        Result.Ok(count) => count == 2
+        Result.Err(_) => false
+    }
+}
+
+async fn loopback() Result[Bool, TcpError] {
+    scoped listener = listen("127.0.0.1:0").await?
+    let client = connect(local_address(listener)?).await?
+    defer {
+        discard close_stream(client)
+    }
+    let first = Request {
+        method = "POST"
+        target = "http://LOCAL.test:80/echo"
+        headers = [field("Host", "ignored.test")]
+        body = to_bytes("abc")
+        trailers = []
+    }
+    let head = Request {
+        method = "HEAD"
+        target = "/metadata"
+        headers = [field("Host", "local.test")]
+        body = to_bytes("")
+        trailers = []
+    }
+    let encoded = match encode_request(first, limits()) {
+        Result.Ok(value) => value
+        _ => {
+            return Result.Ok(false)
+        }
+    }
+    let encoded_head = match encode_request(head, limits()) {
+        Result.Ok(value) => value
+        _ => {
+            return Result.Ok(false)
+        }
+    }
+    let accepted = accept(listener).await?
+    defer {
+        discard close_stream(accepted)
+    }
+    let server = serving(accepted)
+    assert match write_bytes(client, encoded).await {
+        Result.Ok(_) => true
+        _ => false
+    }
+    assert match write_bytes(client, encoded_head).await {
+        Result.Ok(_) => true
+        _ => false
+    }
+    let replies = reader(read(client, 5), packet, limits())
+    let first_ok = match read_response(replies, "POST").await {
+        Result.Ok(Option.Some(value)) => value.status == 200 && to_text(value.body) == "abc"
+        _ => false
+    }
+    let last_ok = match read_response(replies, "HEAD").await {
+        Result.Ok(Option.Some(value)) => value.status == 200 && std.bytes.length(value.body) == 0
+        _ => false
+    }
+    Result.Ok(server.await && first_ok && last_ok)
+}
+
+async fn main() {
+    let args = arguments()
+    if std.list.length(args) == 2 {
+        let connection = match connect(args[1]).await {
+            Result.Ok(value) => value
+            _ => {
+                assert false
+                return
+            }
+        }
+        defer {
+            discard close_stream(connection)
+        }
+        assert serving(connection).await
+    } else {
+        assert match loopback().await {
+            Result.Ok(value) => value
+            _ => false
+        }
+    }
+    discard write_text("source HTTP server passed\n")
+}
+
+test async fn source_http_server_serves_two_real_tcp_requests_in_order() {
+    assert match loopback().await {
+        Result.Ok(value) => value
+        _ => false
+    }
+}

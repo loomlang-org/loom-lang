@@ -1,0 +1,315 @@
+import std.net.http.limits
+import std.net.http.read_response
+import std.stream.from_iter
+import std.iter.from_list
+import std.text.replace
+import std.text.contains
+import std.bytes.to_text
+import std.bytes.set
+import std.task.cancel
+import std.task.Outcome
+import std.time.sleep_ms
+
+fn options() Options {
+    Options {
+        secure = false
+        authorities = ["local.test"]
+        max_requests = 2
+        limits = limits()
+    }
+}
+
+fn field(name Text, value Text) Header {
+    Header {
+        name = name
+        value = to_bytes(value)
+    }
+}
+
+fn wire(value Text) Bytes {
+    to_bytes(replace(value, "\n", "\r\n"))
+}
+
+fn raw(value Bytes) Result[Bytes, Text] {
+    Result.Ok(value)
+}
+
+fn response(value Bytes) Response {
+    Response {
+        status = 200
+        reason = to_bytes("OK")
+        headers = []
+        body = value
+        trailers = []
+    }
+}
+
+record Input {
+    chunks List[Bytes]
+    position List[Int]
+}
+
+fn input(chunks List[Bytes]) Input {
+    Input {
+        chunks = chunks
+        position = [0]
+    }
+}
+
+impl Stream for Input {
+    type Item = Bytes
+
+    async fn next(self Input) Option[Bytes] {
+        let index = self.position[0]
+        if index == std.list.length(self.chunks) {
+            return Option.None
+        }
+        self.position[0] = index + 1
+        Option.Some(self.chunks[index])
+    }
+}
+
+test fn authorities_and_targets_use_the_effective_origin_without_decoding_paths() {
+    let ready = match prepare(options()) {
+        Option.Some(value) => value
+        _ => {
+            assert false
+            return
+        }
+    }
+    assert match canonical_authority("LOCAL.test:80", false) {
+        Option.Some(value) => value == "local.test"
+        _ => false
+    }
+    assert match canonical_authority("[::1]:443", true) {
+        Option.Some(value) => value == "[::1]"
+        _ => false
+    }
+    let target = match checked_target("GET", "http://LOCAL.test:80/a%2Fb?q=1", [field("Host", "elsewhere.test")], ready) {
+        Result.Ok(value) => value
+        _ => {
+            assert false
+            return
+        }
+    }
+    assert target.authority == "local.test" && target.target == "/a%2Fb?q=1"
+    assert match checked_target("OPTIONS", "*", [field("Host", "local.test")], ready) {
+        Result.Ok(value) => value.target == "*"
+        _ => false
+    }
+    let invalid = [
+        ("/", "local.test.evil"),
+        ("http://elsewhere.test/", "local.test"),
+        ("/", "local.test/"),
+        ("/", "local.test?x"),
+        ("/a#fragment", "local.test"),
+        ("/a%xx", "local.test"),
+        ("https://local.test/", "local.test"),
+        ("*", "local.test")
+    ]
+    var index = 0
+    while index < std.list.length(invalid) {
+        assert match checked_target("GET", invalid[index].0, [field("Host", invalid[index].1)], ready) {
+            Result.Err(_) => true
+            Result.Ok(_) => false
+        }
+        index = index + 1
+    }
+    assert match closes([field("Connection", "keep-alive, , cLoSe\t")]) {
+        Result.Ok(value) => value
+        _ => false
+    }
+    assert match closes([field("Connection", "keep-alive")]) {
+        Result.Ok(value) => !value
+        _ => false
+    }
+    assert match closes([field("Connection", "clo se")]) {
+        Result.Err(ProtocolError.Syntax) => true
+        _ => false
+    }
+    let shared = to_bytes("other")
+    let snapshot = response_headers([Header {
+                name = "Connection"
+                value = shared
+            }])
+    let changed = to_bytes("close")
+    index = 0
+    while index < 5 {
+        std.bytes.set(shared, index, std.bytes.get(changed, index))
+        index = index + 1
+    }
+    assert match closes(snapshot) {
+        Result.Ok(value) => !value
+        _ => false
+    }
+}
+
+test async fn ordered_responses_snapshot_policy_and_stop_at_the_request_limit() {
+    let source = input([wire("""
+        POST http://LOCAL.test:80/echo HTTP/1.1
+        Host: untrusted.test
+        Content-Length: 3
+        Expect: 100-continue
+
+        abcHEAD /metadata HTTP/1.1
+        Host: local.test
+
+        GET /never HTTP/1.1
+        Host: local.test
+
+
+        """)])
+    let output = std.list.new[Bytes]()
+    let seen = std.list.new[Text]()
+    let sink = async fn(value Bytes) Result[Int, Text] {
+        push(output, value)
+        Result.Ok(std.bytes.length(value))
+    }
+    let handler = async fn(value Request) Result[Response, Text] {
+        push(seen, value.target)
+        assert std.bytes.to_text(value.headers[0].value) == "local.test"
+        Result.Ok(if value.method == "HEAD" {
+                Response {
+                    headers = [field("Content-Length", "14")]
+                    ..response(std.bytes.new())
+                }
+            } else {
+                response(value.body)
+            })
+    }
+    let configuration = options()
+    let task = serve(source, raw, sink, handler, configuration)
+    configuration.authorities[0] = "changed.test"
+    assert match task.await {
+        Result.Ok(value) => value == 2
+        _ => false
+    }
+    assert std.list.length(seen) == 2 && seen[0] == "/echo" && seen[1] == "/metadata"
+    assert std.list.length(output) == 3
+    assert contains(to_text(output[2]), "Connection: close\r\n")
+    let replies = reader(from_iter(from_list(output)), raw, limits())
+    assert match read_response(replies, "POST").await {
+        Result.Ok(Option.Some(value)) => value.status == 100 && std.bytes.length(value.body) == 0
+        _ => false
+    }
+    assert match read_response(replies, "POST").await {
+        Result.Ok(Option.Some(value)) => to_text(value.body) == "abc"
+        _ => false
+    }
+    assert match read_response(replies, "HEAD").await {
+        Result.Ok(Option.Some(value)) => std.bytes.length(value.body) == 0 && value.status == 200
+        _ => false
+    }
+}
+
+test async fn rejected_headers_do_not_pull_bodies_or_invoke_application_code() {
+    let requests = [wire("""
+            POST / HTTP/1.1
+            Host: elsewhere.test
+            Content-Length: 7
+            Expect: 100-continue
+
+
+            """), wire("""
+            POST / HTTP/1.1
+            Host: local.test
+            Expect: unsupported
+            Content-Length: 7
+
+
+            """)]
+    let calls = [0]
+    let sink = async fn(value Bytes) Result[Int, Text] {
+        calls[0] = calls[0] + 1
+        Result.Ok(std.bytes.length(value))
+    }
+    let handler = async fn(value Request) Result[Response, Text] {
+        calls[0] = calls[0] + 1
+        Result.Ok(response(value.body))
+    }
+    var index = 0
+    while index < std.list.length(requests) {
+        let source = input([requests[index], to_bytes("unread!")])
+        assert match serve(source, raw, sink, handler, options()).await {
+            Result.Err(Error.Rejected(_)) => true
+            _ => false
+        }
+        assert source.position[0] == 1 && calls[0] == 0
+        index = index + 1
+    }
+    let source = input([requests[0]])
+    assert match serve(source, raw, sink, handler, Options {
+            authorities = []
+            ..options()
+        }).await {
+        Result.Err(Error.Options) => true
+        _ => false
+    }
+    assert source.position[0] == 0 && calls[0] == 0
+}
+
+test async fn close_errors_and_cancellation_never_replay_or_advance_the_pipeline() {
+    let request = wire("""
+        GET / HTTP/1.1
+        Host: local.test
+        Connection: close
+
+
+        """)
+    let calls = [0]
+    let output = std.list.new[Bytes]()
+    let handler = async fn(value Request) Result[Response, Text] {
+        calls[0] = calls[0] + 1
+        Result.Ok(response(value.body))
+    }
+    let sink = async fn(value Bytes) Result[Int, Text] {
+        push(output, value)
+        Result.Ok(std.bytes.length(value))
+    }
+    let source = input([request, request])
+    assert match serve(source, raw, sink, handler, options()).await {
+        Result.Ok(value) => value == 1
+        _ => false
+    }
+    assert source.position[0] == 1 && calls[0] == 1 && std.list.length(output) == 1
+    let short = async fn(value Bytes) Result[Int, Text] {
+        Result.Ok(std.bytes.length(value) - 1)
+    }
+    assert match serve(input([request, request]), raw, short, handler, options()).await {
+        Result.Err(Error.Count) => true
+        _ => false
+    }
+    let fail = async fn(value Bytes) Result[Int, Text] {
+        Result.Err("sink")
+    }
+    assert match serve(input([request, request]), raw, fail, handler, options()).await {
+        Result.Err(Error.Output(value)) => value == "sink"
+        _ => false
+    }
+    let stop = async fn(value Request) Result[Response, Text] {
+        Result.Err("handler")
+    }
+    assert match serve(input([request]), raw, sink, stop, options()).await {
+        Result.Err(Error.Handler(value)) => value == "handler"
+        _ => false
+    }
+    let active = [false]
+    let slow = async fn(value Request) Result[Response, Text] {
+        active[0] = true
+        defer {
+            active[0] = false
+        }
+        sleep_ms(60000).await
+        Result.Ok(response(value.body))
+    }
+    let waiting = input([request, request])
+    let pending = serve(waiting, raw, sink, slow, options())
+    while !active[0] {
+        sleep_ms(1).await
+    }
+    assert match cancel(pending) {
+        Outcome.Cancelled => true
+        _ => false
+    }
+    assert !active[0] && waiting.position[0] == 1 && std.list.length(output) == 1
+}

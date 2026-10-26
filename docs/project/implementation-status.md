@@ -483,8 +483,14 @@ Responses reuse the same source sender, with synchronous preflight and
 method/status-aware body suppression. A real TCP echo borrows its scoped incoming
 body into an outgoing response without collecting either body; HEAD and bodyless
 responses never pull the producer or emit a chunk terminator.
-It is not a complete HTTP
-client/server: routing, authority validation and connection policy remain library work.
+The codec itself does not impose application routing or connection policy.
+The separate source [server connection helper](../../compiler/std/net/http/server/README.md)
+authorizes explicit effective authorities before body collection, handles
+origin/absolute/asterisk targets and bounded sequential responses, and stops at
+Connection-close or request limits. It preserves typed handler/transport errors
+and drains cancellation without processing a later request. Callers retain
+transport cleanup, deadlines, routing and accept-loop concurrency. Real TCP and
+an independent binary peer exercise O0/O2 with forced GC.
 The separate pure HTTP(S) URL parser splits connection host/port, Host authority,
 origin-form target and local fragment without decoding path escapes. It rejects
 userinfo and malformed/unsupported forms. Its pure reference resolver handles

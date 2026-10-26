@@ -170,34 +170,12 @@ async fn fields[S Stream, E](input Reader[S, E], budget List[Int], trailers Bool
     Result.Ok(output)
 }
 
-async fn collected_body[S Stream, E](body Body[S, E]) Result[(Bytes, List[Header]), ReadError[E]] {
-    let output = std.bytes.new()
-    while true {
-        match body.next().await {
-            Option.None => {
-                return Result.Ok((output, protocol[List[Header], E](trailers(body))?))
-            }
-            Option.Some(value) => {
-                append(output, value?)
-            }
-        }
-    }
-    Result.Ok((output, std.list.new[Header]()))
-}
-
 pub async fn read_request[S Stream, E](input Reader[S, E]) Result[Option[Request], ReadError[E]] {
     scoped next = open_request(input, 16384).await?
     match next {
         Option.None => Result.Ok(Option.None)
         Option.Some(value) => {
-            let contents = collected_body(value.body).await?
-            Result.Ok(Option.Some(Request {
-                        method = value.method
-                        target = value.target
-                        headers = value.headers
-                        body = contents.0
-                        trailers = contents.1
-                    }))
+            Result.Ok(Option.Some(collect(value).await?))
         }
     }
 }
@@ -209,16 +187,63 @@ pub async fn read_response[S Stream, E](input Reader[S, E], method Text) Result[
     match next {
         Option.None => Result.Ok(Option.None)
         Option.Some(value) => {
-            let contents = collected_body(value.body).await?
-            Result.Ok(Option.Some(Response {
-                        status = value.status
-                        reason = value.reason
-                        headers = value.headers
-                        body = contents.0
-                        trailers = contents.1
-                    }))
+            Result.Ok(Option.Some(collect(value).await?))
         }
     }
+}
+
+// Borrow an already scoped message, so policy can inspect headers before
+// deciding whether to collect its bounded body. The caller retains the lease.
+pub async fn collect[S Stream, E](value IncomingRequest[S, E]) Result[Request, ReadError[E]] {
+    let output = std.bytes.new()
+    while true {
+        match value.body.next().await {
+            Option.None => {
+                break
+            }
+            Option.Some(item) => {
+                append(output, item?)
+            }
+        }
+    }
+    Result.Ok(Request {
+            method = value.method
+            target = value.target
+            headers = value.headers
+            body = output
+            trailers = protocol[List[Header], E](trailers(value.body))?
+        })
+}
+
+pub async fn collect[S Stream, E](value IncomingResponse[S, E]) Result[Response, ReadError[E]] {
+    let output = std.bytes.new()
+    while true {
+        match value.body.next().await {
+            Option.None => {
+                break
+            }
+            Option.Some(item) => {
+                append(output, item?)
+            }
+        }
+    }
+    Result.Ok(Response {
+            status = value.status
+            reason = value.reason
+            headers = value.headers
+            body = output
+            trailers = protocol[List[Header], E](trailers(value.body))?
+        })
+}
+
+// Retire every copy of the cursor, without copying its unread suffix. An active
+// message must finish or be cancelled and drained before its reader is closed.
+pub fn close_reader[S Stream, E](input Reader[S, E]) Result[Bool, ProtocolError] {
+    if input.state.cursor[0].busy {
+        return Result.Err(ProtocolError.Busy)
+    }
+    retire(input.state.cursor)
+    Result.Ok(true)
 }
 
 // Retire HTTP parsing and transfer a copy of unread prefetched octets. The
