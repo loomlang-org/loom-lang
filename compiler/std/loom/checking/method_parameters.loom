@@ -83,13 +83,15 @@ fn source_signature(env Environment, owner Int, arguments List[Int], obligations
 }
 fn register_signature(env Environment, current Signature) Result[Int, Failure] {
     let item = symbol(env, current.symbol)
+    let available = named_signatures(env, item.name)
     var index = 0
-    while index < length(env.signatures) {
-        let other = get(env.signatures, index)
+    while index < length(available) {
+        let id = get(available, index)
+        let other = get(env.signatures, id)
         let declaration = symbol(env, other.symbol)
         if item.owner == declaration.owner && item.name == declaration.name && get(env.source.files, item.file).package == get(env.source.files, declaration.file).package &&
             current.parameters == other.parameters && same(current.params, other.params) {
-            let proof = pack_instance(env, index)
+            let proof = pack_instance(env, id)
             if proof < 0 || !erased_pack(get(env.packs, proof)) {
                 return Result.Err(failure(env, current.symbol, item.node, "duplicate overload signature"))
             }

@@ -43,6 +43,11 @@ test fn signature_index_retains_each_declaration_after_late_pack_expansion() {
             assert packed(true).0
         }
         """)
+    push(files, source_file("other", """
+        fn select(value Int) Int {
+            value
+        }
+        """, false))
     let bound = match bind(fixture_project(files), false) {
         Result.Ok(value) => value
         Result.Err(_) => {
@@ -68,7 +73,21 @@ test fn signature_index_retains_each_declaration_after_late_pack_expansion() {
     while index < length(env.signatures) {
         let owner = get(env.signatures, index).symbol
         assert source_signature_id(env, owner) == index
-        if symbol(env, owner).name == "select" {
+        let item = symbol(env, owner)
+        let bucket = named_signatures(env, item.name)
+        var entry = 0
+        var found = false
+        while entry < length(bucket) {
+            let id = get(bucket, entry)
+            assert symbol(env, get(env.signatures, id).symbol).name == item.name
+            if entry > 0 {
+                assert get(bucket, entry - 1) < id
+            }
+            found = found || id == index
+            entry = entry + 1
+        }
+        assert found
+        if item.name == "select" && get(env.source.files, item.file).package == env.source.root {
             push(overloads, owner)
         }
         index = index + 1

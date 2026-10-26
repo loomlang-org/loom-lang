@@ -300,6 +300,36 @@ test fn tests_cannot_extend_production_scope_or_select_dependency_tests() {
     }
 }
 
+test fn import_index_preserves_first_spelling_and_resolved_package_identity() {
+    let imports = new[Int, Map[Text, Text]]()
+    var index = 0
+    while index < 96 {
+        let path = concat("package_", concat(to_text(index), ".pick"))
+        index_import(imports, PackageImport {
+                spelling = path
+                target = index
+            })
+        index_import(imports, PackageImport {
+                spelling = "alias.pick"
+                target = index
+            })
+        index = index + 1
+    }
+    index = 0
+    while index < 96 {
+        assert imported_name(imports, index, "pick") == concat("package_", concat(to_text(index), ".pick"))
+        assert imported_name(imports, index, "missing") == ""
+        index = index + 1
+    }
+    index_import(imports, PackageImport {
+            spelling = "package_0.other"
+            target = 0
+        })
+    assert imported_name(imports, 0, "other") == "package_0.other"
+    assert imported_name(imports, 1, "other") == ""
+    assert imported_name(imports, -1, "pick") == ""
+}
+
 test fn declaration_names_and_intrinsic_trust_are_checked() {
     assert rejected(one_source("record Int {}" )).diagnostic.message == "duplicate or reserved data declaration"
     assert rejected(one_source("record Float {}" )).diagnostic.message == "duplicate or reserved data declaration"
