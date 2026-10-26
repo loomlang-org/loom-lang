@@ -96,19 +96,41 @@ fn add_names(lookups Map[Text, List[Int]], short Text, path Text, symbol Int) {
 
 // Resolve package-wide imports once. Iterating the symbol table here preserves
 // declaration order, including overloads interleaved across local/imported files.
-fn imported_name(imports List[PackageImport], target Int, member Text) Text {
-    var index = 0
-    while index < length(imports) {
-        let item = get(imports, index)
-        if item.target == target && name(item.spelling) == member { return item.spelling }
-        index = index + 1
+fn index_import(imports Map[Int, Map[Text, Text]], item PackageImport) {
+    let members = match get(imports, item.target) {
+        Option.Some(values) => values
+        Option.None => {
+            let values = new[Text, Text]()
+            discard insert(imports, item.target, values)
+            values
+        }
     }
-    ""
+    let member = name(item.spelling)
+    // The first spelling wins, matching source-file/declaration order even
+    // when different dependency spellings resolve to the same package.
+    match get(members, member) {
+        Option.Some(_) => {
+        }
+        Option.None => {
+            discard insert(members, member, item.spelling)
+        }
+    }
 }
+
+fn imported_name(imports Map[Int, Map[Text, Text]], target Int, member Text) Text {
+    match get(imports, target) {
+        Option.Some(members) => match get(members, member) {
+            Option.Some(spelling) => spelling
+            Option.None => ""
+        }
+        Option.None => ""
+    }
+}
+
 fn scope(project Project, symbols List[Symbol], package_id Int, testing Bool) Scope {
     let files = project.files
-    let production_imports = new[PackageImport]()
-    let test_imports = new[PackageImport]()
+    let production_imports = new[Int, Map[Text, Text]]()
+    let test_imports = new[Int, Map[Text, Text]]()
     var index = 0
     while index < length(files) {
         let source = get(files, index)
@@ -119,8 +141,11 @@ fn scope(project Project, symbols List[Symbol], package_id Int, testing Bool) Sc
                 if node.kind == NodeKind.Import {
                     let target = import_target(project.modules, project.packages, package_id, package(node.value))
                     let edge = PackageImport { spelling = node.value target = target }
-                    if source.test_only { push(test_imports, edge) }
-                    else { push(production_imports, edge) }
+                    if source.test_only {
+                        index_import(test_imports, edge)
+                    } else {
+                        index_import(production_imports, edge)
+                    }
                 }
                 item = item + 1
             }
@@ -134,8 +159,16 @@ fn scope(project Project, symbols List[Symbol], package_id Int, testing Bool) Sc
         let symbol = get(symbols, index)
         let target = get(files, symbol.file).package
         if symbol.owner < 0 && symbol.node.kind != NodeKind.Impl && symbol.node.kind != NodeKind.Comptime && (target == package_id || symbol.public) {
-            let imported = imported_name(production_imports, target, symbol.name)
-            let test_imported = imported_name(test_imports, target, symbol.name)
+            let imported = if target == package_id {
+                ""
+            } else {
+                imported_name(production_imports, target, symbol.name)
+            }
+            let test_imported = if testing && target != package_id {
+                imported_name(test_imports, target, symbol.name)
+            } else {
+                ""
+            }
             let path = if target == package_id { qualify(package_label(project.modules, project.packages, target), symbol.name) } else { imported }
             let visible = target == package_id || imported != ""
             if visible && !symbol.test_only { add_names(production, symbol.name, path, index) }

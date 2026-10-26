@@ -304,6 +304,9 @@ warmup each. It records both binary hashes and per-sample wall/CPU time and RSS,
 without compiling native artifacts or using object caching. Combine it with
 `--sizes` to include generated package growth; `--compare-cache` is a separate,
 mutually exclusive comparison.
+`--bindings` also adds packages with growing explicit imports and distinct
+declarations, using the same sizes and measurement rules. It measures fresh
+binding/checking work rather than unchanged-cache hits.
 
 Every sample starts a fresh process after one warmup; OS caches are warm.
 The harness does not enable the opt-in object cache described below. Native decode, codegen, and linker

@@ -4,6 +4,7 @@ record CheckInputs {
     build BuildInputs
     type_index TypeIndex
     signature_ids List[Int]
+    signature_names Map[Text, List[Int]]
     static_queries List[StaticReferenceQuery]
     declaration_queries Bool
     source_symbols Int

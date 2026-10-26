@@ -18,6 +18,7 @@ let compareFrontend = false;
 let compareEdits = false;
 let checkOnly = false;
 let proofs = false;
+let bindings = false;
 let sizes = [10, 50, 200];
 const args = process.argv.slice(2);
 for (let index = 0; index < args.length; index += 1) {
@@ -35,6 +36,8 @@ for (let index = 0; index < args.length; index += 1) {
   --compare-edits  Pair fresh checks after each source edit; requires --check-only
   --check-only     Only check packages; no native builds, tests, or startup timing
   --proofs         Add refinement and quantified SMT proof workloads
+  --bindings       Add growing explicit-import/declaration workloads;
+                   implies --extended
   --sizes N,N,...  Generated helper counts, 1..512 (default: 10,50,200);
                    implies --extended, at most eight distinct sizes
 
@@ -64,6 +67,7 @@ Temporary inputs are removed.`);
   if (option === "--compare-edits") { compareEdits = true; continue; }
   if (option === "--check-only") { checkOnly = true; continue; }
   if (option === "--proofs") { proofs = true; continue; }
+  if (option === "--bindings") { bindings = true; extended = true; continue; }
   const value = args[++index];
   if (!value || value.startsWith("--")) throw new Error(`${option} needs a value`);
   if (option === "--compiler") compiler = resolve(value);
@@ -137,6 +141,7 @@ const report = {
   compareEdits,
   checkOnly,
   proofs,
+  bindings,
   generatedSizes: extended ? sizes : [],
   host: { os: platform(), release: release(), arch: arch(), cpu: cpus()[0]?.model },
   method: compareEdits && baseline
@@ -253,6 +258,39 @@ ${Array.from({ length: size }, (_, index) => `    assert step_${index}(0) == ${i
     name: `growth-${size}`, package: relative(root, directory),
     generated: {
       helpers: size, files: files.length,
+      sourceBytes: files.reduce((total, path) => total + readFileSync(path).length, 0),
+      sourceSha256: hash(JSON.stringify(files.map(path => [relative(directory, path), hash(readFileSync(path))]))),
+    },
+  };
+}
+
+function generatedBindings(size) {
+  const directory = join(temporary, `bindings-${size}`);
+  mkdirSync(join(directory, "api"), { recursive: true });
+  writeFileSync(join(directory, "loom.toml"), '[module]\nname = "benchmark"\n');
+  const imports = [];
+  const declarations = [];
+  const calls = [];
+  for (let index = 0; index < size; index += 1) {
+    imports.push(`import benchmark.api.item_${index}`);
+    declarations.push(`pub fn item_${index}() Int {\n    ${index}\n}`);
+    calls.push(`    total = total + item_${index}()`);
+  }
+  writeFileSync(join(directory, "api/api.loom"), `${declarations.join("\n\n")}\n`);
+  writeFileSync(join(directory, "main.loom"), `${imports.join("\n")}
+
+fn main() {
+    var total = 0
+${calls.join("\n")}
+    assert total == ${size * (size - 1) / 2}
+}
+`);
+  writeFileSync(join(directory, "main_test.loom"), `test fn imported_helpers() {\n    main()\n}\n`);
+  const files = inputs(directory).sort();
+  return {
+    name: `bindings-${size}`, package: relative(root, directory),
+    generated: {
+      imports: size, declarations: size, files: files.length,
       sourceBytes: files.reduce((total, path) => total + readFileSync(path).length, 0),
       sourceSha256: hash(JSON.stringify(files.map(path => [relative(directory, path), hash(readFileSync(path))]))),
     },
@@ -385,6 +423,7 @@ try {
     { name: "smt-contracts", package: "compiler/examples/smt_contracts" },
   );
   if (extended) packages.push(...sizes.map(generated));
+  if (bindings) packages.push(...sizes.map(generatedBindings));
   for (const item of packages) {
     for (const mode of checkOnly ? ["check"] : extended ? ["check", "build", "test --no-run"] : ["check", "build"]) {
       benchmark(item.name, mode, item.package, item.generated);

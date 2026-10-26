@@ -586,6 +586,9 @@ Trusted-local snapshots are not portable proof artifacts.
 Native object reuse is whole-closure and always relinks.
 
 Compiler latency/memory remain delivery goals, not completed optimizations.
+Fresh binding indexes resolved-package imports once per scope; signature
+registration checks ordered name buckets instead of unrelated declarations.
+Visibility, overload equality and test isolation still use their ordinary rules.
 Each checking type table indexes immutable identities while retaining full
 collision checks; CTFE and closure appends enter the same ordered index.
 Task reachability uses a per-traversal sparse bitmap over stored type edges;
