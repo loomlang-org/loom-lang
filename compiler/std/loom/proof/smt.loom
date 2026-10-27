@@ -3,6 +3,10 @@ import std.bytes.push
 import std.bytes.to_text
 import std.int.to_text
 import std.text.concat
+import std.map.Map
+import std.map.new
+import std.map.get
+import std.map.insert
 
 record SmtWriter {
     declarations Bytes
@@ -11,6 +15,22 @@ record SmtWriter {
     counts List[Linear]
     columns List[SmtColumn]
     prefixes List[SmtPrefix]
+    assertions std.map.Map[Text, Bool]
+    quantifiers List[Int]
+}
+
+// Repeated visits retain one copy of each exact, closed theory law. This is
+// syntactic interning, not implication, and never merges different scopes.
+fn smt_assert(writer SmtWriter, value Text) {
+    match std.map.get(writer.assertions, value) {
+        Option.Some(_) => {
+            return
+        }
+        Option.None => {
+        }
+    }
+    discard std.map.insert(writer.assertions, value, true)
+    smt_append(writer.declarations, concat("(assert ", concat(value, ")\n")))
 }
 
 fn smt_append(output Bytes, value Text) {
@@ -145,7 +165,7 @@ fn smt_text(writer SmtWriter, value TextValue, depth Int) Result[Text, Text] {
         TextValue.Variable(id) => {
             let name = smt_name(writer, "t", id, "(Seq (_ BitVec 8))")
             let size = smt_name(writer, "n", id, "Int")
-            smt_append(writer.declarations, concat("(assert (= ", concat(size, concat(" (seq.len ", concat(name, ")))\n")))))
+            smt_assert(writer, concat("(= ", concat(size, concat(" (seq.len ", concat(name, "))")))))
             Result.Ok(name)
         }
         TextValue.Literal(text) => {
@@ -220,6 +240,25 @@ fn smt_boolean_pair(operator Text, first Text, second Text) Text {
     concat("(", concat(operator, concat(" ", concat(first, concat(" ", concat(second, ")"))))))
 }
 
+// Generated SMT symbols have whitespace/parenthesis boundaries; source Text
+// literals are encoded as byte numerals, never interpolated identifiers.
+// Any occurrence (even a shadowed one) conservatively retains the quantifier.
+fn smt_mentions(value Text, name Text) Bool {
+    var index = 0
+    while index + std.text.length(name) <= std.text.length(value) {
+        if (index == 0 || byte(value, index - 1) <= 32 || byte(value, index - 1) == 40 || byte(value, index - 1) == 41) &&
+        byte(value, index) == byte(name, 0) &&
+        std.text.slice(value, index, index + std.text.length(name)) == name {
+            let end = index + std.text.length(name)
+            if end == std.text.length(value) || byte(value, end) <= 32 || byte(value, end) == 40 || byte(value, end) == 41 {
+                return true
+            }
+        }
+        index = index + 1
+    }
+    false
+}
+
 // forall i. (P(i) && Q(i)) is the conjunction of the two quantifiers. Keep
 // unrelated scalar columns out of one multi-pattern; each clause can match its
 // own select/store terms. No source evaluation or safety obligation is removed.
@@ -241,9 +280,20 @@ fn smt_quantified(writer SmtWriter, identity Int, start Linear, end Linear,
     let bound = concat("n", std.int.to_text(identity))
     let first = smt_linear(writer, start)?
     let last = smt_linear(writer, end)?
-    let condition = smt_predicate(writer, predicate, depth + 1)?
+    let binders = clone(writer.quantifiers)
+    push(binders, identity)
+    let condition = smt_predicate(SmtWriter {
+            quantifiers = binders
+            ..writer
+        }, predicate, depth + 1)?
     if condition == "true" {
         return Result.Ok("true")
+    }
+    if !smt_mentions(condition, bound) {
+        // forall i in [start,end). P is exactly empty(range) || P when i
+        // is absent. Do not ask quantifier search to rediscover this identity.
+        return Result.Ok(smt_boolean_pair("or",
+                concat("(<= ", concat(last, concat(" ", concat(first, ")")))), condition))
     }
     let output = std.bytes.new()
     smt_append(output, concat("(forall ((", concat(bound, " Int)) (=> (and (<= ")))
@@ -256,7 +306,7 @@ fn smt_quantified(writer SmtWriter, identity Int, start Linear, end Linear,
             Option.Some(bag) => {
                 let law = concat("(=> ", concat(quantified,
                         concat(" ", concat(smt_predicate(writer, bag, depth + 1)?, ")"))))
-                smt_append(writer.declarations, concat("(assert ", concat(bag_bound_scope(law, end), ")\n")))
+                smt_assert(writer, bag_bound_scope(law, end))
             }
             Option.None => {
             }
@@ -496,6 +546,8 @@ fn smt_query(obligations List[Obligation]) Result[Text, Text] {
         counts = counts
         columns = new[SmtColumn]()
         prefixes = new[SmtPrefix]()
+        assertions = std.map.new[Text, Bool]()
+        quantifiers = []
     }
     let body = std.bytes.new()
     smt_append(body, "(assert (not (and true")

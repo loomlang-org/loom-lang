@@ -1,4 +1,5 @@
 import std.text.contains
+import std.text.split
 
 fn encoding(obligations List[Obligation]) Text {
     match smt_query(obligations) {
@@ -30,6 +31,59 @@ test fn smt_encoding_keeps_exact_numbers_domains_and_one_counterexample() {
 
 fn failed_solver(context Text, query Text) Result[Bool, Text] {
     Result.Err("test backend failure")
+}
+
+test fn unused_quantifiers_keep_empty_ranges_without_capturing_similar_symbols() {
+    let query = encoding([Obligation {
+                facts = []
+                conclusion = Predicate.Forall(-7, variable(1), variable(2), [Predicate.Variable(3)])
+            }])
+    assert !contains(query, "(forall ((n-7 ")
+    assert contains(query, "(or (<= (+ 0 (* 1 n2)) (+ 0 (* 1 n1))) b3)")
+    assert !smt_mentions("(= n-70 0)", "n-7")
+    assert !smt_mentions("(= an-7 n-71)", "n-7")
+    assert smt_mentions("(= n-7 0)", "n-7")
+    assert smt_mentions("(=\nn-7\t0)", "n-7")
+    let selected = encoding([Obligation {
+                facts = []
+                conclusion = Predicate.Forall(-7, variable(1), variable(2),
+                    [Predicate.Select(10, [], variable(-7))])
+            }])
+    assert contains(selected, "(forall ((n-7 Int))")
+}
+
+test fn repeated_theory_laws_are_interned_without_merging_scopes_or_sorts() {
+    let value = Predicate.TextEqual(TextValue.Variable(7), TextValue.Variable(8))
+    let query = encoding([Obligation {
+                facts = [value, value]
+                conclusion = value
+            }])
+    assert length(std.text.split(query, "(assert (= n7 (seq.len t7)))")) == 2
+    assert length(std.text.split(query, "(assert (= n8 (seq.len t8)))")) == 2
+    let count = IntegerTerm.Count(10, [IntegerTerm.Linear(variable(1)), IntegerTerm.Linear(variable(2))])
+    let other = IntegerTerm.Count(10, [IntegerTerm.Linear(variable(3)), IntegerTerm.Linear(variable(2))])
+    let repeated = encoding([Obligation {
+                facts = [integer_limit(">=", count, 0)]
+                conclusion = Predicate.IntegerCompare("<=", count, other)
+            }])
+    assert !contains(repeated, "(forall ((bv Int))")
+    assert length(std.text.split(repeated, "(assert (and (<= 0 (select (loom_bag a10")) == 3
+    // A count under either a positive or negative binder retains the universal
+    // range law. Its local needle must not become a free global assumption.
+    let binders = [-7, 7]
+    var index = 0
+    while index < length(binders) {
+        let bound = get(binders, index)
+        let selected = IntegerTerm.Count(10, [IntegerTerm.Linear(variable(1)), IntegerTerm.Select(11, [], variable(bound))])
+        let quantified = encoding([Obligation {
+                    facts = []
+                    conclusion = Predicate.Forall(bound, constant(integer(0)), variable(1),
+                        [integer_limit(">=", selected, 0)])
+                }])
+        assert contains(quantified, "(assert (forall ((bv Int))")
+        assert !contains(quantified, "(assert (and (<= 0 (select (loom_bag")
+        index = index + 1
+    }
 }
 
 test fn quantified_premises_drop_only_proved_subranges_of_the_same_property() {
@@ -234,7 +288,8 @@ test fn tautological_quantifiers_do_not_repeat_the_context_or_assume_float_refle
                                 Predicate.FloatCompare("==", ratio, ratio)])])
             }])
     assert contains(split, "(and (forall ((n-1 Int))")
-    assert contains(split, "(select a10_f0_bool (+ 0 (* 1 n-1))))) (forall ((n-1 Int))")
+    assert length(std.text.split(split, "(forall ((n-1 Int))")) == 2
+    assert contains(split, "(or (<= (+ 10) (+ 0)) (not (fp.isNaN")
 }
 
 test fn pointwise_prefix_equality_supplies_only_the_matching_histogram_law() {
