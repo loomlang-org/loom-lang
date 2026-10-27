@@ -52,11 +52,11 @@ fn array_projection_read(contents Int, path List[Int], index Linear, value Value
         }
         Value.Sum(_, tag, payloads) => {
             var current = array_projection_read(contents, enum_tag_path(path), index,
-                Value.Number(tag), valid, state)
+                integer_value(tag), valid, state)
             var variant = 0
             while variant < length(payloads) {
                 let selected = Predicate.And(predicates(valid,
-                        Predicate.Compare("==", add(tag, constant(integer(-variant))))))
+                        integer_limit("==", tag, variant)))
                 let fields = get(payloads, variant)
                 var field = 0
                 while field < length(fields) {
@@ -135,7 +135,7 @@ fn array_projection_write(proof Verification, before Int, after Int, path List[I
         }
         Value.Sum(owner, tag, payloads) => {
             var current = array_projection_write(proof, before, after, enum_tag_path(path), index,
-                Value.Number(tag), state, depth + 1)?
+                integer_value(tag), state, depth + 1)?
             let variants = get(proof.program.types, owner).variants
             var variant = 0
             while variant < length(variants) {

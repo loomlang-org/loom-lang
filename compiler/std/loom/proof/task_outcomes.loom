@@ -18,7 +18,7 @@ fn guarded_outcome(proof Verification, ty Int, fault_type Int, completed Outcome
         index = index + 1
     }
     let fault = record_parameter_value(proof, fault_type, 0)
-    let value = Value.Sum(ty, tag, [[completed.value], [fault], new[Value]()])
+    let value = Value.Sum(ty, IntegerTerm.Linear(tag), [[completed.value], [fault], new[Value]()])
     Outcome {
         state = bounded(value, state)
         value = value

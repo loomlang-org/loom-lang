@@ -37,7 +37,7 @@ fn enum_parameter_value(proof Verification, ty Int, depth Int) Value {
     }
     let identity = get(proof.fresh, 0)
     std.list.set(proof.fresh, 0, identity + 1)
-    Value.Sum(ty, variable(identity), payloads)
+    Value.Sum(ty, IntegerTerm.Linear(variable(identity)), payloads)
 }
 
 fn variant_value(ty Int, variant Int, count Int, fields List[Value]) Value {
@@ -51,7 +51,7 @@ fn variant_value(ty Int, variant Int, count Int, fields List[Value]) Value {
             })
         index = index + 1
     }
-    Value.Sum(ty, constant(integer(variant)), payloads)
+    Value.Sum(ty, IntegerTerm.Linear(constant(integer(variant))), payloads)
 }
 
 fn variant_outcomes(proof Verification, source Expr, state State, depth Int) Result[List[Outcome], Text] {
@@ -120,7 +120,7 @@ fn match_outcomes(proof Verification, source Expr, state State, depth Int) Resul
                     let selected = if arm.variant < 0 {
                         Predicate.Constant(true)
                     } else {
-                        Predicate.Compare("==", add(tag, constant(integer(-arm.variant))))
+                        integer_limit("==", tag, arm.variant)
                     }
                     var branch = assume(remaining, selected)
                     remaining = assume(remaining, not(selected))
@@ -160,7 +160,7 @@ fn match_outcomes(proof Verification, source Expr, state State, depth Int) Resul
                 while variant < length(covered) {
                     if !fallback && !get(covered, variant) &&
                     !holds(Predicate.Constant(false), assume(remaining,
-                            Predicate.Compare("==", add(tag, constant(integer(-variant))))).facts) {
+                            integer_limit("==", tag, variant)).facts) {
                         return Result.Err("match proof cannot establish exhaustive coverage")
                     }
                     variant = variant + 1

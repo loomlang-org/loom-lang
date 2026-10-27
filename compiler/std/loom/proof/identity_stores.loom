@@ -24,7 +24,7 @@ fn stored_identity(proof Verification, left Value, right Value, depth Int) Resul
                 if owner != other || length(variants) != length(payloads) {
                     return Result.Err("stored variants differ")
                 }
-                var equal = boolean(binary("==", Value.Number(tag), Value.Number(selected))?)?
+                var equal = integer_predicate("==", tag, selected)
                 var index = 0
                 while index < length(variants) {
                     equal = Predicate.And(predicates(equal,

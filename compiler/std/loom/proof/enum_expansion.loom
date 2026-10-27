@@ -164,7 +164,7 @@ fn enum_projection(name Text, ty Int, inputs List[Value]) Result[Value, Text] {
     match get(inputs, 0) {
         Value.Sum(_, tag, payloads) => {
             if name == "proof_enum_tag" {
-                return Result.Ok(Value.Number(tag))
+                return Result.Ok(integer_value(tag))
             }
             let variant = projection_index(get(inputs, 1))?
             let field = projection_index(get(inputs, 2))?
@@ -214,7 +214,7 @@ fn enum_projection_guard(inputs List[Value]) Result[Predicate, Text] {
     match get(inputs, 0) {
         Value.Sum(_, tag, _) => {
             let variant = projection_index(get(inputs, 1))?
-            return Result.Ok(Predicate.Compare("==", add(tag, constant(integer(-variant)))))
+            return Result.Ok(integer_limit("==", tag, variant))
         }
         Value.Projected(contents, path, index) => {
             let variant = projection_index(get(inputs, 1))?

@@ -51,6 +51,7 @@ fn joined_text(left Value, right Value) Result[Value, Text] {
 
 fn text_literal(value TextValue) Bool {
     match value {
+        TextValue.Function(_) => false
         TextValue.Literal(_) => true
         TextValue.Variable(_) => false
         TextValue.Select(_, _, _) => false

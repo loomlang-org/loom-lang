@@ -17,10 +17,14 @@ record SmtBinder {
 fn smt_binder(value SmtBinder, condition Text) Text {
     let bound = concat("n", std.int.to_text(value.identity))
     let output = std.bytes.new()
-    smt_append(output, concat("(forall ((", concat(bound, " Int)) (=> (and (<= ")))
+    // One lexical name makes alpha-equivalent quantifiers identical after let
+    // elimination. The local alias retains original identities in nested ranges
+    // and side laws; it never renames free source symbols or captures an outer
+    // binder. Boolean simplification can then discharge repeated scan facts.
+    smt_append(output, concat("(forall ((loom_bound Int)) (let ((", concat(bound, " loom_bound)) (=> (and (<= ")))
     smt_append(output, concat(value.start, concat(" ", concat(bound, ") (< "))))
     smt_append(output, concat(bound, concat(" ", concat(value.end, ")) "))))
-    smt_append(output, concat(condition, "))"))
+    smt_append(output, concat(condition, ")))"))
     std.bytes.to_text(output)
 }
 
@@ -177,6 +181,7 @@ fn smt_linear(writer SmtWriter, value Linear) Result[Text, Text] {
 fn smt_text(writer SmtWriter, value TextValue, depth Int) Result[Text, Text] {
     discard smt_step(writer, depth)?
     match value {
+        TextValue.Function(value) => smt_function(writer, value, "(Seq (_ BitVec 8))", "loom_fn", false, depth)
         TextValue.Select(identity, path, index) => smt_select(writer, identity, path, index, ScalarDomain.Text)
         TextValue.Variable(id) => {
             let name = smt_name(writer, "t", id, "(Seq (_ BitVec 8))")
@@ -377,6 +382,7 @@ fn smt_text_byte(writer SmtWriter, text TextValue, index IntegerTerm, depth Int)
 fn smt_integer(writer SmtWriter, value IntegerTerm, depth Int) Result[Text, Text] {
     discard smt_step(writer, depth)?
     match value {
+        IntegerTerm.Function(value) => smt_function(writer, value, "Int", "loom_fn", false, depth)
         IntegerTerm.Linear(term) => smt_linear(writer, term)
         IntegerTerm.Count(identity, inputs) => smt_count(writer, identity, inputs, depth)
         IntegerTerm.TextLength(text) => {
@@ -430,7 +436,19 @@ fn smt_truncated_division(operator Text, left Text, right Text) Text {
 fn smt_predicate(writer SmtWriter, value Predicate, depth Int) Result[Text, Text] {
     discard smt_step(writer, depth)?
     match value {
-        Predicate.Application(target, arguments, domain) => smt_application(writer, target, arguments, domain, depth)
+        Predicate.Application(value, domain) => smt_function(writer, value, "Bool", if domain {
+                "loom_fd"
+            } else {
+                "loom_fn"
+            }, domain, depth)
+        Predicate.ValueEqual(values) => {
+            if length(values) != 2 {
+                return Result.Err("invalid immutable value equality")
+            }
+            smt_predicate_keys(writer)
+            Result.Ok(concat("(= ", concat(smt_key(writer, get(values, 0), depth + 1)?,
+                        concat(" ", concat(smt_key(writer, get(values, 1), depth + 1)?, ")")))))
+        }
         Predicate.ArrayPrefix(before, after, size) => smt_prefix(writer, before, after, size)
         Predicate.Select(identity, path, index) => smt_select(writer, identity, path, index, ScalarDomain.Boolean)
         Predicate.Constant(value) => Result.Ok(if value {
@@ -592,7 +610,7 @@ fn smt_query(obligations List[Obligation]) Result[Text, Text] {
     // Split at most one explicit alternative, then substitute branch-local
     // equalities before lowering arithmetic. Every branch must still be unsat;
     // default preserves Z3's theory selection and the backend's time budget.
-    smt_append(body, ")))\n(check-sat-using (then simplify solve-eqs simplify (or-else split-clause skip) solve-eqs simplify default))\n")
+    smt_append(body, ")))\n(check-sat-using (then simplify solve-eqs simplify (or-else split-clause skip) solve-eqs simplify aig simplify default))\n")
     discard smt_prefix_frames(writer)?
     Result.Ok(concat(std.bytes.to_text(writer.declarations), std.bytes.to_text(body)))
 }

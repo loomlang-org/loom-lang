@@ -2,7 +2,7 @@ import std.loom.eval.validate
 
 fn predicate_application(value Expr) Bool {
     value.kind == ExprKind.Intrinsic &&
-    (value.text == "proof_predicate" || value.text == "proof_predicate_defined")
+    (value.text == "proof_function" || value.text == "proof_function_defined")
 }
 
 fn proof_logical(value Expr) Expr {
@@ -70,7 +70,7 @@ fn operation_safety(value Expr, state State) Result[Predicate, Text] {
 }
 
 fn predicate_domain(value Expr) Expr {
-    proof_expr(value, ExprKind.Intrinsic, 2, "proof_predicate_defined", value.index, value.children)
+    proof_expr(value, ExprKind.Intrinsic, 2, "proof_function_defined", value.index, value.children)
 }
 
 fn mentions_application(value Expr, target Int) Bool {
@@ -119,6 +119,13 @@ fn application_needed(proof Verification, target Int) Bool {
 }
 
 fn predicate_immutable_type(program Program, ty Int, depth Int) Bool {
+    immutable_function_type(program, ty, depth, [256])
+}
+
+fn immutable_function_type(program Program, ty Int, depth Int, budget List[Int]) Bool {
+    if !conjunction_step(budget) {
+        return false
+    }
     if scalar_type(ty) {
         return true
     }
@@ -132,7 +139,7 @@ fn predicate_immutable_type(program Program, ty Int, depth Int) Bool {
             let fields = get(shape.variants, variant).fields
             var field = 0
             while field < length(fields) {
-                if !predicate_immutable_type(program, get(fields, field), depth + 1) {
+                if !immutable_function_type(program, get(fields, field), depth + 1, budget) {
                     return false
                 }
                 field = field + 1
@@ -146,7 +153,7 @@ fn predicate_immutable_type(program Program, ty Int, depth Int) Bool {
     }
     var index = 0
     while index < length(shape.fields) {
-        if !predicate_immutable_type(program, get(shape.fields, index).ty, depth + 1) {
+        if !immutable_function_type(program, get(shape.fields, index).ty, depth + 1, budget) {
             return false
         }
         index = index + 1
@@ -159,7 +166,7 @@ fn predicate_function(program Program, target Int) Bool {
         return false
     }
     let function = get(program.functions, target)
-    if function.is_async || function.result != 2 || function.runtime_name != "" ||
+    if function.is_async || !predicate_immutable_type(program, function.result, 0) || function.runtime_name != "" ||
     length(function.result_cleanup) != 0 {
         return false
     }
@@ -175,9 +182,12 @@ fn predicate_function(program Program, target Int) Bool {
     }
     // This validator checks the operation/call closure, not shared-input
     // isolation. The immutable parameter check above supplies that boundary.
-    let call = proof_expr(function.body, ExprKind.Call, 2, "", target, arguments)
+    let call = proof_expr(function.body, ExprKind.Call, function.result, "", target, arguments)
+    if !predicate_direct_closure(program, call, [], [4096], 0) {
+        return false
+    }
     match std.loom.eval.validate(program, call) {
-        Result.Ok(_) => predicate_direct_closure(program, call, [], [4096], 0)
+        Result.Ok(_) => true
         Result.Err(_) => false
     }
 }
@@ -251,31 +261,42 @@ fn predicate_key(value Value, budget List[Int]) Result[PredicateKey, Text] {
     }
     set(budget, 0, get(budget, 0) - 1)
     match value {
-        Value.Number(term) => Result.Ok(PredicateKey.Integer(IntegerTerm.Linear(term)))
-        Value.Nonlinear(term) => Result.Ok(PredicateKey.Integer(term))
+        Value.Number(term) => checked_scalar_key(PredicateKey.Integer(IntegerTerm.Linear(term)), budget)
+        Value.Nonlinear(term) => checked_scalar_key(PredicateKey.Integer(term), budget)
         Value.Boolean(term) => {
             if !predicate_boolean_size(term, budget) {
                 return Result.Err("predicate Boolean argument key budget exhausted")
             }
             Result.Ok(PredicateKey.Boolean([term]))
         }
-        Value.Text(term) => Result.Ok(PredicateKey.Text(term))
-        Value.Float(term) => Result.Ok(PredicateKey.Float(term))
+        Value.Text(term) => checked_scalar_key(PredicateKey.Text(term), budget)
+        Value.Float(term) => checked_scalar_key(PredicateKey.Float(term), budget)
         Value.Record(fields) => Result.Ok(PredicateKey.Record(predicate_keys(fields, budget)?))
         Value.Sum(ty, tag, payloads) => {
+            if !integer_key_size(tag, budget) {
+                return Result.Err("function enum argument key budget exhausted")
+            }
             let fields = new[List[PredicateKey]]()
-            let count = if length(tag.terms) == 0 {
-                let selected = machine(tag.constant)?
-                if selected < 0 || selected >= length(payloads) {
-                    return Result.Err("predicate enum key has an invalid tag")
+            let literal = match tag {
+                IntegerTerm.Linear(number) => if length(number.terms) == 0 {
+                    let selected = machine(number.constant)?
+                    if selected < 0 || selected >= length(payloads) {
+                        return Result.Err("predicate enum key has an invalid tag")
+                    }
+                    selected
+                } else {
+                    -1
                 }
-                selected + 1
+                _ => -1
+            }
+            let count = if literal >= 0 {
+                literal + 1
             } else {
                 length(payloads)
             }
             var index = 0
             while index < count {
-                if length(tag.terms) == 0 && compare(tag.constant, integer(index)) != 0 {
+                if literal >= 0 && literal != index {
                     push(fields, new[PredicateKey]())
                 } else {
                     push(fields, predicate_keys(get(payloads, index), budget)?)
@@ -295,22 +316,20 @@ fn predicate_boolean_size(value Predicate, budget List[Int]) Bool {
         return false
     }
     match value {
-        Predicate.Application(_, keys, _) => predicate_key_sizes(keys, budget)
+        Predicate.Application(value, _) => predicate_key_sizes(value.arguments, budget)
+        Predicate.ValueEqual(values) => predicate_key_sizes(values, budget)
+        Predicate.IntegerCompare(_, left, right) => integer_key_size(left, budget) && integer_key_size(right, budget)
+        Predicate.FloatCompare(_, left, right) => float_key_size(left, budget) && float_key_size(right, budget)
+        Predicate.TextEqual(left, right) => text_key_size(left, budget) && text_key_size(right, budget)
         Predicate.Not(values) => predicate_boolean_sizes(values, budget)
         Predicate.And(values) => predicate_boolean_sizes(values, budget)
         Predicate.Or(values) => predicate_boolean_sizes(values, budget)
         Predicate.Equal(values) => predicate_boolean_sizes(values, budget)
         Predicate.Forall(_, _, _, values) => predicate_boolean_sizes(values, budget)
         Predicate.ArrayRead(_, _, _, term, guards) => {
-            predicate_boolean_sizes(guards, budget) && match term {
-                ArrayScalar.Boolean(values) => predicate_boolean_sizes(values, budget)
-                _ => true
-            }
+            predicate_boolean_sizes(guards, budget) && scalar_key_size(term, budget)
         }
-        Predicate.ArrayWrite(_, _, _, _, term) => match term {
-            ArrayScalar.Boolean(values) => predicate_boolean_sizes(values, budget)
-            _ => true
-        }
+        Predicate.ArrayWrite(_, _, _, _, term) => scalar_key_size(term, budget)
         _ => true
     }
 }
@@ -333,18 +352,20 @@ fn predicate_key_sizes(keys List[PredicateKey], budget List[Int]) Bool {
             return false
         }
         let valid = match get(keys, index) {
+            PredicateKey.Integer(value) => integer_key_size(value, budget)
+            PredicateKey.Text(value) => text_key_size(value, budget)
+            PredicateKey.Float(value) => float_key_size(value, budget)
             PredicateKey.Boolean(values) => predicate_boolean_sizes(values, budget)
             PredicateKey.Record(fields) => predicate_key_sizes(fields, budget)
-            PredicateKey.Sum(_, _, variants) => {
+            PredicateKey.Sum(_, tag, variants) => {
                 var variant = 0
-                var valid = true
+                var valid = integer_key_size(tag, budget)
                 while variant < length(variants) && valid {
                     valid = predicate_key_sizes(get(variants, variant), budget)
                     variant = variant + 1
                 }
                 valid
             }
-            _ => true
         }
         if !valid {
             return false
@@ -355,13 +376,7 @@ fn predicate_key_sizes(keys List[PredicateKey], budget List[Int]) Bool {
 }
 
 fn application_fact(value Expr, state State, domain Bool) Result[Predicate, Text] {
-    let inputs = new[Value]()
-    var index = 0
-    while index < length(value.children) {
-        push(inputs, pure(get(value.children, index), state)?)
-        index = index + 1
-    }
-    Result.Ok(Predicate.Application(value.index, predicate_keys(inputs, [256])?, domain))
+    Result.Ok(Predicate.Application(function_inputs(value, pure(get(value.children, 0), state)?)?, domain))
 }
 
 fn same_predicate_keys(left List[PredicateKey], right List[PredicateKey]) Bool {
@@ -402,8 +417,7 @@ fn same_predicate_key(left PredicateKey, right PredicateKey) Bool {
         }
         PredicateKey.Sum(ty, tag, fields) => match right {
             PredicateKey.Sum(other, selected, values) => {
-                if ty != other || compare(tag.constant, selected.constant) != 0 ||
-                !same_terms(tag.terms, selected.terms) || length(fields) != length(values) {
+                if ty != other || !same_integer_term(tag, selected, [1024]) || length(fields) != length(values) {
                     return false
                 }
                 var index = 0

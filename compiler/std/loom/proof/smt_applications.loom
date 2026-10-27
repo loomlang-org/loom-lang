@@ -1,5 +1,5 @@
 // Keys model immutable argument values, not a runtime tagged representation.
-// A partial predicate has independent truth and successful-evaluation functions.
+// A partial function has independent value and successful-evaluation functions.
 // No declaration claims that either function is true, total or terminating.
 fn smt_predicate_keys(writer SmtWriter) {
     var index = 0
@@ -11,17 +11,18 @@ fn smt_predicate_keys(writer SmtWriter) {
     }
     push(writer.names, "loom_pk")
     smt_append(writer.declarations, """
+        (declare-sort loom_float_origin 0)
         (declare-datatypes ((loom_pk 0) (loom_pks 0))
           (((pk_int (pk_int_value Int))
             (pk_bool (pk_bool_value Bool))
             (pk_text (pk_text_value (Seq (_ BitVec 8))))
             (pk_record (pk_record_fields loom_pks))
             (pk_sum (pk_sum_type Int) (pk_sum_tag Int) (pk_sum_fields loom_pks))
-            (pk_float_var (pk_float_id Int))
-            (pk_float_literal (pk_float_spelling (Seq (_ BitVec 8))))
-            (pk_float_apply (pk_float_operator (Seq (_ BitVec 8))) (pk_float_operands loom_pks))
-            (pk_float_select (pk_float_array Int) (pk_float_path loom_pks) (pk_float_index Int)))
+            (pk_float (pk_float_origin loom_float_origin)))
            ((pk_nil) (pk_cons (pk_head loom_pk) (pk_tail loom_pks)))))
+        (declare-fun float_origin_literal ((Seq (_ BitVec 8))) loom_float_origin)
+        (declare-fun float_origin_apply ((Seq (_ BitVec 8)) loom_pks) loom_float_origin)
+        (declare-fun float_origin_select (Int loom_pks Int) loom_float_origin)
         """)
     smt_append(writer.declarations, "\n")
 }
@@ -45,11 +46,12 @@ fn smt_key_list(writer SmtWriter, values List[PredicateKey], depth Int) Result[T
 // Floating-point origin equality is stronger than numerical equality. These
 // keys may distinguish equal bits, but never identify different representations
 // merely because IEEE comparisons equate them. Array indices remain symbolic.
-fn smt_float_key(writer SmtWriter, value FloatValue, depth Int) Result[Text, Text] {
+fn smt_float_origin(writer SmtWriter, value FloatValue, depth Int) Result[Text, Text] {
     discard smt_step(writer, depth)?
     match value {
-        FloatValue.Variable(id) => Result.Ok(concat("(pk_float_var ", concat(std.int.to_text(id), ")")))
-        FloatValue.Literal(text) => Result.Ok(concat("(pk_float_literal ",
+        FloatValue.Function(value) => smt_function(writer, value, "loom_float_origin", "loom_fo", false, depth)
+        FloatValue.Variable(id) => Result.Ok(smt_name(writer, "fo", id, "loom_float_origin"))
+        FloatValue.Literal(text) => Result.Ok(concat("(float_origin_literal ",
                 concat(smt_text(writer, TextValue.Literal(text), depth + 1)?, ")")))
         FloatValue.Select(identity, path, index) => {
             let keys = new[PredicateKey]()
@@ -59,7 +61,7 @@ fn smt_float_key(writer SmtWriter, value FloatValue, depth Int) Result[Text, Tex
                 field = field + 1
             }
             let output = std.bytes.new()
-            smt_append(output, concat("(pk_float_select ", concat(std.int.to_text(identity), " ")))
+            smt_append(output, concat("(float_origin_select ", concat(std.int.to_text(identity), " ")))
             smt_append(output, concat(smt_key_list(writer, keys, depth + 1)?, " "))
             smt_append(output, concat(smt_linear(writer, index)?, ")"))
             Result.Ok(std.bytes.to_text(output))
@@ -71,11 +73,35 @@ fn smt_float_key(writer SmtWriter, value FloatValue, depth Int) Result[Text, Tex
                 push(keys, PredicateKey.Float(get(inputs, index)))
                 index = index + 1
             }
-            Result.Ok(concat("(pk_float_apply ",
+            Result.Ok(concat("(float_origin_apply ",
                     concat(smt_text(writer, TextValue.Literal(operator), depth + 1)?,
                         concat(" ", concat(smt_key_list(writer, keys, depth + 1)?, ")")))))
         }
     }
+}
+
+fn smt_float_key(writer SmtWriter, value FloatValue, depth Int) Result[Text, Text] {
+    let origin = smt_float_origin(writer, value, depth + 1)?
+    var index = 0
+    while index < length(writer.names) && get(writer.names, index) != "loom_float_value" {
+        index = index + 1
+    }
+    if index == length(writer.names) {
+        push(writer.names, "loom_float_value")
+        smt_append(writer.declarations,
+            "(declare-fun loom_float_value (loom_float_origin) (_ FloatingPoint 11 53))\n")
+    }
+    // Exact origin equality implies the same representation, including signed
+    // zero. Introduce FP theory only when a Float argument is actually present.
+    var law = concat("(= ", concat(smt_float(writer, value, depth + 1)?,
+            concat(" (loom_float_value ", concat(origin, "))"))))
+    index = length(writer.quantifiers)
+    while index > 0 {
+        index = index - 1
+        law = smt_binder(get(writer.quantifiers, index), law)
+    }
+    smt_assert(writer, law)
+    Result.Ok(concat("(pk_float ", concat(origin, ")")))
 }
 
 fn smt_key(writer SmtWriter, value PredicateKey, depth Int) Result[Text, Text] {
@@ -92,7 +118,7 @@ fn smt_key(writer SmtWriter, value PredicateKey, depth Int) Result[Text, Text] {
         PredicateKey.Float(term) => smt_float_key(writer, term, depth + 1)
         PredicateKey.Record(fields) => Result.Ok(concat("(pk_record ", concat(smt_key_list(writer, fields, depth + 1)?, ")")))
         PredicateKey.Sum(ty, tag, fields) => {
-            let selected = smt_linear(writer, tag)?
+            let selected = smt_integer(writer, tag, depth + 1)?
             var payload = "pk_nil"
             var index = length(fields)
             while index > 0 {
@@ -108,21 +134,23 @@ fn smt_key(writer SmtWriter, value PredicateKey, depth Int) Result[Text, Text] {
     }
 }
 
-fn smt_application(writer SmtWriter, target Int, arguments List[PredicateKey], domain Bool,
-    depth Int) Result[Text, Text] {
+fn smt_function(writer SmtWriter, value FunctionApplication, sort Text, prefix Text,
+    domain Bool, depth Int) Result[Text, Text] {
     smt_predicate_keys(writer)
-    let name = concat(if domain {
-            "loom_pd"
-        } else {
-            "loom_p"
-        }, std.int.to_text(target))
+    var name = concat(prefix, std.int.to_text(value.target))
+    var field = 0
+    while !domain && field < length(value.path) {
+        name = concat(name, concat("_f", std.int.to_text(get(value.path, field))))
+        field = field + 1
+    }
     var index = 0
     while index < length(writer.names) && get(writer.names, index) != name {
         index = index + 1
     }
     if index == length(writer.names) {
         push(writer.names, name)
-        smt_append(writer.declarations, concat("(declare-fun ", concat(name, " (loom_pks) Bool)\n")))
+        smt_append(writer.declarations, concat("(declare-fun ", concat(name,
+                    concat(" (loom_pks) ", concat(sort, ")\n")))))
     }
-    Result.Ok(concat("(", concat(name, concat(" ", concat(smt_key_list(writer, arguments, depth + 1)?, ")")))))
+    Result.Ok(concat("(", concat(name, concat(" ", concat(smt_key_list(writer, value.arguments, depth + 1)?, ")")))))
 }

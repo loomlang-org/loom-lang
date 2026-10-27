@@ -660,6 +660,9 @@ fn execute_expression(proof Verification, expr Expr, state State, depth Int) Res
         return execute_list_operation(proof, cell_read_view(expr), "list_get", state, depth - 1)
     }
     let operation = proof_operation(expr)
+    if function_layout(expr) {
+        return Result.Ok(outcomes(state, Value.Empty))
+    }
     if logical_expression(expr) {
         let current = quantified_views(proof, expr, state, false, 256)?
         return Result.Ok(outcomes(current, pure(expr, current)?))
@@ -670,16 +673,30 @@ fn execute_expression(proof Verification, expr Expr, state State, depth Int) Res
         var index = 0
         while index < length(inputs) {
             let current = get(inputs, index)
-            let keys = predicate_keys(current.values, [256])?
-            let domain = Predicate.Application(expr.index, keys, true)
+            let application = function_inputs(expr, get(current.values, 0))?
+            let domain = Predicate.Application(application, true)
+            let value = applied_value(expr, application)
             discard add_outcome(output, Outcome {
-                    state = if expr.text == "proof_predicate" {
-                        assume(current.state, domain)
+                    state = if expr.text == "proof_function" {
+                        typed_value_state(proof, expr.ty, value, assume(current.state, domain))
                     } else {
                         current.state
                     }
-                    value = Value.Boolean(Predicate.Application(expr.index, keys,
-                            expr.text == "proof_predicate_defined"))
+                    value = value
+                })?
+            index = index + 1
+        }
+        return Result.Ok(output)
+    }
+    if expr.kind == ExprKind.Intrinsic && expr.text == "proof_argument" {
+        let inputs = execute(proof, get(expr.children, 0), state, depth - 1)?
+        let output = new[Outcome]()
+        var index = 0
+        while index < length(inputs) {
+            let input = get(inputs, index)
+            discard add_outcome(output, Outcome {
+                    state = input.state
+                    value = function_argument(get(get(expr.children, 1).children, 0), input.value)
                 })?
             index = index + 1
         }

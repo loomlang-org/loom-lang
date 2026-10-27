@@ -224,7 +224,9 @@ fn expanded_application(context Expansion, value Expr, guard Expr,
         ..context
     }
     let remaining = get(context.budget, 0)
-    match expanded_application_body(trial, value, guard, arguments, calls, depth) {
+    // Expanding a body appends and rebinds its locals. A failed trial must not
+    // replace the invocation's original argument values with those locals.
+    match expanded_application_body(trial, value, guard, std.list.clone(arguments), calls, depth) {
         Result.Ok(expanded_value) => {
             var index = 0
             while index < length(trial.checks) {
@@ -252,7 +254,7 @@ fn expanded_application(context Expansion, value Expr, guard Expr,
                 push(inputs, get(arguments, index).value)
                 index = index + 1
             }
-            let atom = proof_expr(value, ExprKind.Intrinsic, 2, "proof_predicate", value.index, inputs)
+            let atom = function_expression(context, value, inputs)
             discard evaluated(context, guard, atom, false)?
             Result.Ok(atom)
         }
@@ -402,6 +404,9 @@ fn expanded_block(context Expansion, value Expr, guard Expr, bindings List[Expan
 
 fn expanded(context Expansion, value Expr, guard Expr, bindings List[ExpansionBinding], locals List[Local], self Bool, calls Int, depth Int) Result[Expr, Text] {
     discard expansion_step(context, depth)?
+    if function_layout(value) {
+        return Result.Ok(value)
+    }
     if logical_expression(value) {
         let logical = Expansion {
             checks = new[Evaluation]()

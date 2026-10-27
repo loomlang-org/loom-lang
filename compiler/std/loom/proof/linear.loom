@@ -132,9 +132,12 @@ fn same_predicates(a List[Predicate], b List[Predicate]) Bool {
 
 fn same(a Predicate, b Predicate) Bool {
     match a {
-        Predicate.Application(target, arguments, domain) => match b {
-            Predicate.Application(other, inputs, defined) => target == other && domain == defined &&
-            same_predicate_keys(arguments, inputs)
+        Predicate.Application(value, domain) => match b {
+            Predicate.Application(other, defined) => domain == defined && same_application(value, other)
+            _ => false
+        }
+        Predicate.ValueEqual(values) => match b {
+            Predicate.ValueEqual(other) => same_predicate_keys(values, other)
             _ => false
         }
         Predicate.ArrayPrefix(before, after, size) => match b {
@@ -243,6 +246,10 @@ fn same_text(left TextValue, right TextValue) Bool {
         return same_text_sequence(left, right)
     }
     match left {
+        TextValue.Function(value) => match right {
+            TextValue.Function(other) => same_application(value, other)
+            _ => false
+        }
         TextValue.Literal(text) => match right {
             TextValue.Literal(other) => text == other
             _ => false

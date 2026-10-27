@@ -1,0 +1,216 @@
+// These layouts are proof metadata. They neither evaluate source expressions
+// nor reach native emission; arguments remain the only source operands.
+fn function_layout(value Expr) Bool {
+    value.kind == ExprKind.Intrinsic && value.text == "proof_layout"
+}
+
+fn function_shape(program Program, source Expr, ty Int, depth Int) Expr {
+    if depth >= 16 || ty < 0 || ty >= length(program.types) {
+        return proof_expr(source, ExprKind.Deferred, ty, "", -1, [])
+    }
+    let shape = get(program.types, ty)
+    if shape.kind == TypeKind.Refined {
+        return proof_expr(source, ExprKind.Coerce, ty, "", -1,
+            [function_shape(program, source, get(shape.fields, 0).ty, depth + 1)])
+    }
+    if shape.kind == TypeKind.Record || shape.kind == TypeKind.Tuple {
+        let fields = new[Expr]()
+        var index = 0
+        while index < length(shape.fields) {
+            let field = get(shape.fields, index)
+            push(fields, proof_expr(source, ExprKind.Field, field.ty, "", index,
+                    [function_shape(program, source, field.ty, depth + 1)]))
+            index = index + 1
+        }
+        return proof_expr(source, ExprKind.Record, ty, "", -1, fields)
+    }
+    if shape.kind == TypeKind.Enum {
+        let variants = new[Expr]()
+        var variant = 0
+        while variant < length(shape.variants) {
+            let types = get(shape.variants, variant).fields
+            let fields = new[Expr]()
+            var field = 0
+            while field < length(types) {
+                push(fields, function_shape(program, source, get(types, field), depth + 1))
+                field = field + 1
+            }
+            push(variants, proof_expr(source, ExprKind.Record, 0, "", variant, fields))
+            variant = variant + 1
+        }
+        return proof_expr(source, ExprKind.Variant, ty, "", -1, variants)
+    }
+    proof_expr(source, ExprKind.Local, ty, "", -1, [])
+}
+
+fn function_metadata(program Program, source Expr, ty Int) Expr {
+    proof_expr(source, ExprKind.Intrinsic, ty, "proof_layout", -1,
+        [function_shape(program, source, ty, 0)])
+}
+
+fn function_expression(context Expansion, source Expr, inputs List[Expr]) Expr {
+    let function = get(context.program.functions, source.index)
+    let arguments = new[Expr]()
+    var index = 0
+    while index < length(inputs) {
+        let input = get(inputs, index)
+        push(arguments, proof_expr(input, ExprKind.Intrinsic, input.ty, "proof_argument", -1,
+                [input, function_metadata(context.program, input, get(function.params, index))]))
+        index = index + 1
+    }
+    let packed = proof_expr(source, ExprKind.Intrinsic, 0, "proof_pack", -1, arguments)
+    proof_expr(source, ExprKind.Intrinsic, function.result, "proof_function", source.index,
+        [packed, function_metadata(context.program, source, function.result)])
+}
+
+fn function_component(value FunctionApplication, field Int) FunctionApplication {
+    FunctionApplication {
+        path = projection_field(value.path, field)
+        ..value
+    }
+}
+
+fn function_value(shape Expr, value FunctionApplication) Value {
+    if shape.kind == ExprKind.Coerce {
+        return function_value(get(shape.children, 0), value)
+    }
+    if shape.kind == ExprKind.Record {
+        let fields = new[Value]()
+        var index = 0
+        while index < length(shape.children) {
+            let field = get(shape.children, index)
+            push(fields, function_value(get(field.children, 0), function_component(value, index)))
+            index = index + 1
+        }
+        return Value.Record(fields)
+    }
+    if shape.kind == ExprKind.Variant {
+        let variants = new[List[Value]]()
+        var variant = 0
+        while variant < length(shape.children) {
+            let fields = new[Value]()
+            let types = get(shape.children, variant).children
+            var field = 0
+            while field < length(types) {
+                push(fields, function_value(get(types, field),
+                        function_component(function_component(value, variant), field)))
+                field = field + 1
+            }
+            push(variants, fields)
+            variant = variant + 1
+        }
+        return Value.Sum(shape.ty, IntegerTerm.Function(function_component(value, -1)), variants)
+    }
+    if shape.ty == 1 {
+        return Value.Nonlinear(IntegerTerm.Function(value))
+    }
+    if shape.ty == 2 {
+        return Value.Boolean(Predicate.Application(value, false))
+    }
+    if shape.ty == 3 {
+        return Value.Text(TextValue.Function(value))
+    }
+    if shape.ty == 5 {
+        return Value.Float(FloatValue.Function(value))
+    }
+    Value.Empty
+}
+
+fn same_application(left FunctionApplication, right FunctionApplication) Bool {
+    left.target == right.target && same_projection(left.path, right.path) &&
+    same_predicate_keys(left.arguments, right.arguments)
+}
+
+fn function_argument(shape Expr, value Value) Value {
+    if shape.kind == ExprKind.Coerce {
+        return function_argument(get(shape.children, 0), value)
+    }
+    match value {
+        Value.Projected(contents, path, index) => function_projection(shape, contents, path, index)
+        Value.Record(values) => {
+            if shape.kind != ExprKind.Record || length(values) != length(shape.children) {
+                return value
+            }
+            let fields = new[Value]()
+            var field = 0
+            while field < length(values) {
+                push(fields, function_argument(get(get(shape.children, field).children, 0), get(values, field)))
+                field = field + 1
+            }
+            Value.Record(fields)
+        }
+        Value.Sum(ty, tag, payloads) => {
+            if shape.kind != ExprKind.Variant {
+                return value
+            }
+            let variants = new[List[Value]]()
+            var variant = 0
+            while variant < length(payloads) {
+                let fields = new[Value]()
+                let values = get(payloads, variant)
+                let shapes = get(shape.children, variant).children
+                var field = 0
+                while field < length(values) {
+                    push(fields, function_argument(get(shapes, field), get(values, field)))
+                    field = field + 1
+                }
+                push(variants, fields)
+                variant = variant + 1
+            }
+            Value.Sum(ty, tag, variants)
+        }
+        _ => value
+    }
+}
+
+fn function_projection(shape Expr, contents Int, path List[Int], index Linear) Value {
+    if shape.kind == ExprKind.Coerce {
+        return function_projection(get(shape.children, 0), contents, path, index)
+    }
+    if shape.kind == ExprKind.Record {
+        let fields = new[Value]()
+        var field = 0
+        while field < length(shape.children) {
+            push(fields, function_projection(get(get(shape.children, field).children, 0),
+                    contents, projection_field(path, field), index))
+            field = field + 1
+        }
+        return Value.Record(fields)
+    }
+    if shape.kind == ExprKind.Variant {
+        let variants = new[List[Value]]()
+        var variant = 0
+        while variant < length(shape.children) {
+            let fields = new[Value]()
+            let shapes = get(shape.children, variant).children
+            var field = 0
+            while field < length(shapes) {
+                push(fields, function_projection(get(shapes, field), contents,
+                        enum_payload_path(path, variant, field), index))
+                field = field + 1
+            }
+            push(variants, fields)
+            variant = variant + 1
+        }
+        return Value.Sum(shape.ty, IntegerTerm.Select(contents, enum_tag_path(path), index), variants)
+    }
+    projected_value(contents, path, index, shape.ty)
+}
+
+fn function_inputs(value Expr, inputs Value) Result[FunctionApplication, Text] {
+    match inputs {
+        Value.Record(values) => Result.Ok(FunctionApplication {
+                target = value.index
+                arguments = predicate_keys(values, [256])?
+                path = []
+            })
+        _ => Result.Err("function proof needs evaluated arguments")
+    }
+}
+
+fn applied_value(value Expr, application FunctionApplication) Value {
+    if value.text == "proof_function_defined" {
+        return Value.Boolean(Predicate.Application(application, true))
+    }
+    function_value(get(get(value.children, 1).children, 0), application)
+}

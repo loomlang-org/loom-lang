@@ -1,0 +1,64 @@
+// A successful call may return NaN. Its definedness alone never proves IEEE
+// reflexive equality, and numeric equality alone cannot substitute signed zeros.
+import std.list.all
+
+fn reciprocal(value Float) Float {
+    var index = 0
+    var answer = value
+    while index < 2 {
+        answer = 1.0 / value
+        index = index + 1
+    }
+    answer
+}
+
+fn observed_float(value Float) Float
+requires reciprocal(value) == reciprocal(value)
+ensures result == reciprocal(value)
+{
+    reciprocal(value)
+}
+
+record Measurement {
+    reading Float
+    label Text
+}
+
+fn measure(value Float) Measurement {
+    var index = 0
+    while index < 2 {
+        index = index + 1
+    }
+    Measurement {
+        reading = value
+        label = "measurement"
+    }
+}
+
+fn observed_measurement(value Float) Measurement
+requires measure(value).reading == measure(value).reading
+ensures result.reading == measure(value).reading && result.label == measure(value).label
+{
+    measure(value)
+}
+
+fn positive_reciprocal(value Float) Bool {
+    reciprocal(value) > 0.0
+}
+
+fn observed_floats(values List[Float]) Bool
+ensures result == all(values, positive_reciprocal)
+{
+    all(values, positive_reciprocal)
+}
+
+test fn exact_function_result_binding_keeps_float_representation() {
+    assert observed_float(2.0) == 0.5
+    assert observed_float(0.0) > 0.0
+    assert observed_float(-0.0) < 0.0
+    let positive = observed_measurement(0.0)
+    let negative = observed_measurement(-0.0)
+    assert 1.0 / positive.reading > 0.0 && 1.0 / negative.reading < 0.0
+    assert observed_floats([2.0, 0.0])
+    assert !observed_floats([2.0, -0.0])
+}

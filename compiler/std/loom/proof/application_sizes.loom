@@ -1,0 +1,85 @@
+// Charge the unfolded tree, including applications inside every scalar theory.
+// Sharing immutable terms is cheap; recursively comparing an unbounded DAG is not.
+fn checked_scalar_key(value PredicateKey, budget List[Int]) Result[PredicateKey, Text] {
+    if !predicate_key_sizes([value], budget) {
+        return Result.Err("function argument key budget exhausted")
+    }
+    Result.Ok(value)
+}
+
+fn scalar_key_size(value ArrayScalar, budget List[Int]) Bool {
+    match value {
+        ArrayScalar.Integer(value) => integer_key_size(value, budget)
+        ArrayScalar.Boolean(values) => predicate_boolean_sizes(values, budget)
+        ArrayScalar.Text(value) => text_key_size(value, budget)
+        ArrayScalar.Float(value) => float_key_size(value, budget)
+    }
+}
+
+fn integer_key_size(value IntegerTerm, budget List[Int]) Bool {
+    if !conjunction_step(budget) {
+        return false
+    }
+    match value {
+        IntegerTerm.Function(value) => predicate_key_sizes(value.arguments, budget)
+        IntegerTerm.Apply(_, inputs) => integer_key_sizes(inputs, budget)
+        IntegerTerm.Count(_, inputs) => integer_key_sizes(inputs, budget)
+        IntegerTerm.TextLength(value) => text_key_size(value, budget)
+        IntegerTerm.TextByte(value, inputs) => text_key_size(value, budget) && integer_key_sizes(inputs, budget)
+        _ => true
+    }
+}
+
+fn integer_key_sizes(values List[IntegerTerm], budget List[Int]) Bool {
+    var index = 0
+    while index < length(values) {
+        if !integer_key_size(get(values, index), budget) {
+            return false
+        }
+        index = index + 1
+    }
+    true
+}
+
+fn text_key_size(value TextValue, budget List[Int]) Bool {
+    if !conjunction_step(budget) {
+        return false
+    }
+    match value {
+        TextValue.Function(value) => predicate_key_sizes(value.arguments, budget)
+        TextValue.Joined(parts) => text_key_sizes(parts, budget)
+        TextValue.Slice(parts, bounds) => text_key_sizes(parts, budget) && integer_key_sizes(bounds, budget)
+        _ => true
+    }
+}
+
+fn text_key_sizes(values List[TextValue], budget List[Int]) Bool {
+    var index = 0
+    while index < length(values) {
+        if !text_key_size(get(values, index), budget) {
+            return false
+        }
+        index = index + 1
+    }
+    true
+}
+
+fn float_key_size(value FloatValue, budget List[Int]) Bool {
+    if !conjunction_step(budget) {
+        return false
+    }
+    match value {
+        FloatValue.Function(value) => predicate_key_sizes(value.arguments, budget)
+        FloatValue.Apply(_, values) => {
+            var index = 0
+            while index < length(values) {
+                if !float_key_size(get(values, index), budget) {
+                    return false
+                }
+                index = index + 1
+            }
+            true
+        }
+        _ => true
+    }
+}

@@ -150,7 +150,7 @@ fn publication_value(proof Verification, ty Int, value Value, state State,
                 }
                 var variant = 0
                 while variant < length(payloads) {
-                    if index_relation("!=", tag, constant(integer(variant)), state) {
+                    if loop_holds(integer_limit("!=", tag, variant), state) {
                         variant = variant + 1
                         continue
                     }
