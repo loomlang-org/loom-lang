@@ -87,6 +87,12 @@ fn projected_value(contents Int, path List[Int], index Linear, ty Int) Value {
 // Check this operation only; composition has checked each operand under the
 // right guard. A hypothetical expression never establishes its own safety fact.
 fn intrinsic_defined(expr Expr, state State) Result[Bool, Text] {
+    if predicate_application(expr) {
+        if expr.text == "proof_predicate_defined" || holds(application_fact(expr, state, true)?, state.facts) {
+            return Result.Ok(true)
+        }
+        return Result.Err("pure predicate evaluation is not proved defined")
+    }
     if expr.text == "proof_add" || expr.text == "proof_sub" || expr.text == "proof_mod" {
         return Result.Ok(true)
     }

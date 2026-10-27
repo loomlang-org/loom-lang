@@ -16,7 +16,10 @@ test fn concept_contracts_validate_declarations_and_defaults() {
     let helper = "fn positive(value Int) Bool { value > 0 }\nconcept C { fn preserve(self Self, value Int) Int requires positive(value) ensures positive(result) }\n"
     discard accepted(concat(helper, "impl C for Int { fn preserve(receiver Int, input Int) Int { input } }\nfn main() { assert 1.preserve(3) == 3 }"))
     rejects(concat(helper, "impl C for Int { fn preserve(receiver Int, input Int) Int { 0 } }"))
-    rejects("fn positive(value Int) Bool { positive(value) }\nconcept C { fn preserve(self Self, value Int) Int requires positive(value) }\nimpl C for Int { fn preserve(self Int, input Int) Int { input } }")
+    // A recursive predicate may guard entry; it supplies no termination proof.
+    let recursive = "fn positive(value Int) Bool { positive(value) }\n"
+    discard accepted(concat(recursive, "concept C { fn preserve(self Self, value Int) Int requires positive(value) }\nimpl C for Int { fn preserve(self Int, input Int) Int { input } }"))
+    rejects(concat(recursive, "fn invented(value Int) Bool ensures positive(value) { true }"))
 }
 
 test fn old_in_concept_contracts_follows_declared_scalar_parameters() {

@@ -1,0 +1,137 @@
+import std.list.push
+import std.text.byte
+import std.text.length
+
+record Document {
+    text Text
+    allow_empty Bool
+}
+
+enum Input {
+    Plain(Text)
+    Document(Document)
+}
+
+// The state machine is ordinary source code. Its successful evaluation can be
+// reused without proving a closed formula for parenthesis balancing.
+fn balanced(input Input) Bool {
+    let document = match input {
+        Input.Plain(value) => Document {
+            text = value
+            allow_empty = true
+        }
+        Input.Document(value) => value
+    }
+    var depth = 0
+    var index = 0
+    while index < length(document.text) {
+        let symbol = byte(document.text, index)
+        if symbol == 40 {
+            depth = depth + 1
+        } else {
+            if symbol == 41 {
+                if depth == 0 {
+                    return false
+                }
+                depth = depth - 1
+            }
+        }
+        index = index + 1
+    }
+    depth == 0 && (document.allow_empty || length(document.text) > 0)
+}
+
+fn preserved(value Input) Input
+requires balanced(value)
+ensures balanced(result)
+{
+    value
+}
+
+fn preserved_text(value Text) Text
+requires balanced(Input.Plain(value))
+ensures balanced(Input.Plain(result))
+{
+    value
+}
+
+fn equivalent_text(value Text, other Text) Text
+requires value == other && balanced(Input.Plain(value))
+ensures balanced(Input.Plain(result))
+{
+    other
+}
+
+fn after_write(value Text, log List[Int]) Text
+requires balanced(Input.Plain(value))
+ensures balanced(Input.Plain(result))
+{
+    push(log, 7)
+    value
+}
+
+fn observed(value Text) Bool
+ensures result == balanced(Input.Plain(value))
+{
+    balanced(Input.Plain(value))
+}
+
+type BalancedText = Text where balanced(Input.Plain(self))
+
+fn checked_text(value Text) BalancedText
+requires balanced(Input.Plain(value))
+{
+    BalancedText(value)
+}
+
+fn preserved_invalid(value Text) Text
+requires !balanced(Input.Plain(value))
+ensures !balanced(Input.Plain(result))
+{
+    value
+}
+
+fn gated(value Text, skip Bool) Text
+requires skip || balanced(Input.Plain(value))
+ensures skip || balanced(Input.Plain(result))
+{
+    value
+}
+
+fn repeated(value Text, count Int) Text
+requires count >= 0 && balanced(Input.Plain(value))
+ensures balanced(Input.Plain(result))
+{
+    var current = value
+    var index = 0
+    while index < count {
+        current = preserved_text(current)
+        index = index + 1
+    }
+    current
+}
+
+fn main() {
+    assert preserved_text("(x(y))") == "(x(y))"
+    assert equivalent_text("()", "()") == "()"
+    let input = Input.Document(Document {
+            text = "(document)"
+            allow_empty = false
+        })
+    assert balanced(preserved(input))
+    let log List[Int] = []
+    assert after_write("()", log) == "()" && log[0] == 7
+    assert observed("()") && !observed(")(")
+    assert checked_text("(checked)") == "(checked)"
+    assert preserved_invalid(")(") == ")("
+    assert gated(")(", true) == ")(" && gated("()", false) == "()"
+    assert repeated("(loop)", 3) == "(loop)"
+    let prepared = comptime {
+        preserved_text("(compile-time)")
+    }
+    assert prepared == "(compile-time)"
+}
+
+test fn opaque_pure_predicates_preserve_established_values() {
+    main()
+}

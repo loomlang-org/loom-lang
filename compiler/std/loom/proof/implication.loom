@@ -18,6 +18,16 @@ fn implication_form(expr Expr, budget List[Int], depth Int) Bool {
     if expr.kind == ExprKind.Local {
         return expr.index == 0
     }
+    if predicate_application(expr) {
+        var index = 0
+        while index < length(expr.children) {
+            if !implication_argument_form(get(expr.children, index), budget, depth + 1) {
+                return false
+            }
+            index = index + 1
+        }
+        return true
+    }
     let shape = proof_operation(expr)
     if shape.arity < 0 || shape.heap || shape.flow == OperandFlow.Choice {
         return false
@@ -25,6 +35,40 @@ fn implication_form(expr Expr, budget List[Int], depth Int) Bool {
     var index = 0
     while index < length(expr.children) {
         if !implication_form(get(expr.children, index), budget, depth + 1) {
+            return false
+        }
+        index = index + 1
+    }
+    true
+}
+
+// Closed immutable constructors can wrap the scalar self value. Unknown
+// aggregate locals need their checked layout and are not invented here.
+fn implication_argument_form(expr Expr, budget List[Int], depth Int) Bool {
+    if scalar_type(expr.ty) {
+        return implication_form(expr, budget, depth)
+    }
+    if depth >= 64 || !conjunction_step(budget) || length(expr.arms) != 0 {
+        return false
+    }
+    if expr.kind == ExprKind.Coerce && length(expr.children) == 1 {
+        return implication_argument_form(get(expr.children, 0), budget, depth + 1)
+    }
+    if expr.kind != ExprKind.Record && expr.kind != ExprKind.Variant {
+        return false
+    }
+    var index = 0
+    while index < length(expr.children) {
+        let field = get(expr.children, index)
+        let value = if expr.kind == ExprKind.Record {
+            if field.kind != ExprKind.Field || length(field.children) != 1 {
+                return false
+            }
+            get(field.children, 0)
+        } else {
+            field
+        }
+        if !implication_argument_form(value, budget, depth + 1) {
             return false
         }
         index = index + 1

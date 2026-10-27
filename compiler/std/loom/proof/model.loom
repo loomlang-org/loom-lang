@@ -57,6 +57,7 @@ enum ArrayScalar {
 }
 
 enum Predicate {
+    Application(Int, List[PredicateKey], Bool)
     Constant(Bool)
     Variable(Int)
     Select(Int, List[Int], Linear)
@@ -75,6 +76,17 @@ enum Predicate {
     // Representation-preserving frame over every modeled scalar column in
     // the old valid prefix. This is not source Float numerical equality.
     ArrayPrefix(Int, Int, Linear)
+}
+
+// Immutable, evaluated arguments of a deterministic partial predicate. Opaque
+// graph frontiers and mutable handles are deliberately not value identities.
+enum PredicateKey {
+    Integer(IntegerTerm)
+    Boolean(List[Predicate])
+    Text(TextValue)
+    Float(FloatValue)
+    Record(List[PredicateKey])
+    Sum(Int, Linear, List[List[PredicateKey]])
 }
 
 enum Value {

@@ -155,6 +155,7 @@ fn count_predicate_extents(output List[Linear], value Predicate, depth Int) {
         return
     }
     match value {
+        Predicate.Application(_, keys, _) => count_key_extents(output, keys, depth - 1)
         Predicate.BagEqual(_, first, _, second) => {
             count_extent(output, first)
             count_extent(output, second)
@@ -179,6 +180,30 @@ fn count_predicate_extents(output List[Linear], value Predicate, depth Int) {
         Predicate.Not(values) => count_predicate_list(output, values, depth - 1)
         _ => {
         }
+    }
+}
+
+fn count_key_extents(output List[Linear], keys List[PredicateKey], depth Int) {
+    if depth <= 0 {
+        return
+    }
+    var index = 0
+    while index < length(keys) {
+        match get(keys, index) {
+            PredicateKey.Integer(term) => count_term_extents(output, term, depth - 1)
+            PredicateKey.Boolean(values) => count_predicate_list(output, values, depth - 1)
+            PredicateKey.Record(fields) => count_key_extents(output, fields, depth - 1)
+            PredicateKey.Sum(_, _, variants) => {
+                var variant = 0
+                while variant < length(variants) {
+                    count_key_extents(output, get(variants, variant), depth - 1)
+                    variant = variant + 1
+                }
+            }
+            _ => {
+            }
+        }
+        index = index + 1
     }
 }
 

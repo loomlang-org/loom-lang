@@ -199,6 +199,16 @@ fn binary(operator Text, a Value, b Value) Result[Value, Text] {
 }
 
 fn pure(expr Expr, state State) Result[Value, Text] {
+    if logical_expression(expr) {
+        return if expr.text == "proof_defined" {
+            Result.Ok(Value.Boolean(operation_safety(get(expr.children, 0), state)?))
+        } else {
+            pure(get(expr.children, 0), state)
+        }
+    }
+    if predicate_application(expr) {
+        return Result.Ok(Value.Boolean(application_fact(expr, state, expr.text == "proof_predicate_defined")?))
+    }
     if bound_expression(expr) {
         return Result.Ok(Value.Number(variable(expr.index)))
     }
@@ -336,6 +346,9 @@ fn bounded(value Value, state State) State {
 // Postcondition arithmetic has not executed. Establish definedness from facts;
 // unlike body arithmetic, never assume a hypothetical overflow check passed.
 fn defined(expr Expr, state State) Result[Bool, Text] {
+    if logical_expression(expr) {
+        return Result.Ok(true)
+    }
     if bound_expression(expr) {
         return Result.Ok(true)
     }

@@ -2,6 +2,7 @@
 // share the existing solver; theory combinations still need exact encoding.
 fn loop_solver_fact(value Predicate) Bool {
     match value {
+        Predicate.Application(_, _, _) => true
         Predicate.Forall(_, _, _, _) => true
         Predicate.BagEqual(_, _, _, _) => true
         Predicate.ArrayPrefix(_, _, _) => true
@@ -145,9 +146,16 @@ fn loop_quantified_clauses(proof Verification, value Expr, candidates List[LoopC
     if depth <= 0 || length(candidates) >= 64 {
         return
     }
+    if value.kind == ExprKind.Intrinsic && value.text == "proof_logical" {
+        loop_quantified_clauses(proof, get(value.children, 0), candidates, boundaries, entry, depth - 1)
+        return
+    }
     if value.kind == ExprKind.Intrinsic && value.text == "proof_scan_checks" {
         // Sufficient scan safety is proved separately, not an invariant hint.
         return
+    }
+    if contains_application(value) {
+        propose_quantified(proof, candidates, value, entry)
     }
     if value.kind == ExprKind.Binary && value.text == "&&" {
         propose_quantified(proof, candidates, value, entry)

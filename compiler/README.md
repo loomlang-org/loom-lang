@@ -2615,6 +2615,19 @@ control-flow scopes. Distinct named refinements still use an explicit target
 constructor; a proved implication can remove that check without merging their
 nominal identities. See [expression contracts](examples/contracts/expressions.loom).
 
+Known pure Boolean helpers over immutable values can also compose when their
+loops or recursion have no supported closed formula. The prover retains the
+checked function identity and evaluated argument values, with separate facts
+for the result and successful evaluation. An executed precondition or ordinary
+call can establish those facts; purity alone proves neither truth nor termination.
+This supports immutable scalars, records, tuples and enums, including checked
+construction, loop preservation and suspension. Text byte equality permits
+substitution; Float numerical equality does not identify opposite zeros or NaNs.
+Known List callbacks retain checks only through the scan's first exit, preserving
+short-circuit suffixes. Mutable inputs, unknown dispatch and unsupported effects
+do not gain opaque purity or stable value identities. These rules introduce no
+source annotation or runtime wrapper. Try [predicate contracts](examples/predicate_contracts).
+
 A record can have a `where` predicate over immutable `Int`, `Bool`, `Float`,
 `Text`, or nested inline record/refined fields. Shared siblings are allowed when
 the predicate does not observe them:

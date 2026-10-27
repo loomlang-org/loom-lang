@@ -479,6 +479,33 @@ fn applied_summary(proof Verification, call Expr, function Function, state State
 }
 
 fn applied_call(proof Verification, call Expr, function Function, arguments CallArguments, depth Int) Result[List[Outcome], Text] {
+    let completed = applied_call_body(proof, call, function, arguments, depth)?
+    if function.result != 2 || !application_needed(proof, call.index) ||
+    !predicate_function(proof.program, call.index) {
+        return Result.Ok(completed)
+    }
+    let keys = match predicate_keys(arguments.values, [256]) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            return Result.Ok(completed)
+        }
+    }
+    let output = new[Outcome]()
+    var index = 0
+    while index < length(completed) {
+        let current = get(completed, index)
+        let state = assume(current.state, Predicate.Application(call.index, keys, true))
+        discard add_outcome(output, Outcome {
+                state = assume(state, Predicate.Equal([Predicate.Application(call.index, keys, false),
+                            boolean(current.value)?]))
+                value = current.value
+            })?
+        index = index + 1
+    }
+    Result.Ok(output)
+}
+
+fn applied_call_body(proof Verification, call Expr, function Function, arguments CallArguments, depth Int) Result[List[Outcome], Text] {
     // A normal-return contract cannot justify intermediate stores. This entry
     // also serves known function values; dispatch must not weaken preservation.
     if length(proof.preservation) != 0 {

@@ -1,0 +1,51 @@
+test fn predicate_keys_require_values_instead_of_allocation_frontiers() {
+    assert match predicate_key(Value.Opaque(10, []), [256]) {
+        Result.Err(_) => true
+        _ => false
+    }
+    assert match predicate_key(Value.List(10), [256]) {
+        Result.Err(_) => true
+        _ => false
+    }
+    let number = Value.Number(constant(integer(7)))
+    let first = predicate_key(Value.Sum(8, constant(integer(0)), [[number]]), [256])
+    let second = predicate_key(Value.Sum(8, constant(integer(0)), [[number], []]), [256])
+    assert match first {
+        Result.Ok(left) => match second {
+            Result.Ok(right) => same_predicate_key(left, right)
+            _ => false
+        }
+        _ => false
+    }
+}
+
+test fn predicate_truth_and_successful_evaluation_are_separate_atoms() {
+    let keys = [PredicateKey.Text(TextValue.Variable(9))]
+    let truth = Predicate.Application(3, keys, false)
+    let domain = Predicate.Application(3, keys, true)
+    assert same(truth, truth)
+    assert !same(truth, domain)
+    assert !holds(truth, [domain])
+    assert !holds(domain, [truth])
+    assert !same(truth, Predicate.Application(4, keys, false))
+}
+
+test fn predicate_boolean_keys_bound_shared_expression_expansion() {
+    var value = Predicate.Variable(1)
+    var index = 0
+    while index < 16 {
+        value = Predicate.Application(2, [PredicateKey.Boolean([value, value])], false)
+        index = index + 1
+    }
+    assert !predicate_boolean_size(value, [256])
+}
+
+test fn predicate_admission_rejects_mutable_inputs_and_hidden_dispatch() {
+    let program = atomic_pair_program()
+    assert predicate_immutable_type(program, 3, 0)
+    assert !predicate_immutable_type(program, 6, 0)
+    let raw = expression(ExprKind.ResourceDrain, 2, "", -1, [])
+    assert !predicate_direct_closure(program, raw, [], [4096], 0)
+    let erased = expression(ExprKind.IndirectCall, 2, "", -1, [])
+    assert !predicate_direct_closure(program, erased, [], [4096], 0)
+}

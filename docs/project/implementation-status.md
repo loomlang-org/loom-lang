@@ -146,6 +146,12 @@ and semantic-change tools request editable metadata once when needed. Read-only
 editor hover uses the same lexical parameter/import evidence as public analysis,
 without exporting the whole project. Mutable parser and IR builders remain
 available separately.
+Known pure predicates over immutable values retain independent result and
+successful-evaluation facts when body expansion is unavailable. Those facts
+compose through construction, loops, suspension and known List scans without
+assuming termination or granting mutable arguments a stable value identity.
+The [predicate example](../../compiler/examples/predicate_contracts) exercises
+these boundaries; general recursive/shared-graph induction remains open.
 Hosts can explicitly supply the source `std.loom.proof.z3` adapter for unresolved
 supported proofs; default analysis stays I/O-free and ordinary programs gain no
 solver dependency.

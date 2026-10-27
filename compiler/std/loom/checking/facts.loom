@@ -50,7 +50,7 @@ fn fact_instance(env Environment, target Int) Instance {
     }
 }
 
-// Only immutable scalar bindings are stable. Candidate calls are retained for
+// Only immutable values are stable. Candidate calls are retained for
 // lazy, checked helper expansion; they are not facts about arbitrary effects.
 fn fact_size(context Context, value Expr, depth Int) Int {
     fact_size(context, value, depth, false)
@@ -58,7 +58,7 @@ fn fact_size(context Context, value Expr, depth Int) Int {
 
 fn fact_size(context Context, value Expr, depth Int, calls Bool) Int {
     let ty = base_type(context.env, value.ty)
-    if depth >= 64 || (ty != 1 && ty != 2 && ty != 3 && ty != 5) || length(value.arms) != 0 {
+    if depth >= 64 || !inline_constraint_base(context.env, ty, 0) || length(value.arms) != 0 {
         return -1
     }
     if value.kind == ExprKind.Local {
@@ -71,10 +71,11 @@ fn fact_size(context Context, value Expr, depth Int, calls Bool) Int {
     if value.kind == ExprKind.Integer || value.kind == ExprKind.Float || value.kind == ExprKind.Bool || value.kind == ExprKind.Text {
         return 1
     }
-    let unary = value.kind == ExprKind.Unary || value.kind == ExprKind.Coerce
+    let unary = value.kind == ExprKind.Unary || value.kind == ExprKind.Coerce || value.kind == ExprKind.Field
+    let aggregate = value.kind == ExprKind.Record || value.kind == ExprKind.Variant
     let call = calls && value.kind == ExprKind.Call && value.index != -1 &&
     fact_instance(context.env, value.index).signature >= 0
-    if !call && ((!unary && value.kind != ExprKind.Binary) || length(value.children) != (if unary {
+    if !call && !aggregate && ((!unary && value.kind != ExprKind.Binary) || length(value.children) != (if unary {
                 1
             } else {
                 2
