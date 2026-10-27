@@ -103,7 +103,7 @@ test fn scan_steps_do_not_establish_checks_the_source_never_evaluated() {
     discard accepted(concat(header, """
         fn safe(value Int) Int
         requires value <= 0
-        ensures !stopped(value) && empty(value)
+        ensures empty(value)
         {
             0
         }
@@ -126,7 +126,7 @@ test fn scan_steps_do_not_establish_checks_the_source_never_evaluated() {
         """))
 }
 
-test fn scan_bounds_and_steps_cannot_hide_changes_to_outer_bindings() {
+test fn scan_transitions_cannot_hide_changes_to_outer_bindings() {
     let goal = """
         fn fabricated() Bool
         ensures changed()
@@ -158,6 +158,23 @@ test fn scan_bounds_and_steps_cannot_hide_changes_to_outer_bindings() {
                 index = index + 1
             }
             limit == 1
+        }
+        """, goal))
+    rejects(concat("""
+        fn changed() Bool {
+            var index = 0
+            var count = 0
+            while index < 2 {
+                let observed = {
+                    count = count + 1
+                    count
+                }
+                if observed < 0 {
+                    return false
+                }
+                index = index + 1
+            }
+            count == 0
         }
         """, goal))
 }

@@ -255,9 +255,15 @@ fn expanded_scan(context Expansion, value Expr, guard Expr,
     let exits = if counting || simple {
         var observation = 0
         while observation < prefix {
+            if scan_outer_write(get(body.children, observation), bindings, 256) {
+                return Result.Err("pure scan observations cannot rebind outer state")
+            }
             discard expanded_binding(inner, get(body.children, observation), proof_bool(value, true),
                 items, locals, self, calls, depth + 1)?
             observation = observation + 1
+        }
+        if scan_outer_write(get(branch.children, 0), bindings, 256) {
+            return Result.Err("pure scan conditions cannot rebind outer state")
         }
         let condition = expanded(inner, get(branch.children, 0), proof_bool(value, true),
             items, locals, self, calls, depth + 1)?
@@ -277,7 +283,11 @@ fn expanded_scan(context Expansion, value Expr, guard Expr,
     }
     // Only paths reaching the recursive call / cursor assignment evaluate its
     // arithmetic. This safety obligation belongs to the source transition.
-    discard expanded(inner, get(update.children, 0), proof_not(exits.condition),
+    discard expanded(inner, get(update.children, 0), if counting {
+            proof_bool(value, true)
+        } else {
+            proof_not(exits.condition)
+        },
         items, locals, self, calls, depth + 1)?
     let summary = ScanExit {
         condition = proof_and(domain.member, exits.condition)
