@@ -232,7 +232,7 @@ fn constraint_operation(env Environment, functions List[Function], locals List[L
     if get(reads.valid, 0) && (!origin_shared(output) || constraint_output_independent(env, value)) {
         return Result.Ok(true)
     }
-    if writes != 0 || env.expanding_helpers {
+    if writes != 0 {
         return Result.Ok(false)
     }
     // First prove that the helper cannot publish the protected header. Then

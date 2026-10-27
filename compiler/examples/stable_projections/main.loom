@@ -50,6 +50,7 @@ fn replace_quantity(table Table, quantity Int) {
 }
 
 async fn exercise() {
+    nested_publication().await
     appendable_projection().await
     let table = Table([Cell {
                 key = 7

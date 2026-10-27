@@ -109,6 +109,9 @@ record ListCell {
 
 record ListExtent {
     identity Int
+    // The checked invariant element type, with only outer refinements erased.
+    // Unknown or symbolic relationships never establish separation.
+    storage_type Int
     size Linear
     allocated Bool
     // Earliest proved allocation epoch; -1 is unknown. A sampled loop handle

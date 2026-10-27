@@ -27,13 +27,13 @@ test fn predicate_stability_retains_only_the_actual_proved_projection() {
             ty = 7
             writes = 2
         }]
-    assert predicate_stable(stable, 8, first, no_proof_backend(), continuing)
+    assert predicate_stable(stable, 8, first, no_proof_backend(), continuing, false)
     let mutable = unique_scalar_sequence(literal("7"), "2")
     let second = stability_projection(mutable, "1")
-    assert !predicate_stable(mutable, 8, second, no_proof_backend(), continuing)
+    assert !predicate_stable(mutable, 8, second, no_proof_backend(), continuing, false)
     let positive = atomic_pair_program()
     let changing = stability_projection(positive, "0")
-    assert !predicate_stable(positive, 8, changing, no_proof_backend(), continuing)
+    assert !predicate_stable(positive, 8, changing, no_proof_backend(), continuing, false)
 }
 
 test fn predicate_stability_reproves_bounds_instead_of_assuming_later_success() {
@@ -44,7 +44,7 @@ test fn predicate_stability_reproves_bounds_instead_of_assuming_later_success() 
             ..empty
         })
     let predicate = stability_projection(program, "0")
-    assert !predicate_stable(program, 8, predicate, no_proof_backend(), [])
+    assert !predicate_stable(program, 8, predicate, no_proof_backend(), [], false)
 }
 
 import std.loom.typed.Variant
@@ -80,4 +80,36 @@ test fn continuing_guarantees_require_the_selected_enum_payload() {
     let known = protected_input(program.types, guarantee, 8, value, selected, 0)
     assert get(known.extents, 0).invariant_type == 7
     assert !get(known.extents, 0).read_only && !get(known.extents, 0).fixed_extent
+}
+
+test fn controlled_root_stability_does_not_protect_other_headers_or_supply_policy() {
+    let program = atomic_pair_program()
+    let raw = expression(ExprKind.Local, 6, "", 0, [])
+    let size = expression(ExprKind.Intrinsic, 1, "list_len", -1, [raw])
+    let predicate = operation(">", size, literal("0"))
+    assert predicate_stable(program, 6, predicate, no_proof_backend(), [], true)
+    assert !predicate_stable(program, 6, predicate, no_proof_backend(), [], false)
+    let shape = get(program.types, 7)
+    std.list.set(program.types, 7, Type {
+            constraint = [expression(ExprKind.Bool, 2, "false", -1, [])]
+            ..shape
+        })
+    let proof = protected_verification(verification(
+            contract_fixture([6], 1, literal("0"), [], [expression(ExprKind.Bool, 2, "true", -1, [])]), program),
+        [InputGuarantee {
+                ty = 7
+                writes = 0
+            }])
+    let empty = State {
+        locals = []
+        facts = []
+        extents = []
+        observations = []
+    }
+    let skipped = guarded_value_invariants(proof, 7, Value.List(20), Predicate.Variable(99), empty)
+    assert !loop_holds(Predicate.Constant(false), skipped)
+    assert match list_state(20, skipped) {
+        Result.Ok(extent) => extent.invariant_type < 0 && !extent.read_only
+        Result.Err(_) => false
+    }
 }

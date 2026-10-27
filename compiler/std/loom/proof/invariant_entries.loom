@@ -79,3 +79,44 @@ fn established_invariants(proof Verification, state State) List[Outcome] {
         Result.Err(_) => outcomes(state, Value.Empty)
     }
 }
+
+// Materialize continuing child predicates in the same pre-store heap as the
+// root obligation. Interference may have discarded their earlier observations.
+// The actual store then invalidates overlapping headers normally: none of these
+// predicates is re-assumed in the post-state being proved.
+fn established_storage_invariants(proof Verification, state State) List[Outcome] {
+    let clauses = new[Expr]()
+    let locals = clone(state.locals)
+    var index = 0
+    while index < length(state.extents) {
+        let extent = get(state.extents, index)
+        if extent.invariant_type >= 6 {
+            let input = proof_expr(proof.function.body, ExprKind.Local,
+                extent.invariant_type, "", length(locals), [])
+            push(locals, Value.List(extent.identity))
+            invariant_entry_clauses(proof.program.types, extent.invariant_type, input, clauses, 0)
+        }
+        index = index + 1
+    }
+    match established_conditions(proof, clauses, State {
+            locals = locals
+            ..state
+        }) {
+        Result.Ok(paths) => {
+            index = 0
+            while index < length(paths) {
+                let path = get(paths, index)
+                set(paths, index, Outcome {
+                        state = State {
+                            locals = state.locals
+                            ..path.state
+                        }
+                        value = path.value
+                    })
+                index = index + 1
+            }
+            paths
+        }
+        Result.Err(_) => outcomes(state, Value.Empty)
+    }
+}

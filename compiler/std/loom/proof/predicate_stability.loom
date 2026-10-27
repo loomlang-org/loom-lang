@@ -11,7 +11,7 @@ fn stability_clauses(values List[Expr]) Result[List[Expr], Text] {
 }
 
 fn predicate_stability(program Program, base Int, predicate Expr, backend ProofBackend,
-    protected List[InputGuarantee]) Result[Bool, Text] {
+    protected List[InputGuarantee], controlled Bool) Result[Bool, Text] {
     let locals = [Local {
             name = "self"
             ty = base
@@ -58,15 +58,19 @@ fn predicate_stability(program Program, base Int, predicate Expr, backend ProofB
     // Establish the previously checked predicate, change every unprotected
     // shared version, then prove the actual current predicate and its safety
     // obligations. There is no source body whose failure could hide a store.
-    verify_body(proof, protected, [], [], false, true)
+    verify_body(proof, protected, [], [], false, if controlled {
+            Revalidation.Children
+        } else {
+            Revalidation.Shared
+        })
 }
 
 // The host validates child predicates and construction/escape/write policies,
 // and removes the predicate under examination (and active ancestors) from type
 // assumptions. Unknown reasoning never grants a stable observation footprint.
 pub fn predicate_stable(program Program, base Int, predicate Expr, backend ProofBackend,
-    protected List[InputGuarantee]) Bool {
-    match predicate_stability(program, base, predicate, backend, protected) {
+    protected List[InputGuarantee], controlled Bool) Bool {
+    match predicate_stability(program, base, predicate, backend, protected, controlled) {
         Result.Ok(proved) => proved
         Result.Err(_) => false
     }

@@ -3,7 +3,7 @@ import std.loom.proof.predicate_stable
 // This is a predicate-level proof, not permission to freeze an entire child.
 // Validate its actual dependency closure before supplying continuing type facts.
 fn invariant_stable(env Environment, program std.loom.typed.Program, base Int, predicate Expr,
-    active List[Int]) Bool {
+    active List[Int], controlled Bool) Bool {
     let pending = ints(base)
     let seen = new[Int]()
     let validated = new[Int]()
@@ -84,5 +84,5 @@ fn invariant_stable(env Environment, program std.loom.typed.Program, base Int, p
         cursor = cursor + 1
     }
     predicate_stable(proof_types(program, types), base, predicate,
-        get(env.inputs, 0).build.proof_backend, protected)
+        get(env.inputs, 0).build.proof_backend, protected, controlled)
 }
