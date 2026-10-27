@@ -3577,6 +3577,11 @@ equal counts for every input element normalize to finite histogram equality;
 an in-range store removes the previous occurrence and adds the replacement.
 These sequence laws prove arbitrary-index swaps and permutation through calls
 and loops, including duplicates and equal indices.
+Count bounds instantiate at each actual symbolic needle, retaining any enclosing
+quantifier ranges and their dependencies. This avoids universal search over
+unrelated integers without sampling source values or changing source checks.
+The [count scope example](examples/smt_contracts/count_scopes.loom) proves bounds
+over arbitrary needles and nested prefixes, including empty inputs.
 
 Logical valid-index views reuse ordinary element type facts, including machine
 Int bounds, byte values in 0..255, Text lengths and immutable inline fields.

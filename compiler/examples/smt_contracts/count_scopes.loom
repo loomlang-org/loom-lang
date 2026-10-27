@@ -1,0 +1,72 @@
+import std.list.length
+
+fn prefix_occurrences(values List[Int], needle Int, end Int) Int
+requires end >= 0 && end <= length(values)
+{
+    var index = 0
+    var count = 0
+    while index < end {
+        if values[index] == needle {
+            count = count + 1
+        }
+        index = index + 1
+    }
+    count
+}
+
+fn bounded_counts(values List[Int], needles List[Int]) Bool {
+    var index = 0
+    while index < length(needles) {
+        let count = prefix_occurrences(values, needles[index], length(values))
+        if count < 0 || count > length(values) {
+            return false
+        }
+        index = index + 1
+    }
+    true
+}
+
+fn checked_counts(values List[Int], needles List[Int]) Bool
+ensures result
+{
+    bounded_counts(values, needles)
+}
+
+fn bounded_prefix_counts(values List[Int], needles List[Int]) Bool {
+    var end = 0
+    while end < length(values) {
+        var index = 0
+        while index < length(needles) {
+            let count = prefix_occurrences(values, needles[index], end)
+            if count < 0 || count > end {
+                return false
+            }
+            index = index + 1
+        }
+        end = end + 1
+    }
+    true
+}
+
+fn checked_prefix_counts(values List[Int], needles List[Int]) Bool
+ensures result
+{
+    bounded_prefix_counts(values, needles)
+}
+
+fn count_scope_cases() {
+    assert checked_counts([4, 4, 7], [4, 7, 9])
+    assert checked_counts([], [4])
+    assert checked_counts([4], [])
+    assert checked_prefix_counts([4, 4, 7], [4, 7, 9])
+    assert checked_prefix_counts([], [4])
+    assert checked_prefix_counts([4], [])
+    let prepared = comptime {
+        checked_prefix_counts([1, 2], [1, 3])
+    }
+    assert prepared
+}
+
+test fn counts_retain_their_lexical_domains() {
+    count_scope_cases()
+}

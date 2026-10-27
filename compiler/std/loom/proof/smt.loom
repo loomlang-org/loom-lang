@@ -8,6 +8,22 @@ import std.map.new
 import std.map.get
 import std.map.insert
 
+record SmtBinder {
+    identity Int
+    start Text
+    end Text
+}
+
+fn smt_binder(value SmtBinder, condition Text) Text {
+    let bound = concat("n", std.int.to_text(value.identity))
+    let output = std.bytes.new()
+    smt_append(output, concat("(forall ((", concat(bound, " Int)) (=> (and (<= ")))
+    smt_append(output, concat(value.start, concat(" ", concat(bound, ") (< "))))
+    smt_append(output, concat(bound, concat(" ", concat(value.end, ")) "))))
+    smt_append(output, concat(condition, "))"))
+    std.bytes.to_text(output)
+}
+
 record SmtWriter {
     declarations Bytes
     names List[Text]
@@ -16,7 +32,7 @@ record SmtWriter {
     columns List[SmtColumn]
     prefixes List[SmtPrefix]
     assertions std.map.Map[Text, Bool]
-    quantifiers List[Int]
+    quantifiers List[SmtBinder]
 }
 
 // Repeated visits retain one copy of each exact, closed theory law. This is
@@ -281,7 +297,11 @@ fn smt_quantified(writer SmtWriter, identity Int, start Linear, end Linear,
     let first = smt_linear(writer, start)?
     let last = smt_linear(writer, end)?
     let binders = clone(writer.quantifiers)
-    push(binders, identity)
+    push(binders, SmtBinder {
+            identity = identity
+            start = first
+            end = last
+        })
     let condition = smt_predicate(SmtWriter {
             quantifiers = binders
             ..writer
@@ -295,12 +315,7 @@ fn smt_quantified(writer SmtWriter, identity Int, start Linear, end Linear,
         return Result.Ok(smt_boolean_pair("or",
                 concat("(<= ", concat(last, concat(" ", concat(first, ")")))), condition))
     }
-    let output = std.bytes.new()
-    smt_append(output, concat("(forall ((", concat(bound, " Int)) (=> (and (<= ")))
-    smt_append(output, concat(first, concat(" ", concat(bound, ") (< "))))
-    smt_append(output, concat(bound, concat(" ", concat(last, ")) "))))
-    smt_append(output, concat(condition, "))"))
-    let quantified = std.bytes.to_text(output)
+    let quantified = smt_binder(get(binders, length(binders) - 1), condition)
     if length(writer.counts) != 0 {
         match pointwise_bag(Predicate.Forall(identity, start, end, [predicate])) {
             Option.Some(bag) => {

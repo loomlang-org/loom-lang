@@ -68,8 +68,9 @@ test fn repeated_theory_laws_are_interned_without_merging_scopes_or_sorts() {
             }])
     assert !contains(repeated, "(forall ((bv Int))")
     assert length(std.text.split(repeated, "(assert (and (<= 0 (select (loom_bag a10")) == 3
-    // A count under either a positive or negative binder retains the universal
-    // range law. Its local needle must not become a free global assumption.
+    // Either sign of binder keeps its original range and actual symbolic
+    // needle. It must not become a free global assumption or quantify over
+    // unrelated histogram keys.
     let binders = [-7, 7]
     var index = 0
     while index < length(binders) {
@@ -80,10 +81,40 @@ test fn repeated_theory_laws_are_interned_without_merging_scopes_or_sorts() {
                     conclusion = Predicate.Forall(bound, constant(integer(0)), variable(1),
                         [integer_limit(">=", selected, 0)])
                 }])
-        assert contains(quantified, "(assert (forall ((bv Int))")
+        let name = concat("n", std.int.to_text(bound))
+        assert contains(quantified, concat("(assert (forall ((", concat(name, " Int)) (=> (and (<= (+ 0) ")))
+        assert contains(quantified, concat("(select (loom_bag a10 (+ 0 (* 1 n1))) (select a11 (+ 0 (* 1 ",
+                concat(name, "))))")))
+        assert !contains(quantified, "(bv Int)")
         assert !contains(quantified, "(assert (and (<= 0 (select (loom_bag")
         index = index + 1
     }
+}
+
+test fn count_laws_close_nested_ranges_and_binder_dependent_extents() {
+    let size = IntegerTerm.Linear(variable(-7))
+    let count = IntegerTerm.Count(10, [size, IntegerTerm.Select(11, [], variable(-8))])
+    let query = encoding([Obligation {
+                facts = []
+                conclusion = Predicate.Forall(-7, constant(integer(0)), variable(1),
+                    [Predicate.Forall(-8, variable(-7), add(variable(-7), constant(integer(1))),
+                            [integer_limit(">=", count, 0)])])
+            }])
+    // The inner range depends on the outer binder even though its needle
+    // mentions only the inner one. The count extent uses the outer value.
+    let outer = "(forall ((n-7 Int)) (=> (and (<= (+ 0) n-7) (< n-7 (+ 0 (* 1 n1)))) "
+    let inner = "(forall ((n-8 Int)) (=> (and (<= (+ 0 (* 1 n-7)) n-8) (< n-8 (+ 1 (* 1 n-7)))) "
+    let bound = "(and (<= 0 (select (loom_bag a10 (+ 0 (* 1 n-7))) (select a11 (+ 0 (* 1 n-8)))))"
+    assert contains(query, concat(outer, concat(inner, bound)))
+    assert !contains(query, "(bv Int)")
+    let ground = IntegerTerm.Count(10, [size, IntegerTerm.Linear(variable(2))])
+    let scoped_extent = encoding([Obligation {
+                facts = []
+                conclusion = Predicate.Forall(-7, constant(integer(0)), variable(1),
+                    [integer_limit(">=", ground, 0)])
+            }])
+    assert contains(scoped_extent, concat(outer,
+            "(and (<= 0 (select (loom_bag a10 (+ 0 (* 1 n-7))) (+ 0 (* 1 n2))))"))
 }
 
 test fn quantified_premises_drop_only_proved_subranges_of_the_same_property() {
