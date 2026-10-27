@@ -40,6 +40,9 @@ fn intrinsic_operation(primitive Text, ty Int, arity Int) ProofOperation {
     if name == "proof_bound" && ty == 1 && arity == 0 {
         return operation_shape(0, OperandFlow.Eager, false, true)
     }
+    if (name == "proof_add" || name == "proof_sub" || name == "proof_mod") && ty == 1 && arity == 2 {
+        return operation_shape(2, OperandFlow.Eager, false, true)
+    }
     if (name == "proof_all" || name == "proof_scan_checks") && ty == 2 && arity == 3 {
         return operation_shape(3, OperandFlow.Eager, true, false)
     }

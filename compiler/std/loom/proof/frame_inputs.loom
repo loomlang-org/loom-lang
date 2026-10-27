@@ -55,17 +55,25 @@ fn frame_input_function(function Function, ty Int, fields Int, budget List[Int])
 }
 
 fn frame_input(proof Verification, ty Int) Bool {
+    if !frame_input_program(proof.program, ty) {
+        return false
+    }
     let shape = get(proof.program.types, ty)
+    frame_input_function(proof.function, ty, length(shape.fields), [100000])
+}
+
+fn frame_input_program(program Program, ty Int) Bool {
+    if ty < 0 || ty >= length(program.types) {
+        return false
+    }
+    let shape = get(program.types, ty)
     if shape.kind != TypeKind.Frame || shape.symbol < 0 {
         return false
     }
     let budget = [100000]
-    if !frame_input_function(proof.function, ty, length(shape.fields), budget) {
-        return false
-    }
     var index = 0
-    while index < length(proof.program.functions) {
-        if !frame_input_function(get(proof.program.functions, index), ty, length(shape.fields), budget) {
+    while index < length(program.functions) {
+        if !frame_input_function(get(program.functions, index), ty, length(shape.fields), budget) {
             return false
         }
         index = index + 1

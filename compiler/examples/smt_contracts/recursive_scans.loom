@@ -1,0 +1,194 @@
+import std.list.all
+import std.list.any
+import std.list.length
+import std.list.push
+
+record Reading {
+    amount Int
+    label Text
+}
+
+fn positive_reading(value Reading) Bool {
+    value.amount > 0
+}
+
+type PositiveReadings = List[Reading] where all(self, positive_reading)
+
+fn read_positive(values PositiveReadings, index Int) Int
+requires index >= 0 && index < std.list.length(values)
+ensures result > 0
+{
+    values[index].amount
+}
+
+fn recursive_readings(values List[Reading], index Int) Bool {
+    if index >= std.list.length(values) {
+        true
+    } else {
+        positive_reading(values[index]) && recursive_readings(values, index + 1)
+    }
+}
+
+fn callbacks_and_recursion_agree(values List[Reading]) Bool
+ensures result
+{
+    all(values, positive_reading) == recursive_readings(values, 0)
+}
+
+fn above(values List[Reading], minimum Int) Bool {
+    all(values, fn(value Reading) Bool {
+            value.amount > minimum
+        })
+}
+
+fn captured_threshold_agrees(values List[Reading]) Bool
+ensures result
+{
+    above(values, 0) == recursive_readings(values, 0)
+}
+
+fn positive_number(value Int) Bool {
+    value > 0
+}
+
+fn negative_number(value Int) Bool {
+    value < 0
+}
+
+fn invoke(predicate fn(Int) Bool, value Int) Bool {
+    predicate(value)
+}
+
+fn evaluated_target(value Int) Bool
+requires value > 0
+ensures result
+{
+    var selected = positive_number
+    invoke(selected, {
+            selected = negative_number
+            value
+        })
+}
+
+fn copied_readings(values List[Reading]) List[Reading]
+requires recursive_readings(values, 0)
+ensures all(result, positive_reading)
+ensures std.list.length(result) == std.list.length(values)
+{
+    let output List[Reading] = []
+    var index = 0
+    while index < std.list.length(values) {
+        push(output, values[index])
+        index = index + 1
+    }
+    output
+}
+
+fn reverse_positive(values List[Int]) Bool {
+    var index = std.list.length(values) - 1
+    while index > -1 {
+        if values[index] <= 0 {
+            return false
+        }
+        index = index - 1
+    }
+    true
+}
+
+fn recursive_reverse(values List[Int], index Int) Bool {
+    if index < 0 {
+        true
+    } else {
+        values[index] > 0 && recursive_reverse(values, index - 1)
+    }
+}
+
+fn reverse_forms_agree(values List[Int]) Bool
+ensures result
+{
+    reverse_positive(values) == recursive_reverse(values, std.list.length(values) - 1)
+}
+
+fn reverse_decision(values List[Int]) Bool {
+    var index = std.list.length(values) - 1
+    while index >= 0 {
+        let value = values[index]
+        if value == 0 {
+            return true
+        }
+        if value < 0 {
+            return false
+        }
+        index = index - 1
+    }
+    false
+}
+
+fn last_zero_wins(values List[Int]) Bool
+requires std.list.length(values) > 0 && values[std.list.length(values) - 1] == 0
+ensures result == reverse_decision(values)
+{
+    true
+}
+
+fn recursive_even_positions(values List[Int], index Int) Bool {
+    if index >= std.list.length(values) {
+        true
+    } else {
+        values[index] > 0 && recursive_even_positions(values, index + 2)
+    }
+}
+
+fn even_positions(values List[Int]) Bool {
+    var index = 0
+    while index < std.list.length(values) {
+        if values[index] <= 0 {
+            return false
+        }
+        index = index + 2
+    }
+    true
+}
+
+fn stride_forms_agree(values List[Int]) Bool
+requires std.list.length(values) < 1000
+ensures result
+{
+    even_positions(values) == recursive_even_positions(values, 0)
+}
+
+fn recursive_scan_cases() {
+    let checked = PositiveReadings([Reading {
+                amount = 5
+                label = "checked"
+            }])
+    assert read_positive(checked, 0) == 5
+    let values = [Reading {
+            amount = 3
+            label = "sensor"
+        }]
+    assert callbacks_and_recursion_agree(values)
+    assert captured_threshold_agrees(values)
+    assert evaluated_target(1)
+    assert all(copied_readings(values), positive_reading)
+    let prepared = comptime {
+        copied_readings([Reading {
+                    amount = 7
+                    label = "prepared"
+                }])
+    }
+    assert prepared[0].amount == 7
+    assert !any(values, fn(value Reading) Bool {
+            value.amount <= 0
+        })
+    assert reverse_positive([1, 2, 3]) && !reverse_positive([1, 0])
+    assert reverse_forms_agree([1, 2, 3]) && reverse_forms_agree([])
+    assert last_zero_wins([-1, 0])
+    assert !reverse_decision([0, -1])
+    assert stride_forms_agree([1, -1, 3])
+    assert stride_forms_agree([])
+}
+
+test fn recursive_content_contracts_compose_with_source_callbacks() {
+    recursive_scan_cases()
+}

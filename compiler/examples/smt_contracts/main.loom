@@ -64,6 +64,7 @@ fn main() {
     division_cases()
     search_cases()
     scan_branch_cases()
+    recursive_scan_cases()
     scan_prefix_cases()
     division_range_cases()
     text_byte_cases()

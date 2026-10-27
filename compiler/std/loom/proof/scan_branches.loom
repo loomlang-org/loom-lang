@@ -5,7 +5,7 @@ record ScanExit {
     all_true Bool
 }
 
-// Every iteration starts from the same outer state except for its unit-step
+// Every iteration starts from the same outer state except for its directed
 // cursor. Local branch rebinding is safe; writing an outer binding is not.
 fn scan_outer_write(value Expr, bindings List[ExpansionBinding], depth Int) Bool {
     if depth <= 0 {
@@ -39,7 +39,7 @@ fn scan_branches(context Expansion, body Expr, bindings List[ExpansionBinding],
     while index + 1 < length(body.children) {
         let child = get(body.children, index)
         if scan_outer_write(child, bindings, 256) {
-            return Result.Err("pure Boolean scan cannot rebind outer state before its unit step")
+            return Result.Err("pure Boolean scan cannot rebind outer state before its cursor step")
         }
         push(children, child)
         index = index + 1
@@ -77,7 +77,7 @@ fn scan_branches(context Expansion, body Expr, bindings List[ExpansionBinding],
 }
 
 fn scan_result(context Expansion, source Expr, summary ScanExit, identity Int,
-    start Expr, end Expr, continuation Expr) Expr {
+    start Expr, end Expr, continuation Expr, reverse Bool) Expr {
     let scanned = quantified_value(source, identity, start, end, proof_not(summary.condition))
     if summary.all_false {
         return proof_and(scanned, continuation)
@@ -90,7 +90,18 @@ fn scan_result(context Expansion, source Expr, summary ScanExit, identity Int,
     // hypothetical read or treating any later witness as the first one.
     let previous = scan_binder(context)
     let cursor = proof_expr(source, ExprKind.Intrinsic, 1, "proof_bound", identity, new[Expr]())
-    let prefix = quantified_value(source, previous, start, cursor,
+    let following = scan_math(source, "proof_add", cursor,
+        proof_expr(source, ExprKind.Integer, 1, "1", -1, []))
+    let prefix = quantified_value(source, previous, if reverse {
+            following
+        } else {
+            start
+        },
+        if reverse {
+            end
+        } else {
+            cursor
+        },
         rename_bound(proof_not(summary.condition), identity, previous))
     let no_success = quantified_value(source, identity, start, end,
         proof_not(proof_and(summary.accepted, prefix)))

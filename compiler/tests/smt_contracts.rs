@@ -415,6 +415,142 @@ ensures skipped(get(values, 0), false, values)
 }
 
 #[test]
+fn recursive_scans_and_known_callbacks_share_content_proofs() {
+    let package = tempfile::tempdir().unwrap();
+    let source = package.path().join("scans.loom");
+    let program = include_str!("../examples/smt_contracts/recursive_scans.loom");
+    let cache = package.path().join("cache");
+    let check = || {
+        common::loom(&[
+            "check",
+            package.path().to_str().unwrap(),
+            "--frontend-cache",
+            cache.to_str().unwrap(),
+        ])
+    };
+    fs::write(&source, program).unwrap();
+    success(&check());
+    success(&check());
+    for changed in [
+        program.replace("value.amount > 0", "value.amount >= 0"),
+        program.replace("above(values, 0)", "above(values, 1)"),
+        program.replace("index + 1)", "index + 2)"),
+        program.replace(
+            "positive_reading(values[index]) &&",
+            "!positive_reading(values[index]) &&",
+        ),
+        program.replace("values[std.list.length(values) - 1] == 0", "values[0] == 0"),
+    ] {
+        assert_ne!(changed, program, "test edit did not apply");
+        fs::write(&source, &changed).unwrap();
+        let output = check();
+        assert!(!output.status.success(), "unsound content proof: {changed}");
+        let error = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            error.contains("proof") || error.contains("proved"),
+            "{error}"
+        );
+    }
+    for unproved in [
+        // Successful early return with zero progress cannot establish an
+        // invented positive-step assumption and prove arbitrary guarantees.
+        r#"fn stopped(step Int) Bool {
+    var index = 0
+    while index < 1 {
+        if step <= 0 {
+            return false
+        }
+        index = index + step
+    }
+    true
+}
+fn fabricated() Int
+requires !stopped(0)
+ensures result == 1
+{
+    0
+}
+"#,
+        // The final recursive invocation still checks its actual requirement.
+        r#"fn bounded(index Int) Bool
+requires index < 1
+{
+    if index >= 1 {
+        true
+    } else {
+        bounded(index + 1)
+    }
+}
+fn fabricated() Bool
+ensures bounded(0)
+{
+    true
+}
+"#,
+        // Mathematical quantifier domains do not erase source Int overflow.
+        r#"fn stepped(index Int, limit Int) Bool {
+    if index >= limit {
+        true
+    } else {
+        stepped(index + 2, limit)
+    }
+}
+fn fabricated() Bool
+ensures stepped(9223372036854775806, 9223372036854775807)
+{
+    true
+}
+"#,
+        // A known callback is not permission to schedule work in a predicate.
+        r#"async fn pending() Bool {
+    true
+}
+fn starts() Bool {
+    let callback = pending
+    discard callback()
+    true
+}
+fn fabricated() Bool
+ensures starts()
+{
+    true
+}
+"#,
+        // A unit step at an inclusive machine endpoint still overflows.
+        r#"fn inclusive(initial Int) Bool {
+    var index = initial
+    while index <= 9223372036854775807 {
+        if false {
+            return false
+        }
+        index = index + 1
+    }
+    true
+}
+fn fabricated() Bool
+ensures inclusive(9223372036854775807)
+{
+    true
+}
+"#,
+    ] {
+        fs::write(&source, unproved).unwrap();
+        assert!(
+            !check().status.success(),
+            "unsafe scan abstraction: {unproved}"
+        );
+    }
+    fs::write(
+        &source,
+        format!("{program}\nfn main() {{\n    recursive_scan_cases()\n}}\n"),
+    )
+    .unwrap();
+    for mode in ["test", "run"] {
+        success(&common::loom(&[mode, package.path().to_str().unwrap()]));
+    }
+}
+
+#[test]
 fn boolean_scans_recheck_duality_witnesses_and_guarded_suffix_safety() {
     let package = tempfile::tempdir().unwrap();
     let source = package.path().join("searches.loom");

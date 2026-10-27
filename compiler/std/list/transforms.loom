@@ -26,6 +26,32 @@ pub fn filter[T](values List[T], predicate fn(T) Bool) List[T] {
     output
 }
 
+// Like the other transforms, observe the initial index range. Short-circuit
+// immediately; callbacks may mutate shared elements but not this range policy.
+pub fn all[T](values List[T], predicate fn(T) Bool) Bool {
+    let count = length(values)
+    var index = 0
+    while index < count {
+        if !predicate(get(values, index)) {
+            return false
+        }
+        index = index + 1
+    }
+    true
+}
+
+pub fn any[T](values List[T], predicate fn(T) Bool) Bool {
+    let count = length(values)
+    var index = 0
+    while index < count {
+        if predicate(get(values, index)) {
+            return true
+        }
+        index = index + 1
+    }
+    false
+}
+
 pub fn fold[T, A](values List[T], initial A, combine fn(A, T) A) A {
     let count = length(values)
     var accumulator = initial

@@ -338,8 +338,13 @@ supported theories and boundaries. The central rules are:
   unsupported effects and exhausted expansion remain conservative.
   Logical `old` snapshots preserve supported entry values and outer content
   versions without runtime copies or freezing mutable children.
-  General termination, recursive predicates and arbitrary graph snapshots are
-  not proved. Signed affine pair bounds also compose nonconstant callee bounds.
+  Direct tail-recursive Boolean scans share the bounded sequence theory,
+  including forward/reverse arithmetic progressions, per-invocation requirements
+  and source arithmetic checks. Known callbacks and read-only captures compose
+  through generic source `std.list.all`/`any`; unknown callbacks grant no purity
+  or behavioral guarantees. See the [content composition example](../../compiler/examples/smt_contracts/recursive_scans.loom).
+  General termination, recursive graph predicates and arbitrary graph snapshots
+  are not proved. Signed affine pair bounds also compose nonconstant callee bounds.
 - List/Bytes extent, indexed observations and supported immutable columns share
   versioned storage rules. Quantified valid-index views retain the ordinary
   element domains, including Int/byte ranges and immutable inline fields; no

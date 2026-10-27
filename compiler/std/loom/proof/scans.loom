@@ -102,7 +102,7 @@ fn rename_bound(value Expr, before Int, after Int) Expr {
 }
 
 fn scan_checks(context Expansion, inner Expansion, source Expr, guard Expr,
-    identity Int, start Expr, end Expr) Result[Bool, Text] {
+    identity Int, start Expr, end Expr, member Expr) Result[Bool, Text] {
     var index = 0
     while index < length(inner.checks) {
         let check = get(inner.checks, index)
@@ -114,7 +114,8 @@ fn scan_checks(context Expansion, inner Expansion, source Expr, guard Expr,
         if length(context.checks) >= 256 {
             return Result.Err("helper evaluation budget exhausted")
         }
-        let checks = quantified_value(source, identity, start, end, guarded_value(check.guard, condition))
+        let checks = quantified_value(source, identity, start, end,
+            guarded_value(proof_and(member, check.guard), condition))
         push(context.checks, Evaluation {
                 guard = guard
                 value = proof_expr(checks, checks.kind, checks.ty, "proof_scan_checks", checks.index, checks.children)
@@ -148,7 +149,7 @@ fn expanded_quantifier(context Expansion, value Expr, guard Expr,
     let inner = scan_context(context)
     let condition = expanded(inner, rename_bound(get(value.children, 2), value.index, identity),
         proof_bool(value, true), bindings, locals, self, calls, depth + 1)?
-    discard scan_checks(context, inner, value, guard, identity, start, end)?
+    discard scan_checks(context, inner, value, guard, identity, start, end, proof_bool(value, true))?
     Result.Ok(quantified_value(value, identity, start, end, condition))
 }
 
@@ -162,7 +163,7 @@ fn expanded_scan(context Expansion, value Expr, guard Expr,
         position = position + 1
     }
     if position + 2 != length(value.children) {
-        return Result.Err("pure loop proof needs a bounded unit-step Boolean scan")
+        return Result.Err("pure loop proof needs a bounded Boolean scan")
     }
     let tail = scan_tail(get(value.children, position + 1))
     let counting = tail.kind == ExprKind.Local && tail.ty == 1
@@ -173,11 +174,15 @@ fn expanded_scan(context Expansion, value Expr, guard Expr,
     if iteration.kind != ExprKind.While || length(iteration.children) != 2 {
         return Result.Err("pure loop proof needs one bounded scan")
     }
-    let limit_test = get(iteration.children, 0)
+    let limit_test = match scan_exclusive_test(get(iteration.children, 0)) {
+        Option.Some(value) => value
+        Option.None => {
+            return Result.Err("pure loop proof needs a directed integer bound")
+        }
+    }
     let body = get(iteration.children, 1)
-    if limit_test.kind != ExprKind.Binary || limit_test.text != "<" || length(limit_test.children) != 2 ||
-    body.kind != ExprKind.Block {
-        return Result.Err("pure loop proof needs an exclusive upper bound")
+    if body.kind != ExprKind.Block {
+        return Result.Err("pure loop proof needs a block body")
     }
     var prefix = 0
     while prefix < length(body.children) && get(body.children, prefix).kind == ExprKind.Let {
@@ -189,8 +194,21 @@ fn expanded_scan(context Expansion, value Expr, guard Expr,
     let cursor = get(limit_test.children, 0)
     if cursor.kind != ExprKind.Local || cursor.ty != 1 ||
     scan_mentions(get(limit_test.children, 1), cursor.index) ||
-    !scan_unit_step(get(body.children, length(body.children) - 1), cursor.index) {
-        return Result.Err("pure loop proof needs a stable bound and unit-step cursor")
+    scan_outer_write(get(limit_test.children, 1), bindings, 256) {
+        return Result.Err("pure loop proof needs a stable bound and integer cursor")
+    }
+    let update = get(body.children, length(body.children) - 1)
+    let stride = match scan_step(update, cursor.index, limit_test.text == ">") {
+        Option.Some(value) => value
+        Option.None => {
+            return Result.Err("pure scan needs a stable directed cursor step")
+        }
+    }
+    if scan_outer_write(stride, bindings, 256) {
+        return Result.Err("pure scan cursor step cannot rebind outer state")
+    }
+    if counting && (limit_test.text != "<" || !scan_unit_step(update, cursor.index)) {
+        return Result.Err("count scan needs a forward unit step")
     }
     if !counting && scan_mentions(tail, cursor.index) {
         return Result.Err("pure Boolean scan tail must not observe its updated cursor")
@@ -218,21 +236,34 @@ fn expanded_scan(context Expansion, value Expr, guard Expr,
             return Result.Err("count scan needs a zero-based independent accumulator")
         }
     }
-    let start = expanded(context, cursor, guard, bindings, locals, self, calls, depth + 1)?
-    let end = expanded(context, get(limit_test.children, 1), guard, bindings, locals, self, calls, depth + 1)?
+    let initial = expanded(context, cursor, guard, bindings, locals, self, calls, depth + 1)?
+    let limit = expanded(context, get(limit_test.children, 1), guard, bindings, locals, self, calls, depth + 1)?
+    // Inspect a stable step without claiming it ran. Empty scans and paths
+    // returning before their update never evaluate it. Actual requirements
+    // and faults are retained below, under the continuing iteration guard.
+    let step = expanded(scan_context(context), stride, guard, clone(bindings), locals, self, calls, depth + 1)?
     let identity = scan_binder(context)
+    let domain = scan_domain(context, value, initial, limit, step, identity, limit_test.text == ">", guard)?
+    let start = domain.start
+    let end = domain.end
     let items = clone(bindings)
     push(items, ExpansionBinding {
             local = cursor.index
             value = proof_expr(cursor, ExprKind.Intrinsic, 1, "proof_bound", identity, new[Expr]())
         })
     let inner = scan_context(context)
-    let summary = if counting || simple {
+    let exits = if counting || simple {
         var observation = 0
         while observation < prefix {
+            if scan_outer_write(get(body.children, observation), bindings, 256) {
+                return Result.Err("pure scan observations cannot rebind outer state")
+            }
             discard expanded_binding(inner, get(body.children, observation), proof_bool(value, true),
                 items, locals, self, calls, depth + 1)?
             observation = observation + 1
+        }
+        if scan_outer_write(get(branch.children, 0), bindings, 256) {
+            return Result.Err("pure scan conditions cannot rebind outer state")
         }
         let condition = expanded(inner, get(branch.children, 0), proof_bool(value, true),
             items, locals, self, calls, depth + 1)?
@@ -250,7 +281,21 @@ fn expanded_scan(context Expansion, value Expr, guard Expr,
     } else {
         scan_branches(inner, body, items, locals, self, calls, depth + 1)?
     }
-    discard scan_checks(context, inner, value, guard, identity, start, end)?
+    // Only paths reaching the recursive call / cursor assignment evaluate its
+    // arithmetic. This safety obligation belongs to the source transition.
+    discard expanded(inner, scan_transition(iteration, update, step), if counting {
+            proof_bool(value, true)
+        } else {
+            proof_not(exits.condition)
+        },
+        items, locals, self, calls, depth + 1)?
+    let summary = ScanExit {
+        condition = proof_and(domain.member, exits.condition)
+        accepted = proof_and(domain.member, exits.accepted)
+        all_false = exits.all_false
+        all_true = exits.all_true
+    }
+    discard scan_checks(context, inner, value, guard, identity, start, end, domain.member)?
     if counting {
         if start.kind != ExprKind.Integer || start.text != "0" {
             return Result.Err("count scan must start at the beginning of the List")
@@ -260,5 +305,5 @@ fn expanded_scan(context Expansion, value Expr, guard Expr,
     let scanned = quantified_value(value, identity, start, end, proof_not(summary.condition))
     let continuation = expanded(context, tail, proof_and(guard, scanned),
         bindings, locals, self, calls, depth + 1)?
-    Result.Ok(scan_result(context, value, summary, identity, start, end, continuation))
+    Result.Ok(scan_result(context, value, summary, identity, start, end, continuation, domain.reverse))
 }
