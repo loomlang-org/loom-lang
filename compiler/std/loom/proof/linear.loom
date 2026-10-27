@@ -132,6 +132,11 @@ fn same_predicates(a List[Predicate], b List[Predicate]) Bool {
 
 fn same(a Predicate, b Predicate) Bool {
     match a {
+        Predicate.Application(target, arguments, domain) => match b {
+            Predicate.Application(other, inputs, defined) => target == other && domain == defined &&
+            same_predicate_keys(arguments, inputs)
+            _ => false
+        }
         Predicate.ArrayPrefix(before, after, size) => match b {
             Predicate.ArrayPrefix(first, second, extent) => before == first && after == second &&
             compare(size.constant, extent.constant) == 0 && same_terms(size.terms, extent.terms)

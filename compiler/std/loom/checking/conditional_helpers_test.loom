@@ -23,12 +23,14 @@ test fn conditional_helpers_preserve_guards_eager_arguments_and_requirements() {
     discard accepted("fn same(v Int) Int { if v > 0 { let other = v\nreturn other } else { let other = 0\nreturn other } }\npub fn keep(v Int) Int ensures result >= 0 { same(v) }")
 }
 
-test fn conditional_helper_expansion_preserves_ieee_and_rejects_unsupported_paths() {
+test fn conditional_helper_expansion_preserves_ieee_and_partial_path_guards() {
     let floating = "fn not_positive(v Float) Bool { if v > 0.0 { false } else { true } }\ntype Source = Float where !(self > 0.0)\ntype Target = Float where not_positive(self)\n"
     let program = accepted(concat(floating, "pub fn convert(v Source) Target { Target(v) }"))
     assert get(get(program.functions, 0).body.children, 0).kind == ExprKind.Coerce
     rejects("fn mutable(v Int) Bool { var value = v\nif value > 0 { value = 0 }\nvalue == 0 }\npub fn keep(v Int) Int ensures mutable(result) { v }")
-    rejects("fn partial(v Int) Bool { if v > 0 { true } else { partial(v) } }\npub fn keep(v Int) Int requires v > 0 ensures partial(result) { v }")
+    let partial = "fn partial(v Int) Bool { if v > 0 { true } else { partial(v) } }\n"
+    discard accepted(concat(partial, "pub fn keep(v Int) Int requires v > 0 ensures partial(result) { v }"))
+    rejects(concat(partial, "pub fn keep(v Int) Int ensures partial(result) { v }"))
     let source = "import std.result.Result\nimport std.result.ConstraintError\nfn duplicate(v Int) Int { if v > 0 { v + v } else { v - v } }\ntype Whole = Int where true\ntype Huge = Int where "
     var duplicated = "self"
     var index = 0

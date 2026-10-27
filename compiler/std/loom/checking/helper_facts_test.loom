@@ -150,7 +150,7 @@ requires value == 0 || admitted(value)
     Positive(value)
 }
 """)
-    rejects_result("""
+    discard accepted_result("""
 fn positive(value Int) Bool {
     value > 0
 }
@@ -161,7 +161,7 @@ record Box {
 
 type Positive = Int where self > 0
 
-pub fn shared(box Box) Positive {
+pub fn inline_field(box Box) Positive {
     assert positive(box.value)
     Positive(box.value)
 }

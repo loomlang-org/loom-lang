@@ -37,6 +37,10 @@ fn solver_defined(proof ProofQuery, expr Expr, state State, depth Int) Result[Bo
     if shape.total {
         return Result.Ok(true)
     }
+    if predicate_application(expr) {
+        solver_fact(proof, application_fact(expr, state, true)?, state)
+        return Result.Ok(true)
+    }
     if expr.kind == ExprKind.Unary || expr.kind == ExprKind.Binary {
         let guard = arithmetic_guard(expr, state)?
         if !holds(guard, state.facts) {

@@ -30,6 +30,12 @@ fn unsupported_operation() ProofOperation {
 
 fn intrinsic_operation(primitive Text, ty Int, arity Int) ProofOperation {
     let name = sequence_operation(primitive)
+    if arity == 1 && (name == "proof_logical" || (name == "proof_defined" && ty == 2)) {
+        return operation_shape(1, OperandFlow.Eager, false, true)
+    }
+    if (name == "proof_predicate" || name == "proof_predicate_defined") && ty == 2 {
+        return operation_shape(arity, OperandFlow.Eager, false, name == "proof_predicate_defined")
+    }
     if name == "cell_get" && arity == 1 {
         return operation_shape(1, OperandFlow.Eager, true, true)
     }

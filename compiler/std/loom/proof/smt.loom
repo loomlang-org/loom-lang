@@ -430,6 +430,7 @@ fn smt_truncated_division(operator Text, left Text, right Text) Text {
 fn smt_predicate(writer SmtWriter, value Predicate, depth Int) Result[Text, Text] {
     discard smt_step(writer, depth)?
     match value {
+        Predicate.Application(target, arguments, domain) => smt_application(writer, target, arguments, domain, depth)
         Predicate.ArrayPrefix(before, after, size) => smt_prefix(writer, before, after, size)
         Predicate.Select(identity, path, index) => smt_select(writer, identity, path, index, ScalarDomain.Boolean)
         Predicate.Constant(value) => Result.Ok(if value {

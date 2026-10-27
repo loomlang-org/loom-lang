@@ -1,0 +1,62 @@
+import std.list.all
+import std.list.length
+
+fn balanced_text(value Text) Bool {
+    balanced(Input.Plain(value))
+}
+
+fn all_balanced(values List[Text]) Bool {
+    all(values, balanced_text)
+}
+
+fn preserve_all(values List[Text]) List[Text]
+requires all_balanced(values)
+ensures all_balanced(result)
+{
+    values
+}
+
+fn observed_all(values List[Text]) Bool
+ensures result == all_balanced(values)
+{
+    all_balanced(values)
+}
+
+fn nonempty_balanced(value Text) Bool {
+    let first = byte(value, 0)
+    balanced(Input.Plain(value)) && first != 0
+}
+
+fn observed_nonempty(values List[Text]) Bool
+ensures result == all(values, nonempty_balanced)
+{
+    all(values, nonempty_balanced)
+}
+
+fn reverse_balanced(values List[Text]) Bool {
+    var index = length(values) - 1
+    while index >= 0 {
+        if !balanced_text(values[index]) {
+            return false
+        }
+        index = index - 1
+    }
+    true
+}
+
+fn preserve_reverse(values List[Text]) List[Text]
+requires reverse_balanced(values)
+ensures reverse_balanced(result)
+{
+    values
+}
+
+test fn known_callbacks_keep_partial_predicate_evaluation_guards() {
+    assert all_balanced(preserve_all(["()", "(values)"]))
+    assert observed_all(["()", "(values)"])
+    assert !observed_all(["(", "()"]) && !observed_all(["()", "("])
+    // The empty suffix must not be evaluated after the first false element.
+    assert !observed_nonempty(["(", ""])
+    assert observed_nonempty(["()", "(values)"])
+    assert reverse_balanced(preserve_reverse(["()", "(reverse)"]))
+}

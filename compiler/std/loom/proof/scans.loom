@@ -140,6 +140,46 @@ fn scan_context(context Expansion) Expansion {
     }
 }
 
+// Successful scans establish checks only through their first exit. The prefix
+// is a mathematical guard, not another evaluation of the source predicate.
+// This rule also supplies exactly the safety goals for a hypothetical scan.
+fn scan_execution_checks(context Expansion, inner Expansion, source Expr, guard Expr,
+    identity Int, start Expr, end Expr, member Expr, exit Expr, reverse Bool, counting Bool) Result[Bool, Text] {
+    let point = proof_expr(source, ExprKind.Intrinsic, 1, "proof_bound", identity, [])
+    let before = scan_binder(context)
+    let previous = rename_bound(exit, identity, before)
+    let first = if reverse {
+        proof_expr(point, ExprKind.Intrinsic, 1, "proof_add", -1,
+            [point, proof_expr(point, ExprKind.Integer, 1, "1", -1, [])])
+    } else {
+        start
+    }
+    let last = if reverse {
+        end
+    } else {
+        point
+    }
+    let prefix = if counting {
+        proof_bool(source, true)
+    } else {
+        quantified_value(source, before, first, last, proof_not(previous))
+    }
+    var index = 0
+    while index < length(inner.checks) {
+        let check = get(inner.checks, index)
+        let condition = if check.required {
+            proof_logical(check.value)
+        } else {
+            proof_expr(check.value, ExprKind.Intrinsic, 2, "proof_defined", -1, [check.value])
+        }
+        let visited = proof_logical(proof_and(prefix, proof_and(member, check.guard)))
+        let checked = quantified_value(source, identity, start, end, guarded_value(visited, condition))
+        discard evaluated(context, guard, proof_logical(normalized_predicate(checked)?), true)?
+        index = index + 1
+    }
+    Result.Ok(true)
+}
+
 fn expanded_quantifier(context Expansion, value Expr, guard Expr,
     bindings List[ExpansionBinding], locals List[Local], self Bool,
     calls Int, depth Int) Result[Expr, Text] {
@@ -295,7 +335,19 @@ fn expanded_scan(context Expansion, value Expr, guard Expr,
         all_false = exits.all_false
         all_true = exits.all_true
     }
-    discard scan_checks(context, inner, value, guard, identity, start, end, domain.member)?
+    var partial = contains_application(summary.condition)
+    var check = 0
+    while check < length(inner.checks) && !partial {
+        let observed = get(inner.checks, check)
+        partial = contains_application(observed.value) || contains_application(observed.guard)
+        check = check + 1
+    }
+    if partial {
+        discard scan_execution_checks(context, inner, value, guard, identity, start, end,
+            domain.member, summary.condition, domain.reverse, counting)?
+    } else {
+        discard scan_checks(context, inner, value, guard, identity, start, end, domain.member)?
+    }
     if counting {
         if start.kind != ExprKind.Integer || start.text != "0" {
             return Result.Err("count scan must start at the beginning of the List")
@@ -305,5 +357,10 @@ fn expanded_scan(context Expansion, value Expr, guard Expr,
     let scanned = quantified_value(value, identity, start, end, proof_not(summary.condition))
     let continuation = expanded(context, tail, proof_and(guard, scanned),
         bindings, locals, self, calls, depth + 1)?
-    Result.Ok(scan_result(context, value, summary, identity, start, end, continuation, domain.reverse))
+    let output = scan_result(context, value, summary, identity, start, end, continuation, domain.reverse)
+    Result.Ok(if partial {
+            proof_logical(normalized_predicate(output)?)
+        } else {
+            output
+        })
 }

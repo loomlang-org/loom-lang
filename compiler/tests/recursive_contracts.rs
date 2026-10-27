@@ -140,7 +140,7 @@ fn main() {
     assert!(!output.status.success());
     let error = String::from_utf8_lossy(&output.stderr);
     assert!(
-        error.contains("recursive helper proof is unsupported"),
+        error.contains("required postcondition is not proved"),
         "{error}"
     );
 }

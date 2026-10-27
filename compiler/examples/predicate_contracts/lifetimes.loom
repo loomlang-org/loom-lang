@@ -1,0 +1,13 @@
+import std.time.sleep_ms
+
+async fn after_pause(value Text) Text
+requires balanced(Input.Plain(value))
+ensures balanced(Input.Plain(result))
+{
+    sleep_ms(1).await
+    value
+}
+
+test async fn immutable_predicate_evidence_survives_suspension() {
+    assert after_pause("(await)").await == "(await)"
+}
