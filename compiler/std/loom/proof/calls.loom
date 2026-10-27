@@ -598,6 +598,18 @@ fn applied_call_body(proof Verification, call Expr, function Function, arguments
             return source_body_call(proof, call.index, function, arguments, false, depth)
         }
     }
+    if contains_application(value) && !application_needed(proof, call.index) {
+        // A caller asking for an arithmetic/body relation still needs the
+        // existing source inference. Opaque congruence is useful when a clause
+        // names this application; it must not hide previously provable loops.
+        match inferred_body_call(proof, call.index, function, arguments, false, depth) {
+            Result.Ok(completed) => {
+                return Result.Ok(completed)
+            }
+            Result.Err(_) => {
+            }
+        }
+    }
     if !bounded_contract(value) {
         return Result.Err("body helper proof expansion budget exhausted")
     }
