@@ -60,6 +60,25 @@ fn scan_exclusive_test(value Expr) Option[Expr] {
             -1, [get(value.children, 0), limit]))
 }
 
+fn scan_transition(iteration Expr, update Expr, step Expr) Expr {
+    let value = get(update.children, 0)
+    let condition = get(iteration.children, 0)
+    if step.kind == ExprKind.Integer && step.text == "1" &&
+    (condition.text == "<" || condition.text == ">") {
+        // For native Int x < end, x + 1 <= end <= Int.max. The reverse
+        // rule is symmetric. This proves only the root operation safe:
+        // expanding its children still checks the actual step's evaluation.
+        // Inclusive bounds and larger steps retain ordinary overflow checks.
+        return scan_math(value, if value.text == "+" {
+                "proof_add"
+            } else {
+                "proof_sub"
+            },
+            get(value.children, 0), get(value.children, 1))
+    }
+    value
+}
+
 fn scan_domain(context Expansion, source Expr, initial Expr, limit Expr, step Expr,
     identity Int, reverse Bool, guard Expr) Result[ScanDomain, Text] {
     let one = proof_expr(source, ExprKind.Integer, 1, "1", -1, [])

@@ -516,6 +516,23 @@ ensures starts()
     true
 }
 "#,
+        // A unit step at an inclusive machine endpoint still overflows.
+        r#"fn inclusive(initial Int) Bool {
+    var index = initial
+    while index <= 9223372036854775807 {
+        if false {
+            return false
+        }
+        index = index + 1
+    }
+    true
+}
+fn fabricated() Bool
+ensures inclusive(9223372036854775807)
+{
+    true
+}
+"#,
     ] {
         fs::write(&source, unproved).unwrap();
         assert!(

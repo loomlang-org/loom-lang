@@ -78,7 +78,7 @@ test fn contract_helpers_use_the_defining_packages_private_bindings() {
 test fn scan_steps_do_not_establish_checks_the_source_never_evaluated() {
     let header = """
         fn advance(value Int) Int
-        requires value > 0
+        requires value > 1
         {
             1
         }
@@ -122,6 +122,14 @@ test fn scan_steps_do_not_establish_checks_the_source_never_evaluated() {
         ensures value > 0
         {
             0
+        }
+        """))
+    rejects(concat(header, """
+        fn fabricated(value Int) Bool
+        requires value == 1
+        ensures stopped(value)
+        {
+            true
         }
         """))
 }

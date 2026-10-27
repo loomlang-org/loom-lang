@@ -283,7 +283,7 @@ fn expanded_scan(context Expansion, value Expr, guard Expr,
     }
     // Only paths reaching the recursive call / cursor assignment evaluate its
     // arithmetic. This safety obligation belongs to the source transition.
-    discard expanded(inner, get(update.children, 0), if counting {
+    discard expanded(inner, scan_transition(iteration, update, step), if counting {
             proof_bool(value, true)
         } else {
             proof_not(exits.condition)
