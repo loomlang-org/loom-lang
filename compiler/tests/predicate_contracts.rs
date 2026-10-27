@@ -39,7 +39,7 @@ fn immutable_predicate_evidence_survives_composition_and_rechecks_edits() {
     ] {
         fs::write(
             &source,
-            format!("import std.text.concat\n{PREDICATES}\n{extra}"),
+            format!("import std.text.concat\nimport std.list.all\n{PREDICATES}\n{extra}"),
         )
         .unwrap();
         let output = check();
