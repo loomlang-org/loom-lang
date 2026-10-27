@@ -1,0 +1,125 @@
+record ScanDomain {
+    start Expr
+    end Expr
+    member Expr
+    reverse Bool
+}
+
+// Domain arithmetic is mathematical, including endpoints beyond machine Int.
+// Source arithmetic keeps its separate ordinary overflow obligations.
+fn scan_math(source Expr, operation Text, left Expr, right Expr) Expr {
+    proof_expr(source, ExprKind.Intrinsic, 1, operation, -1, [left, right])
+}
+
+fn scan_step(value Expr, cursor Int, reverse Bool) Option[Expr] {
+    if value.kind != ExprKind.Assign || value.index != cursor || length(value.children) != 1 {
+        return Option.None
+    }
+    let update = get(value.children, 0)
+    if update.kind != ExprKind.Binary || length(update.children) != 2 ||
+    update.text != (if reverse {
+            "-"
+        } else {
+            "+"
+        }) {
+        return Option.None
+    }
+    let first = get(update.children, 0)
+    let second = get(update.children, 1)
+    if first.kind == ExprKind.Local && first.index == cursor && !scan_mentions(second, cursor) {
+        return Option.Some(second)
+    }
+    if !reverse && second.kind == ExprKind.Local && second.index == cursor && !scan_mentions(first, cursor) {
+        return Option.Some(first)
+    }
+    Option.None
+}
+
+fn scan_exclusive_test(value Expr) Option[Expr] {
+    if value.kind != ExprKind.Binary || length(value.children) != 2 {
+        return Option.None
+    }
+    if value.text == "<" || value.text == ">" {
+        return Option.Some(value)
+    }
+    if value.text != "<=" && value.text != ">=" {
+        return Option.None
+    }
+    let reverse = value.text == ">="
+    let limit = scan_math(value, if reverse {
+            "proof_sub"
+        } else {
+            "proof_add"
+        },
+        get(value.children, 1), proof_expr(value, ExprKind.Integer, 1, "1", -1, []))
+    Option.Some(proof_expr(value, ExprKind.Binary, 2, if reverse {
+                ">"
+            } else {
+                "<"
+            },
+            -1, [get(value.children, 0), limit]))
+}
+
+fn scan_domain(context Expansion, source Expr, initial Expr, limit Expr, step Expr,
+    identity Int, reverse Bool, guard Expr) Result[ScanDomain, Text] {
+    let one = proof_expr(source, ExprKind.Integer, 1, "1", -1, [])
+    let bound = proof_expr(source, ExprKind.Intrinsic, 1, "proof_bound", identity, [])
+    let first = proof_expr(source, ExprKind.Binary, 2, if reverse {
+            ">"
+        } else {
+            "<"
+        }, -1,
+        [initial, limit])
+    let unit = step.kind == ExprKind.Integer && step.text == "1"
+    if !unit {
+        let positive = proof_expr(source, ExprKind.Binary, 2, ">", -1,
+            [step, proof_expr(source, ExprKind.Integer, 1, "0", -1, [])])
+        // Progress is a premise of this abstraction, not a runtime check we
+        // may invent. Only already-evaluated source guards and requirements
+        // can establish it. In particular a successful early return says
+        // nothing about the step of iterations that never executed.
+        let premises = [guard, first]
+        var index = 0
+        while index < length(context.checks) {
+            let check = get(context.checks, index)
+            if check.required && !check.universal {
+                push(premises, guarded_value(check.guard, check.value))
+            }
+            index = index + 1
+        }
+        if !implies_facts(premises, positive) {
+            return Result.Err("pure scan needs a proved positive step")
+        }
+    }
+    let distance = scan_math(source, "proof_sub", if reverse {
+            initial
+        } else {
+            bound
+        },
+        if reverse {
+            bound
+        } else {
+            initial
+        })
+    let member = if unit {
+        proof_bool(source, true)
+    } else {
+        proof_expr(source, ExprKind.Binary, 2, "==", -1,
+            [scan_math(source, "proof_mod", distance, step),
+                proof_expr(source, ExprKind.Integer, 1, "0", -1, [])])
+    }
+    Result.Ok(ScanDomain {
+            start = if reverse {
+                scan_math(source, "proof_add", limit, one)
+            } else {
+                initial
+            }
+            end = if reverse {
+                scan_math(source, "proof_add", initial, one)
+            } else {
+                limit
+            }
+            member = member
+            reverse = reverse
+        })
+}

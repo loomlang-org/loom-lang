@@ -1,0 +1,250 @@
+// Tail-recursive Boolean folds share the scan theory. The rewrite is private
+// proof data; executable calls, evaluation order and native stacks stay intact.
+fn recursive_scan_calls(value Expr, target Int, output List[Expr], budget List[Int]) Bool {
+    if get(budget, 0) <= 0 || length(output) > 1 {
+        return false
+    }
+    set(budget, 0, get(budget, 0) - 1)
+    if value.kind == ExprKind.Call && value.index == target {
+        push(output, value)
+    }
+    var index = 0
+    while index < length(value.children) {
+        if !recursive_scan_calls(get(value.children, index), target, output, budget) {
+            return false
+        }
+        index = index + 1
+    }
+    index = 0
+    while index < length(value.arms) {
+        let body = get(value.arms, index).body
+        var item = 0
+        while item < length(body) {
+            if !recursive_scan_calls(get(body, item), target, output, budget) {
+                return false
+            }
+            item = item + 1
+        }
+        index = index + 1
+    }
+    true
+}
+
+fn recursive_scan_contains(value Expr, target Int) Bool {
+    let calls = new[Expr]()
+    !recursive_scan_calls(value, target, calls, [256]) || length(calls) != 0
+}
+
+fn recursive_scan_value(value Expr) Expr {
+    if (value.kind == ExprKind.Block || value.kind == ExprKind.Return) && length(value.children) == 1 {
+        return recursive_scan_value(get(value.children, 0))
+    }
+    value
+}
+
+// A continuation becomes the next iteration; every other path retains its
+// actual return value. Recursion in an eager operand or a guard cannot move
+// across that operand's faults and therefore supplies no scan abstraction.
+fn recursive_scan_iteration(value Expr, target Int, depth Int) Result[Expr, Text] {
+    if depth <= 0 {
+        return Result.Err("recursive scan control-flow budget exhausted")
+    }
+    let source = recursive_scan_value(value)
+    if source.kind == ExprKind.Call && source.index == target {
+        return Result.Ok(proof_expr(source, ExprKind.Block, 0, "", -1, []))
+    }
+    if !recursive_scan_contains(source, target) {
+        return Result.Ok(proof_expr(source, ExprKind.Return, 2, "", -1, [source]))
+    }
+    if source.kind == ExprKind.Block && length(source.children) > 0 {
+        let body = clone(source.children)
+        var index = 0
+        while index + 1 < length(body) {
+            if recursive_scan_contains(get(body, index), target) {
+                return Result.Err("recursive scan needs a tail continuation")
+            }
+            index = index + 1
+        }
+        set(body, index, recursive_scan_iteration(get(body, index), target, depth - 1)?)
+        return Result.Ok(proof_expr(source, ExprKind.Block, 0, "", -1, body))
+    }
+    if source.kind == ExprKind.If && length(source.children) == 3 &&
+    !recursive_scan_contains(get(source.children, 0), target) {
+        return Result.Ok(proof_expr(source, ExprKind.If, 0, "", -1,
+                [get(source.children, 0),
+                    recursive_scan_iteration(get(source.children, 1), target, depth - 1)?,
+                    recursive_scan_iteration(get(source.children, 2), target, depth - 1)?]))
+    }
+    if source.kind == ExprKind.Binary && (source.text == "&&" || source.text == "||") &&
+    !recursive_scan_contains(get(source.children, 0), target) {
+        let continuing = recursive_scan_iteration(get(source.children, 1), target, depth - 1)?
+        let terminal = proof_expr(source, ExprKind.Return, 2, "", -1,
+            [proof_bool(source, source.text == "||")])
+        return Result.Ok(proof_expr(source, ExprKind.If, 0, "", -1,
+                [get(source.children, 0),
+                    if source.text == "&&" {
+                        continuing
+                    } else {
+                        terminal
+                    },
+                    if source.text == "&&" {
+                        terminal
+                    } else {
+                        continuing
+                    }]))
+    }
+    Result.Err("recursive scan needs a tail Boolean fold")
+}
+
+fn recursive_scan_choice(body Expr) Option[Expr] {
+    let source = recursive_scan_value(body)
+    if source.kind == ExprKind.If && length(source.children) == 3 {
+        return Option.Some(source)
+    }
+    if source.kind == ExprKind.Block && length(source.children) == 2 {
+        let first = get(source.children, 0)
+        if first.kind == ExprKind.If && length(first.children) == 2 {
+            let terminal = recursive_scan_value(get(first.children, 1))
+            if terminal.kind == ExprKind.Bool {
+                return Option.Some(proof_expr(source, ExprKind.If, 2, "", -1,
+                        [get(first.children, 0), terminal, get(source.children, 1)]))
+            }
+        }
+    }
+    Option.None
+}
+
+fn recursive_scan_next(value Expr, cursor Int, next Expr, depth Int) Result[Expr, Text] {
+    if depth <= 0 {
+        return Result.Err("recursive scan requirement budget exhausted")
+    }
+    if value.kind == ExprKind.Local && value.index == cursor {
+        return Result.Ok(next)
+    }
+    let children = new[Expr]()
+    var index = 0
+    while index < length(value.children) {
+        push(children, recursive_scan_next(get(value.children, index), cursor, next, depth - 1)?)
+        index = index + 1
+    }
+    let arms = new[Arm]()
+    index = 0
+    while index < length(value.arms) {
+        let arm = get(value.arms, index)
+        let body = new[Expr]()
+        var item = 0
+        while item < length(arm.body) {
+            push(body, recursive_scan_next(get(arm.body, item), cursor, next, depth - 1)?)
+            item = item + 1
+        }
+        push(arms, Arm {
+                body = body
+                ..arm
+            })
+        index = index + 1
+    }
+    Result.Ok(Expr {
+            children = children
+            arms = arms
+            ..value
+        })
+}
+
+fn recursive_scan_body(function Function, target Int) Option[Expr] {
+    if function.is_async || function.result != 2 || function.runtime_name != "" {
+        return Option.None
+    }
+    let choice = match recursive_scan_choice(function.body) {
+        Option.Some(value) => value
+        Option.None => {
+            return Option.None
+        }
+    }
+    let calls = new[Expr]()
+    if !recursive_scan_calls(function.body, target, calls, [512]) || length(calls) != 1 {
+        return Option.None
+    }
+    let call = get(calls, 0)
+    if length(call.children) != length(function.params) {
+        return Option.None
+    }
+    var cursor = -1
+    var index = 0
+    while index < length(call.children) {
+        let argument = get(call.children, index)
+        if argument.kind != ExprKind.Local || argument.index != index {
+            if cursor >= 0 || get(function.params, index) != 1 || argument.kind != ExprKind.Binary ||
+            (argument.text != "+" && argument.text != "-") || length(argument.children) != 2 {
+                return Option.None
+            }
+            let input = get(argument.children, 0)
+            if input.kind != ExprKind.Local || input.index != index || scan_mentions(get(argument.children, 1), index) {
+                return Option.None
+            }
+            cursor = index
+        }
+        index = index + 1
+    }
+    if cursor < 0 {
+        return Option.None
+    }
+    let yes = get(choice.children, 1)
+    let recurring = recursive_scan_contains(yes, target)
+    let branch = get(choice.children, if recurring {
+            1
+        } else {
+            2
+        })
+    let base = recursive_scan_value(get(choice.children, if recurring {
+                2
+            } else {
+                1
+            }))
+    if base.kind != ExprKind.Bool {
+        return Option.None
+    }
+    let condition = get(choice.children, 0)
+    if condition.kind != ExprKind.Binary || length(condition.children) != 2 {
+        return Option.None
+    }
+    let position = get(condition.children, 0)
+    if position.kind != ExprKind.Local || position.index != cursor || scan_mentions(get(condition.children, 1), cursor) {
+        return Option.None
+    }
+    let relation = if recurring {
+        condition.text
+    } else {
+        inverse(condition.text)
+    }
+    if relation != "<" && relation != ">" && relation != "<=" && relation != ">=" {
+        return Option.None
+    }
+    let continuation = match recursive_scan_iteration(branch, target, 64) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            return Option.None
+        }
+    }
+    let update = proof_expr(call, ExprKind.Assign, 0, "", cursor, [get(call.children, cursor)])
+    let iteration = [continuation]
+    index = 0
+    // Every actual recursive invocation checks its own requirements, including
+    // the final invocation taking the base branch. They are not recursive
+    // guarantees and cannot disappear when calls become proof iterations.
+    while index < length(function.preconditions) {
+        let condition = match recursive_scan_next(get(function.preconditions, index),
+            cursor, get(call.children, cursor), 64) {
+            Result.Ok(value) => value
+            Result.Err(_) => {
+                return Option.None
+            }
+        }
+        push(iteration, proof_expr(condition, ExprKind.Assert, 0, "", -1, [condition]))
+        index = index + 1
+    }
+    push(iteration, update)
+    let loop = proof_expr(choice, ExprKind.While, 0, "", -1,
+        [proof_expr(condition, ExprKind.Binary, 2, relation, -1, condition.children),
+            proof_expr(choice, ExprKind.Block, 0, "", -1, iteration)])
+    Option.Some(proof_expr(function.body, ExprKind.Block, 2, "", -1, [loop, base]))
+}

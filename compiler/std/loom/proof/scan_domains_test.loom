@@ -1,0 +1,41 @@
+fn scan_domain_admitted(context Expansion, step Expr, guard Expr) Bool {
+    match scan_domain(context, step, literal("0"), literal("10"), step, -1, false, guard) {
+        Result.Ok(_) => true
+        Result.Err(_) => false
+    }
+}
+
+test fn scan_progress_must_follow_from_source_not_successful_early_exit() {
+    let context = scan_fixture()
+    let yes = proof_bool(literal("0"), true)
+    assert scan_domain_admitted(context, literal("7"), yes)
+    assert !scan_domain_admitted(context, literal("0"), yes)
+    assert !scan_domain_admitted(context, literal("-7"), yes)
+    assert !scan_domain_admitted(context, local(0), yes)
+    assert scan_domain_admitted(context, local(0), operation(">=", local(0), literal("1")))
+    assert length(context.checks) == 0
+    let positive = operation(">", local(0), literal("0"))
+    discard evaluated(context, yes, positive, true, true)
+    // A quantified check may not have executed past the first exit.
+    assert !scan_domain_admitted(context, local(0), yes)
+    discard evaluated(context, yes, positive, true)
+    assert scan_domain_admitted(context, local(0), yes)
+    assert length(context.checks) == 2
+}
+
+test fn reverse_scan_endpoints_are_mathematical_not_native_overflows() {
+    let maximum = literal("9223372036854775807")
+    let context = scan_fixture()
+    let domain = match scan_domain(context, maximum, maximum, literal("-1"), literal("1"),
+        -1, true, proof_bool(maximum, true)) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            assert false
+            return
+        }
+    }
+    assert domain.reverse
+    assert domain.end.kind == ExprKind.Intrinsic && domain.end.text == "proof_add"
+    assert total_scalar(domain.end)
+    assert length(context.checks) == 0
+}

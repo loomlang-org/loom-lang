@@ -75,7 +75,7 @@ test fn invariant_callbacks_check_all_targets_returns_and_preconditions() {
             callback(value)
         }
         """
-    resource_reject_reason(concat(header, """
+    let choices = concat(header, """
         fn borrowed(value Input) Bool {
             value.values[0] > 0
         }
@@ -86,8 +86,13 @@ test fn invariant_callbacks_check_all_targets_returns_and_preconditions() {
                 borrowed
             }
         }
-        type Invalid = Input where apply(self, choose(true))
-        """), "type constraints may observe immutable fields, not shared mutable contents")
+        """)
+    // A known selector invokes only its selected target. An input-dependent
+    // selector must retain every possible target's storage restrictions.
+    resource_accept(concat(choices, "type Valid = Input where apply(self, choose(true))"))
+    resource_reject_reason(concat(choices,
+            "type Invalid = Input where apply(self, choose(self.count > 0))"),
+        "type constraints may observe immutable fields, not shared mutable contents")
     resource_reject(concat(header, """
         fn has_values(values List[Int]) Bool {
             values[0] > 0

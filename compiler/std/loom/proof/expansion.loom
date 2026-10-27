@@ -54,6 +54,9 @@ fn helper_type(program Program, ty Int, depth Int) Bool {
     if shape.kind == TypeKind.Refined && length(shape.fields) == 1 {
         return helper_type(program, get(shape.fields, 0).ty, depth + 1)
     }
+    if shape.kind == TypeKind.Frame {
+        return frame_input_program(program, ty)
+    }
     // Values may remain opaque, including unresolved generic entries. Passing
     // them establishes no storage facts; unsupported observations still reject.
     shape.kind == TypeKind.Record || shape.kind == TypeKind.Tuple || shape.kind == TypeKind.Enum ||
@@ -193,30 +196,49 @@ fn expanded_call(context Expansion, value Expr, guard Expr, bindings List[Expans
         return expanded(context, proof_expr(value, ExprKind.Intrinsic, function.result,
                 function.runtime_name, -1, value.children), guard, bindings, locals, self, calls, depth + 1)
     }
-    if function.runtime_name != "" || !helper_type(context.program, function.result, 0) || length(function.params) != length(value.children) {
+    if function.runtime_name != "" || length(function.params) != length(value.children) {
         return Result.Err("helper proof needs a source scalar or inline aggregate function")
     }
-    var index = 0
-    while index < calls {
-        if get(context.active, index) == value.index {
-            return Result.Err("recursive helper proof is unsupported")
-        }
-        index = index + 1
-    }
     let arguments = new[ExpansionBinding]()
-    index = 0
+    var index = 0
     // Call arguments execute eagerly, even when an unused parameter or the
     // helper's own short circuit would omit their substituted expressions.
     while index < length(function.params) {
-        let ty = get(function.params, index)
-        if !helper_type(context.program, ty, 0) && !(context.list_lengths && proof_sequence_type(context.program, ty)) {
-            return Result.Err("helper parameters must be scalars or inline aggregates")
-        }
         let argument = expanded(context, get(value.children, index), guard, bindings, locals, self, calls, depth + 1)?
         push(arguments, ExpansionBinding {
                 local = index
                 value = argument
             })
+        index = index + 1
+    }
+    expanded_application(context, value, guard, arguments, calls, depth)
+}
+
+// Prepared arguments already denote their invocation's values. In particular,
+// closure captures must not be evaluated again when the callback is invoked.
+fn expanded_application(context Expansion, value Expr, guard Expr,
+    arguments List[ExpansionBinding], calls Int, depth Int) Result[Expr, Text] {
+    if value.index < 0 || value.index >= length(context.program.functions) || calls >= 32 {
+        return Result.Err("helper has no bounded checked instance")
+    }
+    let function = get(context.program.functions, value.index)
+    if function.is_async || length(function.result_cleanup) != 0 ||
+    function.runtime_name != "" || !helper_type(context.program, function.result, 0) ||
+    length(function.params) != length(arguments) {
+        return Result.Err("helper proof needs a source scalar or inline aggregate function")
+    }
+    var index = 0
+    while index < length(function.params) {
+        if !helper_type(context.program, get(function.params, index), 0) {
+            return Result.Err("helper parameters must be scalars or inline aggregates")
+        }
+        index = index + 1
+    }
+    index = 0
+    while index < calls {
+        if get(context.active, index) == value.index {
+            return Result.Err("recursive helper proof is unsupported")
+        }
         index = index + 1
     }
     if calls == length(context.active) {
@@ -232,7 +254,55 @@ fn expanded_call(context Expansion, value Expr, guard Expr, bindings List[Expans
     }
     // Declared postconditions have already been checked normally. They are not
     // assumptions for this expansion; only the actual body supplies its value.
-    expanded_block(context, function.body, guard, arguments, function.locals, false, calls + 1, depth + 1, true)
+    let body = match recursive_scan_body(function, value.index) {
+        Option.Some(body) => body
+        Option.None => function.body
+    }
+    expanded_block(context, body, guard, arguments, function.locals, false, calls + 1, depth + 1, true)
+}
+
+fn expanded_callback(context Expansion, value Expr, callback Expr, arguments List[Expr],
+    guard Expr, calls Int, depth Int) Result[Expr, Text] {
+    discard expansion_step(context, depth)?
+    if callback.kind == ExprKind.If && length(callback.children) == 3 {
+        let selected = get(callback.children, 0)
+        if selected.kind == ExprKind.Bool {
+            return expanded_callback(context, value,
+                get(callback.children, if is_bool(selected, true) {
+                        1
+                    } else {
+                        2
+                    }),
+                arguments, guard, calls, depth + 1)
+        }
+        let yes = expanded_callback(context, value, get(callback.children, 1), arguments,
+            proof_and(guard, selected), calls, depth + 1)?
+        let no = expanded_callback(context, value, get(callback.children, 2), arguments,
+            proof_and(guard, proof_not(selected)), calls, depth + 1)?
+        return Result.Ok(proof_choice(selected, yes, no))
+    }
+    if callback.kind != ExprKind.FunctionRef {
+        return Result.Err("contract callback needs a known checked function")
+    }
+    let inputs = new[ExpansionBinding]()
+    var index = 0
+    while index < length(callback.children) {
+        push(inputs, ExpansionBinding {
+                local = length(inputs)
+                value = get(callback.children, index)
+            })
+        index = index + 1
+    }
+    index = 0
+    while index < length(arguments) {
+        push(inputs, ExpansionBinding {
+                local = length(inputs)
+                value = get(arguments, index)
+            })
+        index = index + 1
+    }
+    expanded_application(context, proof_expr(value, ExprKind.Call, value.ty, "", callback.index, []),
+        guard, inputs, calls, depth + 1)
 }
 
 fn expanded_block(context Expansion, value Expr, guard Expr, bindings List[ExpansionBinding], locals List[Local], self Bool, calls Int, depth Int, returns Bool) Result[Expr, Text] {
@@ -333,6 +403,35 @@ fn expanded(context Expansion, value Expr, guard Expr, bindings List[ExpansionBi
     if value.kind == ExprKind.Call {
         return expanded_call(context, value, guard, bindings, locals, self, calls, depth + 1)
     }
+    if value.kind == ExprKind.FunctionRef {
+        let captures = new[Expr]()
+        var index = 0
+        while index < length(value.children) {
+            push(captures, expanded(context, get(value.children, index), guard,
+                    bindings, locals, self, calls, depth + 1)?)
+            index = index + 1
+        }
+        return Result.Ok(proof_expr(value, value.kind, value.ty, value.text, value.index, captures))
+    }
+    if value.kind == ExprKind.IndirectCall && length(value.children) > 0 {
+        let callback = expanded(context, get(value.children, 0), guard, bindings, locals, self, calls, depth + 1)?
+        let arguments = new[Expr]()
+        var index = 1
+        while index < length(value.children) {
+            push(arguments, expanded(context, get(value.children, index), guard,
+                    bindings, locals, self, calls, depth + 1)?)
+            index = index + 1
+        }
+        return expanded_callback(context, value, callback, arguments, guard, calls, depth + 1)
+    }
+    if value.kind == ExprKind.ClosureEnvironment && length(value.children) == 1 {
+        let callback = expanded(context, get(value.children, 0), guard, bindings, locals, self, calls, depth + 1)?
+        if callback.kind != ExprKind.FunctionRef || callback.index != value.index ||
+        length(callback.children) != 1 {
+            return Result.Err("contract capture needs a known checked environment")
+        }
+        return Result.Ok(get(callback.children, 0))
+    }
     if context.list_lengths && list_length_expression(value) {
         return expanded(context, get(value.children, 0), guard, bindings, locals, self, calls, depth + 1)
     }
@@ -346,7 +445,8 @@ fn expanded(context Expansion, value Expr, guard Expr, bindings List[ExpansionBi
         let receiver = expanded(context, get(value.children, 0), guard, bindings, locals, self, calls, depth + 1)?
         return expanded_field(context, value, receiver, depth + 1)
     }
-    if value.kind == ExprKind.Record {
+    if value.kind == ExprKind.Record ||
+    (value.kind == ExprKind.FrameNew && frame_input_program(context.program, value.ty)) {
         let fields = new[Expr]()
         var index = 0
         while index < length(value.children) {

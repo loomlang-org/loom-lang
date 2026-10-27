@@ -1,8 +1,14 @@
 import std.int.to_text
 import std.text.concat
 
-fn odd(value Int) Bool { value % 2 != 0 }
-fn label(value Int) Text { to_text(value) }
+fn odd(value Int) Bool {
+    value % 2 != 0
+}
+
+fn label(value Int) Text {
+    to_text(value)
+}
+
 fn rendered_transforms() Text {
     let values = new[Int]()
     push(values, 1)
@@ -14,23 +20,54 @@ fn rendered_transforms() Text {
 
 test fn transformations_work_at_runtime_and_compile_time() {
     assert rendered_transforms() == "13"
-    assert comptime { rendered_transforms() } == "13"
+    assert comptime {
+        rendered_transforms()
+    } == "13"
 }
 
-fn unexpected_transform(value Int) Text { assert false
+fn unexpected_transform(value Int) Text {
+    assert false
     to_text(value)
 }
-fn unexpected_predicate(value Int) Bool { assert false
+
+fn unexpected_predicate(value Int) Bool {
+    assert false
     value == 0
 }
-fn unexpected_combine(accumulator Text, value Int) Text { assert false
+
+fn unexpected_combine(accumulator Text, value Int) Text {
+    assert false
     concat(accumulator, to_text(value))
 }
+
 test fn empty_transformations_do_not_call_callbacks() {
     let empty = new[Int]()
     assert length(map[Int, Text](empty, unexpected_transform)) == 0
     assert length(filter(empty, unexpected_predicate)) == 0
     assert fold[Int, Text](empty, "initial", unexpected_combine) == "initial"
+    assert all(empty, unexpected_predicate)
+    assert !any(empty, unexpected_predicate)
+}
+
+test fn boolean_scans_short_circuit_and_visit_shared_changes_in_source_order() {
+    let values = [1, 2, 3]
+    let visited = new[Int]()
+    let predicate = fn(value Int) Bool {
+        push(visited, value)
+        if value == 1 {
+            set(values, 1, 7)
+            push(values, 9)
+        }
+        value < 7
+    }
+    assert !all(values, predicate)
+    assert length(visited) == 2 && visited[0] == 1 && visited[1] == 7
+    assert any([1, 7, 3], fn(value Int) Bool {
+            value == 7
+        })
+    assert comptime {
+        all([1, 3], odd) && any([2, 3], odd)
+    }
 }
 
 record Mutation {
@@ -38,24 +75,53 @@ record Mutation {
     source List[Mutation]
     trace List[Int]
 }
+
 fn mutations() List[Mutation] {
     let source = new[Mutation]()
     let trace = new[Int]()
-    push(source, Mutation { value = 1 source = source trace = trace })
-    push(source, Mutation { value = 2 source = source trace = trace })
+    push(source, Mutation {
+            value = 1
+            source = source
+            trace = trace
+        })
+    push(source, Mutation {
+            value = 2
+            source = source
+            trace = trace
+        })
     source
 }
+
 fn observe(value Mutation) Int {
     push(value.trace, value.value)
-    push(value.source, Mutation { value = 9 source = value.source trace = value.trace })
+    push(value.source, Mutation {
+            value = 9
+            source = value.source
+            trace = value.trace
+        })
     if value.value == 1 {
-        set(value.source, 0, Mutation { value = 8 source = value.source trace = value.trace })
-        set(value.source, 1, Mutation { value = 7 source = value.source trace = value.trace })
+        set(value.source, 0, Mutation {
+                value = 8
+                source = value.source
+                trace = value.trace
+            })
+        set(value.source, 1, Mutation {
+                value = 7
+                source = value.source
+                trace = value.trace
+            })
     }
     value.value
 }
-fn observe_and_keep(value Mutation) Bool { observe(value) > 0 }
-fn observe_and_fold(accumulator Int, value Mutation) Int { accumulator * 10 + observe(value) }
+
+fn observe_and_keep(value Mutation) Bool {
+    observe(value) > 0
+}
+
+fn observe_and_fold(accumulator Int, value Mutation) Int {
+    accumulator * 10 + observe(value)
+}
+
 fn assert_visits(values List[Mutation]) {
     let trace = get(values, 0).trace
     assert length(values) == 4 && length(trace) == 2

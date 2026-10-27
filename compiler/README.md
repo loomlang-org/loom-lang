@@ -658,11 +658,12 @@ the budget on future LLVM upgrades; these tuning options are not a stable API.
   `append`. Self-append copies the initial source prefix; clone detaches the outer
   list while preserving sharing of contained data. These are ordinary Loom functions
   and work at compile time, without additional intrinsics.
-- Source `std.list.map`, `filter`, and `fold` accept typed callbacks. Traversal
+- Source `std.list.map`, `filter`, `fold`, `all`, and `any` accept typed callbacks. Traversal
   reads the initial index range once, in ascending order: callback appends are
   not visited, while changes to unread elements are observed. Map/filter return
   a new outer List and retain element sharing. Fold accepts a distinct accumulator
-  type and returns its initial value for an empty List.
+  type and returns its initial value for an empty List. All/any short-circuit;
+  their empty results are true/false, respectively.
 - Source `std.list.nonempty` checks an external List once with `copy_from`, or
   constructs directly with `new(first)`. Its `map` returns `NonEmpty[U]` and
   `length` proves a positive result, including in shared-worker builds. Assignment
@@ -3537,13 +3538,27 @@ operation. General relational content induction remains open.
 Bounded pure scans can express List predicates over modeled integer elements or
 inline field paths without special
 helper names or a new source quantifier syntax. The current fragment recognizes
-a stable exclusive upper bound, an `Int` cursor incremented by one, and pure
+a stable integer bound, an `Int` cursor with a proved positive forward or reverse
+step, and pure
 Boolean early returns followed by a Boolean tail expression. Iterations may
 contain several conditions, nested branches and local rebinding, but cannot
 rebind outer state before the cursor step. Uniform false exits derive a
 universal predicate; uniform true exits derive its existential dual. Mixed or
 computed Boolean exits use the first exiting iteration, not any later true
-witness. The tail executes only if no early return occurred.
+witness, including during descending traversal. Non-unit steps restrict the
+quantified domain to the actual arithmetic progression. Inclusive bounds use
+mathematical endpoints; source arithmetic still needs its own overflow proof.
+The tail executes only if no early return occurred.
+Direct tail-recursive Boolean folds with one changing cursor and a constant base
+result normalize to the same proof rules. Every recursive invocation retains
+its requirements, including the invocation taking the base branch. This does
+not prove arbitrary recursion, graph induction or termination.
+Known function values, conditional targets and read-only closure environments
+can compose through these helpers, including source `std.list.all`/`any` over
+generic elements. Arguments and captures retain their already-evaluated values;
+unknown callbacks supply no purity or behavioral assumption. The
+[recursive scan example](examples/smt_contracts/recursive_scans.loom) proves
+callback/recursive equivalence and content-preserving copying.
 The [search example](examples/smt_contracts/searches.loom) composes these duals,
 write witnesses and loop clearing over immutable fields beside shared children.
 The [branch example](examples/smt_contracts/scan_branches.loom) covers local

@@ -539,7 +539,7 @@ fn applied_call(proof Verification, call Expr, function Function, arguments Call
         let reference = get(expressions, index)
         push(references, ExpansionBinding {
                 local = reference.index
-                value = reference
+                value = callback_reference(proof.program, reference, get(arguments.values, index), state)
             })
         index = index + 1
     }
@@ -556,6 +556,33 @@ fn applied_call(proof Verification, call Expr, function Function, arguments Call
         return Result.Err("body helper proof expansion budget exhausted")
     }
     call_results(proof, value, context, state, boundary, depth)
+}
+
+// Retain a known target at the same already-evaluated call boundary as scalar
+// arguments. Captures are existing values in fresh proof slots, not reconstructed
+// source expressions: later argument effects must not reread an earlier capture.
+fn callback_reference(program Program, reference Expr, value Value, state State) Expr {
+    match value {
+        Value.Function(target, captures) => {
+            if target < 0 || target >= length(program.functions) {
+                return reference
+            }
+            let function = get(program.functions, target)
+            if length(captures) > length(function.params) {
+                return reference
+            }
+            let children = new[Expr]()
+            var index = 0
+            while index < length(captures) {
+                push(children, proof_expr(reference, ExprKind.Local, get(function.params, index),
+                        "", length(state.locals), []))
+                push(state.locals, get(captures, index))
+                index = index + 1
+            }
+            proof_expr(reference, ExprKind.FunctionRef, reference.ty, "", target, children)
+        }
+        _ => reference
+    }
 }
 
 fn call_results(proof Verification, value Expr, context Expansion, state State,

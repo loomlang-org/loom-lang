@@ -114,7 +114,10 @@ Mutable Bytes now share these versioned extent/cell rules, including helper
 composition, entry observations and bounded copy loops. Checked append retains
 old valid prefixes across possible aliases without assuming an unchanged source
 length or restoring observations lost to interference. These frames compose
-with finite histograms only within the proved preserved extent. General content
+with finite histograms only within the proved preserved extent. Directed Boolean
+scans, direct tail-recursive folds and known callbacks now compose through the
+same bounded sequence rules, including generic elements and read-only captures.
+General content
 induction and constrained shared-alias preservation remain open.
 
 Use these complete acceptance stories, rather than a count of syntax features:
