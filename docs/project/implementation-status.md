@@ -412,8 +412,10 @@ supported theories and boundaries. The central rules are:
   each observed child keeps only its independently validated predicate. Direct
   stores retain observations of provably different invariant storage types;
   equal or unresolved types still may alias, and header separation does not
-  imply graph separation. The native lifecycle trial covers replacement, helper
-  construction, CTFE, workers, suspension, cancellation cleanup and faults.
+  imply graph separation. Helper stores materialize continuing child predicates
+  before the atomic transition, never assuming its required post-state. The
+  native lifecycle trial covers helper construction/replacement, CTFE, workers,
+  suspension, cancellation cleanup and faults.
   Unproved state relationships and general nested-graph publication remain
   conservative.
 

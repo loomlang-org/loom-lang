@@ -10,7 +10,7 @@ fn update_literal(value Expr) Bool {
 }
 
 fn proved_update_expression(env Environment, functions List[Function], locals List[Local], value Expr) Bool {
-    if env.expanding_helpers || env.stage_depth >= 32 {
+    if env.stage_depth >= 32 {
         return false
     }
     let receiver = get(value.children, 0)
@@ -441,7 +441,7 @@ fn list_mutation_input(probe ListMutationInputs, argument Expr, depth Int) Resul
 }
 
 fn list_mutation_proof(env Environment, value Expr, shared Bool, writes Int) Result[Bool, Failure] {
-    if value.kind != ExprKind.Call || value.index < 0 || env.expanding_helpers || env.stage_depth >= 32 {
+    if value.kind != ExprKind.Call || value.index < 0 || env.stage_depth >= 32 {
         return Result.Ok(false)
     }
     var root = -1
@@ -490,6 +490,9 @@ fn list_mutation_proof(env Environment, value Expr, shared Bool, writes Int) Res
         push(inputs, list_mutation_input(probe_inputs, get(value.children, index), 0)?)
         index = index + 1
     }
+    // Child parameters keep their own checked policies during interference.
+    // Explicit mutation inputs above take precedence over global guarantees.
+    std.list.append(protected, continuing_sequence_guarantees(env))
     let scope = predicate_context(helpers, root, locals, 0, true)?
     let program = prepared_in(scope, true)?
     let probe = Function {

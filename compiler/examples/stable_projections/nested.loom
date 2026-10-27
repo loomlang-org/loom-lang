@@ -17,8 +17,12 @@ fn publish(first PositiveHead, include Bool) Result[Groups, ConstraintError] {
     Groups(draft)
 }
 
-fn replace(groups Groups, next PositiveHead) {
+fn forwarded(groups List[PositiveHead], next PositiveHead) {
     groups[0] = next
+}
+
+fn replace(groups Groups, next PositiveHead) {
+    forwarded(groups, next)
 }
 
 fn archived_head(archive Archive) Int

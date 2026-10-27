@@ -94,6 +94,27 @@ type Invalid = List[Node] where length(self) > 0 && length(self[0].children) == 
         assert!(!rejected.status.success());
         assert!(String::from_utf8_lossy(&rejected.stderr).contains("shared mutable contents"));
     }
+
+    fs::write(
+        &main,
+        r#"
+import std.list.length
+import std.list.push
+type Head = List[Int] where length(self) > 0 && self[0] > 0
+type Groups = List[Head] where length(self) == 1 && self[0][0] > 0
+fn grow_then_fail(groups List[Head], next Head) {
+    push(groups, next)
+    assert false
+}
+pub fn invalid(groups Groups, next Head) {
+    grow_then_fail(groups, next)
+}
+"#,
+    )
+    .unwrap();
+    let rejected = common::loom(&["check", directory.path().to_str().unwrap()]);
+    assert!(!rejected.status.success());
+    assert!(String::from_utf8_lossy(&rejected.stderr).contains("constrained sequence"));
 }
 
 #[test]

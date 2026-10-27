@@ -105,8 +105,11 @@ test fn nested_sequence_constraints_preserve_children_without_freezing_them() {
         type Head = List[Int] where length(self) > 0 && self[0] > 0
         type Groups = List[Head] where length(self) > 0 && self[0][0] > 0
         type Nested = List[Groups] where length(self) > 0 && self[0][0][0] > 0
-        fn replace(groups Groups, value Head) {
+        fn forwarded(groups List[Head], value Head) {
             groups[0] = value
+        }
+        fn replace(groups Groups, value Head) {
+            forwarded(groups, value)
         }
         fn read(groups Nested) Int
         ensures result > 0
@@ -153,8 +156,11 @@ test fn nested_record_elements_retain_their_checked_byte_headers() {
             notes List[Int]
         }
         type Pages = List[Page] where length(self) > 0 && self[0].header[0] == 35
-        pub fn replace(pages Pages, next Page) {
+        fn forwarded(pages List[Page], next Page) {
             pages[0] = next
+        }
+        pub fn replace(pages Pages, next Page) {
+            forwarded(pages, next)
         }
         pub fn read(pages Pages) Int
         ensures result == 35
@@ -190,6 +196,16 @@ test fn nested_constraints_do_not_assume_child_contents_or_outer_alias_safety() 
         {
             groups[0] = Head([2])
             groups[0][0]
+        }
+        """, """
+        import std.list.push
+        type Single = List[Head] where length(self) == 1 && self[0][0] > 0
+        fn grow_then_fail(groups List[Head], next Head) {
+            push(groups, next)
+            assert false
+        }
+        pub fn invalid(groups Single, next Head) {
+            grow_then_fail(groups, next)
         }
         """]
     var index = 0

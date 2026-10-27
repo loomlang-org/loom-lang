@@ -19,8 +19,9 @@ Each actual store independently preserves the complete child predicate.
 
 [Nested publication](nested.loom) applies the same rule across several shared
 collection levels. Inner values may change while retaining their constraints;
-outer replacements must preserve the outer predicate. It exercises checked
-construction, normal and compile-time execution, workers, suspension, cancellation
+outer replacements must preserve the outer predicate, including through ordinary
+helpers over its representation. It exercises checked construction, normal and
+compile-time execution, workers, suspension, cancellation
 cleanup and faults. The retained graph stays shared throughout. A controlled
 outer header supplies no permission to freeze its children or assume their
 contents stay equal to an earlier read.

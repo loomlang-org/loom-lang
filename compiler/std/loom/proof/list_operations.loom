@@ -176,14 +176,19 @@ fn list_operation_outcomes(proof Verification, primitive Text, ty Int, receiver_
         // store. Argument values remain earlier snapshots: they do not recover
         // equality with cells another worker may have changed in the meantime.
         let atomic = preservation_snapshot(proof)
-        let entries = established_conditions(atomic, proof.preservation, state)?
+        let entries = established_storage_invariants(atomic, state)
         let output = new[Outcome]()
         var path = 0
         while path < length(entries) {
-            discard append(output, list_operation_outcomes(atomic, primitive, ty, receiver_type, CallArguments {
-                        state = get(entries, path).state
-                        values = inputs.values
-                    })?)?
+            let roots = established_conditions(atomic, proof.preservation, get(entries, path).state)?
+            var root = 0
+            while root < length(roots) {
+                discard append(output, list_operation_outcomes(atomic, primitive, ty, receiver_type, CallArguments {
+                            state = get(roots, root).state
+                            values = inputs.values
+                        })?)?
+                root = root + 1
+            }
             path = path + 1
         }
         return Result.Ok(output)
