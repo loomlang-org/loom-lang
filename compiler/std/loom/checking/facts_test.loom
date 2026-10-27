@@ -52,7 +52,7 @@ test fn scalar_copy_facts_preserve_identity_without_guessing_mutability_or_alias
         var copy = value
         copy = 0
         Positive(copy) }
-        pub fn shared(box Box) Result[Positive, ConstraintError] { assert box.value > 0
+        pub fn inline_field(box Box) Positive { assert box.value > 0
         let copy = box.value
         Positive(copy) }
         pub fn later(value Int) Positive { let copy = value
@@ -65,7 +65,7 @@ test fn scalar_copy_facts_preserve_identity_without_guessing_mutability_or_alias
     var index = 0
     while index < length(program.functions) {
         let body = get(program.functions, index).body
-        assert get(body.children, length(body.children) - 1).kind == (if index == 3 {
+        assert get(body.children, length(body.children) - 1).kind == (if index == 2 || index == 3 {
                 ExprKind.Coerce
             } else {
                 ExprKind.Block
@@ -92,10 +92,14 @@ test fn exiting_if_branches_establish_only_the_surviving_guard() {
 test fn exit_guards_do_not_invent_join_alias_or_nan_evidence() {
     let definitions = "import std.result.Result\nimport std.result.ConstraintError\ntype Positive = Int where self > 0\ntype NonPositive = Float where self <= 0.0\nrecord Box { value Int }\n"
     let program = flow_program(concat(definitions,
-            "pub fn joined(value Int) Result[Positive, ConstraintError] { if value <= 0 {}\nPositive(value) }\npub fn mutable(value Int) Result[Positive, ConstraintError] { var current = value\nif current <= 0 { return Result.Ok(Positive(1)) }\ncurrent = 0\nPositive(current) }\npub fn shared(box Box) Result[Positive, ConstraintError] { if box.value <= 0 { return Result.Ok(Positive(1)) }\nPositive(box.value) }\npub fn either(value Int, other Int) Result[Positive, ConstraintError] { if value <= 0 && other <= 0 { return Result.Ok(Positive(1)) }\nPositive(value) }\npub fn complement(value Float) Result[NonPositive, ConstraintError] { if value > 0.0 { return Result.Ok(NonPositive(0.0)) }\nNonPositive(value) }\npub fn cleanup(value Int) Result[Positive, ConstraintError] { defer { assert value > 0 }\nif value <= 0 {} else { return Result.Ok(Positive(1)) }\nPositive(value) }"))
+            "pub fn joined(value Int) Result[Positive, ConstraintError] { if value <= 0 {}\nPositive(value) }\npub fn mutable(value Int) Result[Positive, ConstraintError] { var current = value\nif current <= 0 { return Result.Ok(Positive(1)) }\ncurrent = 0\nPositive(current) }\npub fn inline_field(box Box) Positive { if box.value <= 0 { return Positive(1) }\nPositive(box.value) }\npub fn either(value Int, other Int) Result[Positive, ConstraintError] { if value <= 0 && other <= 0 { return Result.Ok(Positive(1)) }\nPositive(value) }\npub fn complement(value Float) Result[NonPositive, ConstraintError] { if value > 0.0 { return Result.Ok(NonPositive(0.0)) }\nNonPositive(value) }\npub fn cleanup(value Int) Result[Positive, ConstraintError] { defer { assert value > 0 }\nif value <= 0 {} else { return Result.Ok(Positive(1)) }\nPositive(value) }"))
     var index = 0
     while index < length(program.functions) {
-        assert dynamic_count(get(program.functions, index).body, ExprKind.If) == 2
+        assert dynamic_count(get(program.functions, index).body, ExprKind.If) == (if index == 2 {
+                1
+            } else {
+                2
+            })
         index = index + 1
     }
 }
@@ -118,7 +122,7 @@ test fn mutable_shared_and_unrelated_bindings_do_not_supply_flow_facts() {
         Positive(value) }
         pub fn multiple(value Int, other Int) Positive { assert value > other && other >= 0
         Positive(value) }
-        pub fn fields(box Box) Result[Positive, ConstraintError] { assert box.value > 0
+        pub fn fields(box Box) Positive { assert box.value > 0
         Positive(box.value) }
         pub fn shadowed(value Int, other Int, flag Bool) Result[Positive, ConstraintError] { assert value > 0
         if flag { let value = other
@@ -130,7 +134,7 @@ test fn mutable_shared_and_unrelated_bindings_do_not_supply_flow_facts() {
     var index = 0
     while index < 4 {
         let body = get(program.functions, index).body
-        assert get(body.children, length(body.children) - 1).kind == (if index == 2 {
+        assert get(body.children, length(body.children) - 1).kind == (if index == 2 || index == 3 {
                 ExprKind.Coerce
             } else {
                 ExprKind.Block
