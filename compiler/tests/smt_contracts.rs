@@ -38,6 +38,61 @@ ensures get(values, observed) == old(get(values, observed))
 "#;
 
 #[test]
+fn histogram_bounds_retain_nested_lexical_scopes_without_granting_strict_bounds() {
+    let package = tempfile::tempdir().unwrap();
+    let source = package.path().join("main.loom");
+    let program = include_str!("../examples/smt_contracts/count_scopes.loom");
+    let cache = package.path().join("cache");
+    let check = || {
+        common::loom(&[
+            "check",
+            package.path().to_str().unwrap(),
+            "--frontend-cache",
+            cache.to_str().unwrap(),
+        ])
+    };
+    fs::write(&source, program).unwrap();
+    success(&check());
+    success(&check());
+    for changed in [
+        program.replace("count < 0", "count <= 0"),
+        program.replace("count > length(values)", "count >= length(values)"),
+        program.replace("count > end", "count >= end"),
+        format!(
+            "{program}{}",
+            r#"
+fn undefined_count(values List[Int]) Bool
+ensures prefix_occurrences(values, 0, length(values) + 1) >= 0
+{
+    true
+}
+"#
+        ),
+    ] {
+        assert_ne!(changed, program);
+        fs::write(&source, &changed).unwrap();
+        let output = check();
+        assert!(
+            !output.status.success(),
+            "unsound histogram proof: {changed}"
+        );
+        let error = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            error.contains("proof") || error.contains("proved"),
+            "{error}"
+        );
+    }
+    fs::write(
+        &source,
+        format!("{program}\nfn main() {{\n    count_scope_cases()\n}}\n"),
+    )
+    .unwrap();
+    for mode in ["test", "run"] {
+        success(&common::loom(&[mode, package.path().to_str().unwrap()]));
+    }
+}
+
+#[test]
 fn signed_bit_contracts_recheck_word_algebra_and_independent_operand_domains() {
     let package = tempfile::tempdir().unwrap();
     let source = package.path().join("bits.loom");

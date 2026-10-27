@@ -84,7 +84,9 @@ Resident workers reuse valid analyses while revalidating source and observed
 inputs. They also retain bounded decisions for complete identical SMT queries
 across edits; source checking still runs and errors/timeouts are not proof facts.
 Theory encoding interns exact repeated laws and instantiates count bounds at
-unbound symbolic query terms, retaining universal laws when binders are involved.
+actual symbolic query terms. Binder-dependent terms retain their enclosing
+ranges, including nested ranges and extents, rather than searching unrelated
+histogram keys. Empty ranges impose no extra count law.
 Unused quantifiers preserve empty-range semantics rather than starting search.
 A private transactional source cache reuses raw parses only after exact
 text comparison, returns detached ASTs and retains one successful import closure.
