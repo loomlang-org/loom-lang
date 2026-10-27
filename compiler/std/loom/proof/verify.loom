@@ -716,10 +716,16 @@ fn verify_body(source Verification, protected List[InputGuarantee], allocations 
 }
 
 fn verify_body(source Verification, protected List[InputGuarantee], allocations List[Int], entries List[Int], continuation Bool) Result[Bool, Text] {
-    verify_body(source, protected, allocations, entries, continuation, false)
+    verify_body(source, protected, allocations, entries, continuation, Revalidation.None)
 }
 
-fn verify_body(source Verification, protected List[InputGuarantee], allocations List[Int], entries List[Int], continuation Bool, revalidate Bool) Result[Bool, Text] {
+enum Revalidation {
+    None
+    Shared
+    Children
+}
+
+fn verify_body(source Verification, protected List[InputGuarantee], allocations List[Int], entries List[Int], continuation Bool, revalidate Revalidation) Result[Bool, Text] {
     let proof = protected_verification(source, protected)
     let function = proof.function
     if length(function.postconditions) == 0 {
@@ -810,16 +816,33 @@ fn verify_body(source Verification, protected List[InputGuarantee], allocations 
         let ty = get(function.params, index)
         if ty >= 6 {
             state = task_private_value(proof, ty, get(state.locals, index), state)
-            if length(protected) != 0 {
-                state = protected_input(proof.program.types, protected, ty, get(state.locals, index), state, 0)
-            }
+            state = protected_input(proof.program.types, protected, ty, get(state.locals, index), state, 0)
             state = invariant_facts(proof.program.types, ty, get(state.locals, index), state, 0)
         }
         index = index + 1
     }
+    if revalidate == Revalidation.Children {
+        // Only this root's writes go through the separate preservation check.
+        // Freeze its header/cells for the child-interference query, never its
+        // reachable graph or every value with the same structural type.
+        if length(function.params) != 1 {
+            return Result.Err("child stability requires one sequence root")
+        }
+        match get(state.locals, 0) {
+            Value.List(identity) => {
+                state = protected_extent(identity, InputGuarantee {
+                        ty = -1
+                        writes = 0
+                    }, state)
+            }
+            _ => {
+                return Result.Err("child stability requires a sequence root")
+            }
+        }
+    }
     // A preservation probe starts from already validated type predicates, not
     // runtime observations. Actual body accesses still use the shared model.
-    let entry_proof = if length(proof.preservation) == 0 && !revalidate {
+    let entry_proof = if length(proof.preservation) == 0 && revalidate == Revalidation.None {
         proof
     } else {
         preservation_snapshot(proof)
@@ -835,7 +858,7 @@ fn verify_body(source Verification, protected List[InputGuarantee], allocations 
                     get(entries, entry).state)?
             }
             let incoming = get(entries, entry).state
-            discard verify_entered(proof, if revalidate {
+            discard verify_entered(proof, if revalidate != Revalidation.None {
                     interference(proof, incoming, true)
                 } else {
                     incoming

@@ -27,18 +27,9 @@ fn element_cells(extent ListExtent, cells List[ListCell]) ListExtent {
 
 fn element_contents(extent ListExtent, contents Int, cells List[ListCell]) ListExtent {
     ListExtent {
-        identity = extent.identity
-        size = extent.size
-        allocated = extent.allocated
-        birth_floor = extent.birth_floor
-        private_storage = extent.private_storage
-        read_only = extent.read_only
-        fixed_extent = extent.fixed_extent
-        invariant_type = extent.invariant_type
-        frontier = extent.frontier
-        unreachable = extent.unreachable
         contents = contents
         cells = cells
+        ..extent
     }
 }
 
@@ -202,7 +193,7 @@ fn written_element(proof Verification, identity Int, index Linear, value Value, 
             }
             push(extents, element_cells(extent, cells))
         } else {
-            push(extents, if extent_overlap(extent, target) {
+            push(extents, if extent_overlap(proof.program.types, extent, target) {
                     element_contents(extent, -1, cells)
                 } else {
                     extent

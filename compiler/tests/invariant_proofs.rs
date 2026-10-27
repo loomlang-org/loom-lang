@@ -74,6 +74,26 @@ async fn main() {
     let inactive = common::loom(&["check", directory.path().to_str().unwrap()]);
     assert!(!inactive.status.success());
     assert!(String::from_utf8_lossy(&inactive.stderr).contains("postcondition"));
+
+    for source in [
+        r#"
+import std.list.length
+type Head = List[Int] where length(self) > 0 && self[0] > 0
+type Invalid = List[Head] where length(self) > 0 && self[0][0] == 1
+"#,
+        r#"
+import std.list.length
+record Node {
+    children List[Node]
+}
+type Invalid = List[Node] where length(self) > 0 && length(self[0].children) == 1
+"#,
+    ] {
+        fs::write(&main, source).unwrap();
+        let rejected = common::loom(&["check", directory.path().to_str().unwrap()]);
+        assert!(!rejected.status.success());
+        assert!(String::from_utf8_lossy(&rejected.stderr).contains("shared mutable contents"));
+    }
 }
 
 #[test]

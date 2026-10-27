@@ -1,0 +1,114 @@
+import std.list.push
+import std.task.Outcome
+import std.task.cancel
+import std.task.outcome
+
+type PositiveHead = List[Int] where length(self) > 0 && self[0] > 0
+
+type Groups = List[PositiveHead] where length(self) > 0 && self[0][0] > 0
+
+type Archive = List[Groups] where length(self) > 0 && self[0][0][0] > 0
+
+fn publish(first PositiveHead, include Bool) Result[Groups, ConstraintError] {
+    let draft List[PositiveHead] = []
+    if include {
+        push(draft, first)
+    }
+    Groups(draft)
+}
+
+fn replace(groups Groups, next PositiveHead) {
+    groups[0] = next
+}
+
+fn archived_head(archive Archive) Int
+ensures result > 0
+{
+    archive[0][0][0]
+}
+
+fn nested_scope() Bool {
+    let first = PositiveHead([1])
+    let groups = Groups([first])
+    let archive = Archive([groups])
+    first[0] = 2
+    assert archived_head(archive) == 2
+    replace(groups, PositiveHead([3]))
+    assert archived_head(archive) == 3 && first[0] == 2
+    match publish(first, false) {
+        Result.Err(_) => {
+        }
+        Result.Ok(_) => {
+            assert false
+        }
+    }
+    match publish(first, true) {
+        Result.Ok(value) => {
+            first[0] = 4
+            assert value[0][0] == 4
+        }
+        Result.Err(_) => {
+            assert false
+        }
+    }
+    true
+}
+
+async fn archived_later(archive Archive) Int
+ensures result > 0
+{
+    sleep_ms(1).await
+    archived_head(archive)
+}
+
+async fn edit_until_cancelled(groups Groups, events List[Int]) {
+    defer {
+        replace(groups, PositiveHead([7]))
+    }
+    replace(groups, PositiveHead([5]))
+    push(events, 1)
+    sleep_ms(10000).await
+}
+
+async fn edit_then_fault(groups Groups) {
+    replace(groups, PositiveHead([9]))
+    assert false
+}
+
+async fn nested_publication() {
+    assert nested_scope()
+    assert comptime {
+        nested_scope()
+    }
+    let groups = Groups([PositiveHead([1])])
+    let archive = Archive([groups])
+    let pending = archived_later(archive)
+    replace(groups, PositiveHead([2]))
+    assert pending.await > 0
+    let worker = run(fn() Int {
+            archived_head(archive)
+        })
+    replace(groups, PositiveHead([3]))
+    assert worker.await > 0
+    let events List[Int] = []
+    let editing = edit_until_cancelled(groups, events)
+    while length(events) == 0 {
+        sleep_ms(1).await
+    }
+    match cancel(editing) {
+        Outcome.Cancelled => {
+        }
+        _ => {
+            assert false
+        }
+    }
+    assert archived_head(archive) == 7
+    match outcome(edit_then_fault(groups)).await {
+        Outcome.Faulted(_) => {
+        }
+        _ => {
+            assert false
+        }
+    }
+    assert archived_head(archive) == 9
+}

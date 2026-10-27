@@ -27,10 +27,11 @@ fn proves_with_input_invariants(stage Context, program std.loom.typed.Program, f
 fn proves_with_input_invariants(stage Context, program std.loom.typed.Program, function Function,
     continuation Bool, shared Bool) Bool {
     let backend = get(stage.env.inputs, 0).build.proof_backend
+    let protected = continuing_sequence_guarantees(stage.env)
     let checked = if continuation {
-        verify_expression_with_helpers(program, function, backend, [], shared)
+        verify_expression_with_helpers(program, function, backend, protected, shared)
     } else {
-        verify_with_helpers(program, function, backend)
+        verify_with_helpers(program, function, backend, protected)
     }
     match checked {
         Result.Ok(_) => {
@@ -52,9 +53,9 @@ fn proves_with_input_invariants(stage Context, program std.loom.typed.Program, f
     match expanded_invariant_types(stage, function) {
         Result.Ok(types) => match if continuation {
             verify_expression_with_helpers(proof_types(program, types), function, backend,
-                continuing_sequence_guarantees(stage.env), shared)
+                protected, shared)
         } else {
-            verify_with_helpers(proof_types(program, types), function, backend, continuing_sequence_guarantees(stage.env))
+            verify_with_helpers(proof_types(program, types), function, backend, protected)
         } {
             Result.Ok(_) => true
             Result.Err(_) => false

@@ -5,6 +5,11 @@ implementation, not a compatibility ledger for previous prototypes.
 
 ## Unreleased
 
+- Compose constrained shared collections across nested values, preserving child
+  predicates through checked outer replacements and the full async lifecycle.
+  Keep ordinary constructor result types during proof-helper preparation;
+  unresolved alias and preservation obligations still reject.
+
 - Declare checked source Text length, concatenation and slice contracts,
   retaining exact content algebra as well as byte counts. Compose them through
   refined construction, CTFE and workers without changing native guards.

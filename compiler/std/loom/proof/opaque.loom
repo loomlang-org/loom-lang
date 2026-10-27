@@ -103,18 +103,10 @@ fn graph_extent(extent ListExtent, frontier Int, unreachable List[Int]) ListExte
 
 fn provenance_extent(extent ListExtent, birth_floor Int, frontier Int, unreachable List[Int]) ListExtent {
     ListExtent {
-        identity = extent.identity
-        size = extent.size
-        allocated = extent.allocated
         birth_floor = birth_floor
-        private_storage = extent.private_storage
-        read_only = extent.read_only
-        fixed_extent = extent.fixed_extent
-        invariant_type = extent.invariant_type
         frontier = frontier
         unreachable = unreachable
-        contents = extent.contents
-        cells = extent.cells
+        ..extent
     }
 }
 

@@ -416,7 +416,10 @@ fn flow_construction_proof(context Context, node Node, value Expr,
 }
 
 fn proved_construction(context Context, node Node, source Node, expected Int, value Expr, target Int) Result[Bool, Failure] {
-    if context.env.expanding_helpers || context.env.stage_depth >= 32 {
+    // Helper preparation must retain ordinary constructor result types.
+    // Recursive construction still needs the actual predicate proof and the
+    // same staging budget; entering a proof closure is not such a proof.
+    if context.env.stage_depth >= 32 {
         return Result.Ok(false)
     }
     if value.kind == ExprKind.Record || value.kind == ExprKind.List || value.kind == ExprKind.Variant || construction_view(context.env, value) ||

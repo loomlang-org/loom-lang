@@ -76,18 +76,9 @@ fn fixed_capture_cell(identity Int, state State) State {
         let extent = get(initialized.extents, index)
         push(extents, if extent.identity == identity {
                 ListExtent {
-                    identity = identity
                     size = constant(integer(1))
-                    allocated = extent.allocated
-                    birth_floor = extent.birth_floor
-                    private_storage = extent.private_storage
-                    read_only = extent.read_only
                     fixed_extent = true
-                    invariant_type = extent.invariant_type
-                    frontier = extent.frontier
-                    unreachable = extent.unreachable
-                    contents = extent.contents
-                    cells = extent.cells
+                    ..extent
                 }
             } else {
                 extent

@@ -407,8 +407,15 @@ supported theories and boundaries. The central rules are:
   parent predicate and its evaluation safety remain proved. Input type facts
   use a logical entry heap; later reads still get fresh versions, and every store
   independently preserves its complete predicate. Appendable children can retain
-  a proved prefix observation without fixing their length. Unproved state
-  relationships and general nested-graph publication remain conservative.
+  a proved prefix observation without fixing their length. Nested sequence
+  publication now separates checked outer stores from arbitrary child activity:
+  each observed child keeps only its independently validated predicate. Direct
+  stores retain observations of provably different invariant storage types;
+  equal or unresolved types still may alias, and header separation does not
+  imply graph separation. The native lifecycle trial covers replacement, helper
+  construction, CTFE, workers, suspension, cancellation cleanup and faults.
+  Unproved state relationships and general nested-graph publication remain
+  conservative.
 
 Fixed-view `map`/`filter` contracts compose their immutable range with fresh
 output lengths, including refined output construction, CTFE and shared workers.

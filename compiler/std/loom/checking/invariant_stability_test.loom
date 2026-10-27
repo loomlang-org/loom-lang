@@ -97,3 +97,148 @@ test fn stable_projection_dependencies_are_rechecked_after_cache_restore() {
         Result.Ok(_) => false
     }
 }
+
+test fn nested_sequence_constraints_preserve_children_without_freezing_them() {
+    list_constraint_accept("""
+        import std.list.length
+        import std.list.push
+        type Head = List[Int] where length(self) > 0 && self[0] > 0
+        type Groups = List[Head] where length(self) > 0 && self[0][0] > 0
+        type Nested = List[Groups] where length(self) > 0 && self[0][0][0] > 0
+        fn replace(groups Groups, value Head) {
+            groups[0] = value
+        }
+        fn read(groups Nested) Int
+        ensures result > 0
+        {
+            groups[0][0][0]
+        }
+        async fn tick() {
+        }
+        async fn later(groups Nested) Int
+        ensures result > 0
+        {
+            tick().await
+            read(groups)
+        }
+        fn main() {
+            let first = Head([1])
+            let groups = Groups([first])
+            let nested = Nested([groups])
+            first[0] = 2
+            replace(groups, Head([3]))
+            assert read(nested) == 3
+        }
+        """)
+    list_constraint_accept("""
+        import std.list.length
+        type Head[T] = List[T] where length(self) > 0
+        type Groups[T] = List[Head[T]] where length(self) > 0 && length(self[0]) > 0
+        pub fn read[T](groups Groups[T]) T {
+            groups[0][0]
+        }
+        fn main() {
+            assert read(Groups([Head(["shared"])])) == "shared"
+        }
+        """)
+}
+
+test fn nested_record_elements_retain_their_checked_byte_headers() {
+    byte_constraint_accept("""
+        import std.list.length
+        import std.bytes.length
+        type Header = Bytes where length(self) > 0 && self[0] == 35
+        record Page {
+            header Header
+            notes List[Int]
+        }
+        type Pages = List[Page] where length(self) > 0 && self[0].header[0] == 35
+        pub fn replace(pages Pages, next Page) {
+            pages[0] = next
+        }
+        pub fn read(pages Pages) Int
+        ensures result == 35
+        {
+            pages[0].header[0]
+        }
+        """)
+}
+
+test fn nested_constraints_do_not_assume_child_contents_or_outer_alias_safety() {
+    let header = concat("""
+        import std.list.length
+        type Head = List[Int] where length(self) > 0 && self[0] > 0
+        type Groups = List[Head] where length(self) > 0 && self[0][0] > 0
+        """, "\n")
+    let invalid = ["""
+        type Invalid = List[Head] where length(self) > 0 && self[0][0] == 1
+        """, """
+        pub fn invalid(groups Groups) {
+            groups[0][0] = 0
+        }
+        """, """
+        pub fn escape(groups Groups) List[Head] {
+            groups
+        }
+        """, """
+        pub fn invalid(source List[Head]) {
+            discard Groups(source)
+        }
+        """, """
+        fn mutate(groups Groups) Int
+        ensures result == old(groups[0][0])
+        {
+            groups[0] = Head([2])
+            groups[0][0]
+        }
+        """]
+    var index = 0
+    while index < length(invalid) {
+        list_constraint_reject(concat(header, invalid[index]))
+        index = index + 1
+    }
+    // The root's own checked stores do not freeze another header of the same
+    // recursive structural type. Raw children still have unrestricted aliases.
+    list_constraint_reject("""
+        import std.list.length
+        record Node {
+            children List[Node]
+        }
+        type Invalid = List[Node] where length(self) > 0 && length(self[0].children) == 1
+        """)
+}
+
+test fn nested_constraint_dependencies_survive_cache_restore() {
+    let app = """
+        import std.list.length
+        import values.Head
+        type Groups = List[Head] where length(self) > 0 && self[0][0] > 0
+        pub fn first(groups Groups) Int {
+            groups[0][0]
+        }
+        """
+    let provider = """
+        import std.list.length
+        pub type Head = List[Int] where length(self) > 0 && self[0] > 0
+        """
+    let files = list_constraint_files(app)
+    push(files, source_file("values", provider, false))
+    let initial = definition_cache()
+    assert match check_project_cached(fixture_project(files), false, build_inputs(no_input_reader), initial) {
+        Result.Ok(_) => true
+        Result.Err(_) => false
+    }
+    let restored = restored_definition_cache(initial)
+    set(files, 0, source_file("app", concat(app, "\nfn unrelated() {\n}\n"), false))
+    assert match check_project_cached(fixture_project(files), false, build_inputs(no_input_reader), restored) {
+        Result.Ok(_) => true
+        Result.Err(_) => false
+    }
+    assert bodies_reused(restored) >= 1
+    set(files, length(files) - 1, source_file("values",
+            std.text.join(std.text.split(provider, "self[0] > 0"), "self[0] >= 0"), false))
+    assert match check_project_cached(fixture_project(files), false, build_inputs(no_input_reader), restored) {
+        Result.Err(_) => true
+        Result.Ok(_) => false
+    }
+}

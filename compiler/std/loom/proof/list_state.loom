@@ -1,3 +1,5 @@
+import std.loom.typed.type_relation
+
 // A List value denotes a shared handle. Its current length belongs to the
 // execution state, not to an immutable scalar snapshot or a source variable.
 fn list_length_expression(value Expr) Bool {
@@ -44,6 +46,7 @@ fn with_extent(identity Int, size Linear, allocated Bool, initially_private Bool
     var read_only = false
     var fixed_extent = false
     var invariant_type = -1
+    var storage_type = -1
     var frontier = identity + 1
     var unreachable = new[Int]()
     var index = 0
@@ -57,6 +60,7 @@ fn with_extent(identity Int, size Linear, allocated Bool, initially_private Bool
             read_only = extent.read_only
             fixed_extent = extent.fixed_extent
             invariant_type = extent.invariant_type
+            storage_type = extent.storage_type
             frontier = extent.frontier
             unreachable = extent.unreachable
         }
@@ -64,6 +68,7 @@ fn with_extent(identity Int, size Linear, allocated Bool, initially_private Bool
     }
     push(extents, ListExtent {
             identity = identity
+            storage_type = storage_type
             size = size
             allocated = allocated
             birth_floor = birth_floor
@@ -126,18 +131,8 @@ fn forget_extents(proof Verification, state State) State {
 // This is proof state, not a source ownership qualifier or a runtime monitor.
 fn private_extent(extent ListExtent, private_storage Bool) ListExtent {
     ListExtent {
-        identity = extent.identity
-        size = extent.size
-        allocated = extent.allocated
-        birth_floor = extent.birth_floor
         private_storage = private_storage
-        read_only = extent.read_only
-        fixed_extent = extent.fixed_extent
-        invariant_type = extent.invariant_type
-        frontier = extent.frontier
-        unreachable = extent.unreachable
-        contents = extent.contents
-        cells = extent.cells
+        ..extent
     }
 }
 
@@ -288,6 +283,14 @@ fn extent_overlap(left ListExtent, right ListExtent) Bool {
         return false
     }
     true
+}
+
+fn extent_overlap(types List[Type], left ListExtent, right ListExtent) Bool {
+    if left.identity != right.identity && left.storage_type >= 0 && right.storage_type >= 0 &&
+    std.loom.typed.type_relation(types, left.storage_type, right.storage_type) == 0 {
+        return false
+    }
+    extent_overlap(left, right)
 }
 
 fn extent_modified(extent ListExtent, state State, modified List[Int]) Bool {

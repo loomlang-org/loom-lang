@@ -22,6 +22,37 @@ test fn private_summary_fields_do_not_imply_distinct_allocations() {
     assert c.birth_floor == c.identity
 }
 
+test fn direct_stores_use_checked_storage_types_without_separating_shared_graphs() {
+    let program = atomic_pair_program()
+    push(program.types, publication_shape(TypeKind.List, [7]))
+    push(program.types, publication_shape(TypeKind.List, [1]))
+    push(program.types, publication_shape(TypeKind.Parameter, []))
+    push(program.types, publication_shape(TypeKind.List, [10]))
+    let empty = State {
+        locals = []
+        facts = []
+        extents = []
+        observations = []
+    }
+    let handles = list_bounds(Value.Record([Value.List(20), Value.List(21), Value.List(22), Value.List(23)]), empty)
+    var state = protected_input(program.types, [], 8, Value.List(20), handles, 0)
+    state = protected_input(program.types, [], 7, Value.List(21), state, 0)
+    state = protected_input(program.types, [], 9, Value.List(22), state, 0)
+    state = protected_input(program.types, [], 11, Value.List(23), state, 0)
+    let outer = get(state.extents, 0)
+    let child = get(state.extents, 1)
+    let alias = get(state.extents, 2)
+    let symbolic = get(state.extents, 3)
+    assert !extent_overlap(program.types, outer, child)
+    assert extent_overlap(program.types, child, alias)
+    assert extent_overlap(program.types, outer, symbolic)
+    assert extent_overlap(program.types, child, symbolic)
+    // Header type separation does not show that one graph cannot contain the
+    // other. Reachability/publication analysis keeps its conservative rule.
+    assert extent_overlap(outer, child)
+    assert !outer.private_storage && !child.private_storage
+}
+
 test fn factory_provenance_cannot_trust_an_unverified_callee_postcondition() {
     let types = new[Type]()
     var index = 0

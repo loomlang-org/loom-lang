@@ -165,7 +165,7 @@ fn validate_refinement(env Environment, ty Int, checking Option[List[Int]]) Resu
             if !get(reads.valid, 0) {
                 match std.loom.eval.validate(program, value) {
                     Result.Ok(_) => {
-                        if invariant_stable(env, program, base, value, active) {
+                        if invariant_stable(env, program, base, value, active, sequence) {
                             set(reads.valid, 0, true)
                             // A predicate-level proof supplies no blanket write
                             // policy for a sequence root. Check every store.
@@ -229,7 +229,7 @@ fn validated_sequence_policy(env Environment, ty Int, checking Option[List[Int]]
         Option.None => {
         }
     }
-    Result.Ok(if invariant_stable(env, program, base_type(env, ty), predicate, active) {
+    Result.Ok(if invariant_stable(env, program, base_type(env, ty), predicate, active, false) {
             SequencePolicy.Unrestricted
         } else {
             policy
