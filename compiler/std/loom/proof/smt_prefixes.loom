@@ -96,8 +96,7 @@ fn smt_prefix_frames(writer SmtWriter) Result[Bool, Text] {
         smt_append(output, "))")
         // Only this implication is needed. In particular, an unobserved column
         // cannot make a prefix goal true merely because no arrays were encoded.
-        smt_append(writer.declarations, concat("(assert ",
-                concat(bag_bound_scope(std.bytes.to_text(output), frame.size), ")\n")))
+        smt_assert(writer, bag_bound_scope(std.bytes.to_text(output), frame.size))
         discard smt_prefix_bags(writer, frame)?
         index = index + 1
     }

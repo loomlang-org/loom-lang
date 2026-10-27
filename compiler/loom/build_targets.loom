@@ -50,6 +50,9 @@ fn native_target_inputs(tool Text) Result[List[BuildOption], Text] {
 }
 
 fn driver_build_inputs(options List[BuildOption], tool Text) BuildInputs {
-    std.loom.checking.with_proof_backend(build_inputs(read_input, options, native_target_inputs, tool),
-        cached_proof_backend("z3", std.loom.proof.z3.solve))
+    driver_build_inputs(options, tool, cached_proof_backend("z3", std.loom.proof.z3.solve))
+}
+
+fn driver_build_inputs(options List[BuildOption], tool Text, backend std.loom.proof.ProofBackend) BuildInputs {
+    std.loom.checking.with_proof_backend(build_inputs(read_input, options, native_target_inputs, tool), backend)
 }

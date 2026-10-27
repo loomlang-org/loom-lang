@@ -1,0 +1,82 @@
+import std.text.replace
+
+test fn editor_checks_share_only_complete_proof_decisions_across_real_source_edits() {
+    let directory = match receipt_stage("compiler/loom/target/editor-proofs-test") {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            assert false
+            return
+        }
+    }
+    let path = match canonicalize(directory) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            assert false
+            return
+        }
+    }
+    let source_path = join_path(path, "main.loom")
+    let manifest = join_path(path, "loom.toml")
+    defer {
+        discard remove_file(source_path)
+        discard remove_file(manifest)
+        discard remove_empty_dir(path)
+    }
+    assert editor_proof_write(manifest, "[module]\nname = \"editor_proofs\"\n")
+    let source = """
+        fn law(left Int, right Int) Bool
+        ensures result
+        {
+            ~(left & right) == (~left | ~right)
+        }
+        """
+    let text = source
+    let calls = [0]
+    let backend = cached_proof_backend("z3", fn(context Text, query Text) Result[Bool, Text] {
+            set(calls, 0, get(calls, 0) + 1)
+            std.loom.proof.z3.solve(context, query)
+        })
+    let cache = EditorCache {
+        proofs = backend
+        ..editor_cache()
+    }
+    let args = cli_arguments("editor-check")
+    push(args, path)
+    push(args, "--std")
+    push(args, match canonicalize("compiler/std") {
+            Result.Ok(value) => value
+            Result.Err(_) => {
+                assert false
+                return
+            }
+        })
+    assert editor_proof_write(source_path, text)
+    let first = editor_execute(args, cache)
+    if first.failed {
+        discard write_error(first.text)
+    }
+    assert !first.failed
+    assert get(calls, 0) > 0
+    let first_calls = get(calls, 0)
+    // Renaming a parameter prevents full analysis/body reuse, but complete
+    // identical mathematical queries can still reuse determinate answers.
+    let renamed = std.text.replace(text, "left", "first")
+    assert editor_proof_write(source_path, renamed)
+    assert !editor_execute(args, cache).failed
+    assert get(calls, 0) == first_calls
+    let wrong = std.text.replace(renamed, "==", "!=")
+    assert editor_proof_write(source_path, wrong)
+    assert editor_execute(args, cache).failed
+    assert get(calls, 0) > first_calls
+    let after_failure = get(calls, 0)
+    assert editor_proof_write(source_path, text)
+    assert !editor_execute(args, cache).failed
+    assert get(calls, 0) == after_failure
+}
+
+fn editor_proof_write(path Text, source Text) Bool {
+    match std.file.write_text(path, source) {
+        Result.Ok(_) => true
+        Result.Err(_) => false
+    }
+}

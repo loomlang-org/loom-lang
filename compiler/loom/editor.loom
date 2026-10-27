@@ -282,7 +282,7 @@ fn editor_execute(args List[Text], cache EditorCache) EditorOutput {
             }
         }
     }
-    let inputs = driver_build_inputs(options.build_options, options.native_tool)
+    let inputs = driver_build_inputs(options.build_options, options.native_tool, cache.proofs)
     if get(args, 1) != "editor-complete" {
         match editor_reuse(cache, project, options.tests, inputs) {
             Option.Some(analysis) => {
@@ -325,7 +325,8 @@ fn editor_execute(args List[Text], cache EditorCache) EditorOutput {
             return editor_error("query byte offset is outside the source")
         }
         if get(args, 1) == "editor-complete" {
-            return editor_completion(bound, index, options.offset, recovery.inserted, driver_build_inputs(options.build_options, options.native_tool))
+            return editor_completion(bound, index, options.offset, recovery.inserted,
+                driver_build_inputs(options.build_options, options.native_tool, cache.proofs))
         }
     }
     match editor_checked(bound, inputs, cache) {

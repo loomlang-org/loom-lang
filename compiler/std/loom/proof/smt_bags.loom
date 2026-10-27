@@ -71,10 +71,33 @@ fn smt_count(writer SmtWriter, identity Int, inputs List[IntegerTerm], depth Int
     let array = smt_array(writer, identity, [])
     let bag = smt_bag(writer, array, size)?
     let needle = smt_integer(writer, get(inputs, 1), depth + 1)?
-    let count = concat("(select ", concat(bag, " bv)"))
     let limit = smt_linear(writer, size)?
+    var universal = false
+    var index = 0
+    while index < length(writer.quantifiers) {
+        let bound = concat("n", std.int.to_text(get(writer.quantifiers, index)))
+        universal = universal || smt_mentions(needle, bound) || smt_mentions(limit, bound)
+        index = index + 1
+    }
+    index = 0
+    while index < length(size.terms) {
+        universal = universal || get(size.terms, index).id < 0
+        index = index + 1
+    }
+    // Instantiate the range law at the actual symbolic query term. Outside a
+    // binder this requires no universal search over unrelated integers. If the
+    // term depends on a binder, retain the universal law; never capture a local
+    // needle in a global assertion. This is instantiation, not value sampling.
+    let count = concat("(select ", concat(bag, concat(" ", concat(if universal {
+                        "bv"
+                    } else {
+                        needle
+                    }, ")"))))
     let output = std.bytes.new()
-    smt_append(output, "(forall ((bv Int)) (and (<= 0 ")
+    if universal {
+        smt_append(output, "(forall ((bv Int)) ")
+    }
+    smt_append(output, "(and (<= 0 ")
     smt_append(output, count)
     smt_append(output, ") (<= ")
     smt_append(output, count)
@@ -82,8 +105,11 @@ fn smt_count(writer SmtWriter, identity Int, inputs List[IntegerTerm], depth Int
     smt_append(output, limit)
     smt_append(output, " 0) ")
     smt_append(output, limit)
-    smt_append(output, " 0))))")
-    smt_append(writer.declarations, concat("(assert ", concat(bag_bound_scope(std.bytes.to_text(output), size), ")\n")))
+    smt_append(output, " 0)))")
+    if universal {
+        smt_append(output, ")")
+    }
+    smt_assert(writer, bag_bound_scope(std.bytes.to_text(output), size))
     Result.Ok(concat("(select ", concat(bag, concat(" ", concat(needle, ")")))))
 }
 

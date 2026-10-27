@@ -81,7 +81,12 @@ including when a same-spelled generic type parameter is in scope. This is source
 binding evidence, not behavioral compatibility or migration proof.
 
 Resident workers reuse valid analyses while revalidating source and observed
-inputs. A private transactional source cache reuses raw parses only after exact
+inputs. They also retain bounded decisions for complete identical SMT queries
+across edits; source checking still runs and errors/timeouts are not proof facts.
+Theory encoding interns exact repeated laws and instantiates count bounds at
+unbound symbolic query terms, retaining universal laws when binders are involved.
+Unused quantifiers preserve empty-range semantics rather than starting search.
+A private transactional source cache reuses raw parses only after exact
 text comparison, returns detached ASTs and retains one successful import closure.
 Module resolution, file membership, test selection and semantic checks still run.
 Query-only declaration headers support ordinary/generic and impl

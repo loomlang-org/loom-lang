@@ -283,6 +283,7 @@ After rebuilding, measure the current macOS check/build path:
 ```sh
 node scripts/benchmark-compiler.mjs
 node scripts/benchmark-compiler.mjs --extended --sizes 10,50,200
+node scripts/benchmark-editor.mjs --baseline /path/to/previous/loom --runs 3
 ```
 
 The [harness](../scripts/benchmark-compiler.mjs) reports median wall time and

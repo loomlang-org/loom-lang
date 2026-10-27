@@ -7,11 +7,18 @@ formatting. The
 language server runs the Loom compiler; JavaScript does not parse or type-check
 Loom. A resident compiler reuses unchanged checked snapshots for diagnostics,
 hover and navigation, and unchanged ordinary checks and concrete bodies after edits.
+Complete identical solver queries can reuse bounded in-memory decisions after
+edits; failures/timeouts are retried, and changed assumptions/goals are new queries.
 Replacing or rebuilding the compiler restarts its worker on the next request;
 queued requests remain serialized and cancellation still retires only that worker.
 Edits across external module consumers are not implemented. Unknown or generated
 references refuse checked rename instead of offering a partial edit.
 CLI disk caching is separate and opt-in.
+
+For real edited-source measurements, run `node scripts/benchmark-editor.mjs`
+from the repository root. It checks the full SMT example through this resident
+worker using unsaved semantic edits and an invalid predicate, not unchanged
+analysis hits. Optional `--baseline` alternates independent compiler sessions.
 
 ## Try it
 

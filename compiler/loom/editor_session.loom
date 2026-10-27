@@ -38,6 +38,7 @@ record EditorCache {
     hits List[Int]
     definitions DefinitionCache
     sources SourceCache
+    proofs std.loom.proof.ProofBackend
 }
 
 fn editor_cache() EditorCache {
@@ -48,6 +49,10 @@ fn editor_cache() EditorCache {
         hits = hits
         definitions = definition_cache()
         sources = source_cache()
+        // Complete SMT queries include every declaration, assumption and goal.
+        // Their bounded determinate answers remain valid after edits; failures
+        // are not cached and each request still reloads/checks current source.
+        proofs = cached_proof_backend("z3", std.loom.proof.z3.solve)
     }
 }
 

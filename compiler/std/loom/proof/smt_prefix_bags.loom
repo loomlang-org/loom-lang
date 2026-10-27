@@ -32,7 +32,7 @@ fn smt_prefix_bags(writer SmtWriter, frame SmtPrefix) Result[Bool, Text] {
         smt_append(output, smt_bag(writer, after, size)?)
         smt_append(output, "))")
         let guarded = bag_bound_scope(std.bytes.to_text(output), [frame.size, size])
-        smt_append(writer.declarations, concat("(assert ", concat(guarded, ")\n")))
+        smt_assert(writer, guarded)
         index = index + 1
     }
     Result.Ok(true)
