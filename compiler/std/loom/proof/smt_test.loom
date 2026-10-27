@@ -26,7 +26,7 @@ test fn smt_encoding_keeps_exact_numbers_domains_and_one_counterexample() {
     assert encoding([Obligation {
                 facts = []
                 conclusion = Predicate.Constant(false)
-            }]) == "(assert (not (and true (=> (and true) false))))\n(check-sat-using (then simplify solve-eqs simplify (or-else split-clause skip) solve-eqs simplify default))\n"
+            }]) == "(assert (not (and true (=> (and true) false))))\n(check-sat-using (then simplify solve-eqs simplify (or-else split-clause skip) solve-eqs simplify aig simplify default))\n"
 }
 
 fn failed_solver(context Text, query Text) Result[Bool, Text] {
@@ -49,7 +49,7 @@ test fn unused_quantifiers_keep_empty_ranges_without_capturing_similar_symbols()
                 conclusion = Predicate.Forall(-7, variable(1), variable(2),
                     [Predicate.Select(10, [], variable(-7))])
             }])
-    assert contains(selected, "(forall ((n-7 Int))")
+    assert contains(selected, "(forall ((loom_bound Int)) (let ((n-7 loom_bound))")
 }
 
 test fn repeated_theory_laws_are_interned_without_merging_scopes_or_sorts() {
@@ -82,7 +82,7 @@ test fn repeated_theory_laws_are_interned_without_merging_scopes_or_sorts() {
                         [integer_limit(">=", selected, 0)])
                 }])
         let name = concat("n", std.int.to_text(bound))
-        assert contains(quantified, concat("(assert (forall ((", concat(name, " Int)) (=> (and (<= (+ 0) ")))
+        assert contains(quantified, concat("(assert (forall ((loom_bound Int)) (let ((", concat(name, " loom_bound)) (=> (and (<= (+ 0) ")))
         assert contains(quantified, concat("(select (loom_bag a10 (+ 0 (* 1 n1))) (select a11 (+ 0 (* 1 ",
                 concat(name, "))))")))
         assert !contains(quantified, "(bv Int)")
@@ -102,8 +102,8 @@ test fn count_laws_close_nested_ranges_and_binder_dependent_extents() {
             }])
     // The inner range depends on the outer binder even though its needle
     // mentions only the inner one. The count extent uses the outer value.
-    let outer = "(forall ((n-7 Int)) (=> (and (<= (+ 0) n-7) (< n-7 (+ 0 (* 1 n1)))) "
-    let inner = "(forall ((n-8 Int)) (=> (and (<= (+ 0 (* 1 n-7)) n-8) (< n-8 (+ 1 (* 1 n-7)))) "
+    let outer = "(forall ((loom_bound Int)) (let ((n-7 loom_bound)) (=> (and (<= (+ 0) n-7) (< n-7 (+ 0 (* 1 n1)))) "
+    let inner = "(forall ((loom_bound Int)) (let ((n-8 loom_bound)) (=> (and (<= (+ 0 (* 1 n-7)) n-8) (< n-8 (+ 1 (* 1 n-7)))) "
     let bound = "(and (<= 0 (select (loom_bag a10 (+ 0 (* 1 n-7))) (select a11 (+ 0 (* 1 n-8)))))"
     assert contains(query, concat(outer, concat(inner, bound)))
     assert !contains(query, "(bv Int)")
@@ -238,7 +238,7 @@ test fn bounded_quantifiers_keep_their_binder_inside_the_range_and_body() {
                     [Predicate.IntegerCompare(">=", IntegerTerm.Select(10, [], variable(-7)),
                             IntegerTerm.Linear(constant(integer(0))))])
             }])
-    assert contains(query, "(forall ((n-7 Int)) (=> (and (<= (+ 0) n-7) (< n-7 (+ 2))) ")
+    assert contains(query, "(forall ((loom_bound Int)) (let ((n-7 loom_bound)) (=> (and (<= (+ 0) n-7) (< n-7 (+ 2))) ")
     assert contains(query, "(select a10 (+ 0 (* 1 n-7)))")
 }
 
@@ -318,8 +318,8 @@ test fn tautological_quantifiers_do_not_repeat_the_context_or_assume_float_refle
                     [Predicate.And([Predicate.Select(10, [0], variable(-1)),
                                 Predicate.FloatCompare("==", ratio, ratio)])])
             }])
-    assert contains(split, "(and (forall ((n-1 Int))")
-    assert length(std.text.split(split, "(forall ((n-1 Int))")) == 2
+    assert contains(split, "(and (forall ((loom_bound Int)) (let ((n-1 loom_bound))")
+    assert length(std.text.split(split, "(forall ((loom_bound Int))")) == 2
     assert contains(split, "(or (<= (+ 10) (+ 0)) (not (fp.isNaN")
 }
 
@@ -347,7 +347,7 @@ test fn pointwise_prefix_equality_supplies_only_the_matching_histogram_law() {
                 facts = [prefix]
                 conclusion = bag
             }])
-    assert contains(query, "(assert (=> (forall ((n-7 Int))")
+    assert contains(query, "(assert (=> (forall ((loom_bound Int)) (let ((n-7 loom_bound))")
     assert contains(query, "(= (loom_bag a10 (+ 0 (* 1 n4))) (loom_bag a11 (+ 0 (* 1 n4))))")
     assert !contains(encoding([Obligation {
                     facts = [prefix]

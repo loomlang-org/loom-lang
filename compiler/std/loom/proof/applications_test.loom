@@ -8,8 +8,8 @@ test fn predicate_keys_require_values_instead_of_allocation_frontiers() {
         _ => false
     }
     let number = Value.Number(constant(integer(7)))
-    let first = predicate_key(Value.Sum(8, constant(integer(0)), [[number]]), [256])
-    let second = predicate_key(Value.Sum(8, constant(integer(0)), [[number], []]), [256])
+    let first = predicate_key(Value.Sum(8, IntegerTerm.Linear(constant(integer(0))), [[number]]), [256])
+    let second = predicate_key(Value.Sum(8, IntegerTerm.Linear(constant(integer(0))), [[number], []]), [256])
     assert match first {
         Result.Ok(left) => match second {
             Result.Ok(right) => same_predicate_key(left, right)
@@ -21,20 +21,32 @@ test fn predicate_keys_require_values_instead_of_allocation_frontiers() {
 
 test fn predicate_truth_and_successful_evaluation_are_separate_atoms() {
     let keys = [PredicateKey.Text(TextValue.Variable(9))]
-    let truth = Predicate.Application(3, keys, false)
-    let domain = Predicate.Application(3, keys, true)
+    let application = FunctionApplication {
+        target = 3
+        arguments = keys
+        path = []
+    }
+    let truth = Predicate.Application(application, false)
+    let domain = Predicate.Application(application, true)
     assert same(truth, truth)
     assert !same(truth, domain)
     assert !holds(truth, [domain])
     assert !holds(domain, [truth])
-    assert !same(truth, Predicate.Application(4, keys, false))
+    assert !same(truth, Predicate.Application(FunctionApplication {
+                target = 4
+                ..application
+            }, false))
 }
 
 test fn predicate_boolean_keys_bound_shared_expression_expansion() {
     var value = Predicate.Variable(1)
     var index = 0
     while index < 16 {
-        value = Predicate.Application(2, [PredicateKey.Boolean([value, value])], false)
+        value = Predicate.Application(FunctionApplication {
+                target = 2
+                arguments = [PredicateKey.Boolean([value, value])]
+                path = []
+            }, false)
         index = index + 1
     }
     assert !predicate_boolean_size(value, [256])
@@ -48,4 +60,43 @@ test fn predicate_admission_rejects_mutable_inputs_and_hidden_dispatch() {
     assert !predicate_direct_closure(program, raw, [], [4096], 0)
     let erased = expression(ExprKind.IndirectCall, 2, "", -1, [])
     assert !predicate_direct_closure(program, erased, [], [4096], 0)
+}
+
+test fn scalar_function_keys_bound_shared_arguments_in_every_theory() {
+    var value = FunctionApplication {
+        target = 1
+        arguments = []
+        path = []
+    }
+    var index = 0
+    while index < 16 {
+        let input = PredicateKey.Integer(IntegerTerm.Function(value))
+        value = FunctionApplication {
+            arguments = [input, input]
+            ..value
+        }
+        index = index + 1
+    }
+    assert !integer_key_size(IntegerTerm.Function(value), [256])
+    assert !text_key_size(TextValue.Function(value), [256])
+    assert !float_key_size(FloatValue.Function(value), [256])
+    assert !predicate_boolean_size(Predicate.Application(value, true), [256])
+}
+
+test fn function_result_paths_keep_fields_tags_and_definedness_distinct() {
+    let value = FunctionApplication {
+        target = 1
+        arguments = []
+        path = []
+    }
+    assert !same_application(function_component(value, 0), function_component(value, 1))
+    assert !same_application(function_component(value, -1), value)
+    let query = encoding([Obligation {
+                facts = [Predicate.Application(value, true)]
+                conclusion = integer_predicate("==", IntegerTerm.Function(function_component(value, 0)),
+                    IntegerTerm.Function(function_component(value, 1)))
+            }])
+    assert std.text.contains(query, "loom_fn1_f0 (loom_pks) Int")
+    assert std.text.contains(query, "loom_fn1_f1 (loom_pks) Int")
+    assert !std.text.contains(query, "FloatingPoint")
 }

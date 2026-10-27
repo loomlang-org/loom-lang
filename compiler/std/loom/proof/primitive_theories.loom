@@ -2,6 +2,12 @@
 // eager evaluation belong to the composition layer, not to individual theories.
 fn intrinsic_value(primitive Text, ty Int, inputs List[Value], state State) Result[Value, Text] {
     let name = sequence_operation(primitive)
+    if name == "proof_layout" {
+        return Result.Ok(Value.Empty)
+    }
+    if name == "proof_pack" {
+        return Result.Ok(Value.Record(inputs))
+    }
     if name == "proof_add" || name == "proof_sub" || name == "proof_mod" {
         let first = integer_term(get(inputs, 0))?
         let second = integer_term(get(inputs, 1))?
@@ -88,7 +94,7 @@ fn projected_value(contents Int, path List[Int], index Linear, ty Int) Value {
 // right guard. A hypothetical expression never establishes its own safety fact.
 fn intrinsic_defined(expr Expr, state State) Result[Bool, Text] {
     if predicate_application(expr) {
-        if expr.text == "proof_predicate_defined" || holds(application_fact(expr, state, true)?, state.facts) {
+        if expr.text == "proof_function_defined" || holds(application_fact(expr, state, true)?, state.facts) {
             return Result.Ok(true)
         }
         return Result.Err("pure predicate evaluation is not proved defined")

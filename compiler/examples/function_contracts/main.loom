@@ -1,0 +1,175 @@
+import std.text.byte
+import std.text.length
+import std.text.concat
+import std.list.all
+
+record Summary {
+    count Int
+    text Text
+}
+
+enum Reading {
+    Text(Text)
+    Summary(Summary)
+}
+
+fn count_open(value Text) Int {
+    var index = 0
+    var count = 0
+    while index < length(value) {
+        if byte(value, index) == 40 {
+            count = count + 1
+        }
+        index = index + 1
+    }
+    count
+}
+
+fn decorate(value Text) Text {
+    var index = 0
+    var text = value
+    while index < 2 {
+        text = concat(text, ".")
+        index = index + 1
+    }
+    text
+}
+
+fn summarize(value Text) Summary {
+    var index = 0
+    var count = 0
+    while index < length(value) {
+        if byte(value, index) == 40 {
+            count = count + 1
+        }
+        index = index + 1
+    }
+    Summary {
+        count = count
+        text = value
+    }
+}
+
+fn pair(value Text) (Int, Text) {
+    var index = 0
+    while index < length(value) {
+        index = index + 1
+    }
+    (index, value)
+}
+
+fn reading(value Text) Reading {
+    var index = 0
+    while index < length(value) {
+        index = index + 1
+    }
+    if index == 0 {
+        Reading.Text(value)
+    } else {
+        Reading.Summary(Summary {
+                count = index
+                text = value
+            })
+    }
+}
+
+fn reading_count(value Reading) Int {
+    match value {
+        Reading.Text(text) => length(text)
+        Reading.Summary(summary) => summary.count
+    }
+}
+
+fn observed_count(value Text) Int
+ensures result == count_open(value)
+{
+    count_open(value)
+}
+
+type OpenCount = Int where self >= 1
+
+fn checked_count(value Text) OpenCount
+requires count_open(value) >= 1
+{
+    OpenCount(count_open(value))
+}
+
+fn observed_text(value Text) Text
+ensures result == decorate(value)
+{
+    decorate(value)
+}
+
+fn observed_summary(value Text) Summary
+ensures result.count == summarize(value).count && result.text == summarize(value).text
+{
+    summarize(value)
+}
+
+fn observed_pair(value Text) (Int, Text)
+ensures result.0 == pair(value).0 && result.1 == pair(value).1
+{
+    pair(value)
+}
+
+fn observed_reading(value Text) Reading
+ensures reading_count(result) == reading_count(reading(value))
+{
+    reading(value)
+}
+
+fn preserved(value Text, equivalent Text) Text
+requires value == equivalent && count_open(value) >= 1 && decorate(value) != ""
+ensures count_open(result) >= 1 && decorate(result) != ""
+{
+    equivalent
+}
+
+fn summary_has_open(value Summary) Bool {
+    count_open(value.text) > 0
+}
+
+fn preserve_summaries(values List[Summary]) List[Summary]
+requires all(values, summary_has_open)
+ensures all(result, summary_has_open)
+{
+    values
+}
+
+fn reading_nonempty(value Reading) Bool {
+    var index = 0
+    while index < 2 {
+        index = index + 1
+    }
+    reading_count(value) > 0
+}
+
+fn preserve_readings(values List[Reading]) List[Reading]
+requires all(values, reading_nonempty)
+ensures all(result, reading_nonempty)
+{
+    values
+}
+
+fn main() {
+    assert observed_count("(a(b)") == 2
+    assert checked_count("(checked)") == 1
+    assert observed_text("a") == "a.."
+    let summary = observed_summary("(record)")
+    assert summary.count == 1 && summary.text == "(record)"
+    let count, text = observed_pair("tuple")
+    assert count == 5 && text == "tuple"
+    assert reading_count(observed_reading("enum")) == 4
+    assert reading_count(observed_reading("")) == 0
+    assert preserved("()", "()") == "()"
+    let values = [Summary {
+            count = 1
+            text = "()"
+        }]
+    assert all(preserve_summaries(values), summary_has_open)
+    assert all(preserve_readings([Reading.Text("enum")]), reading_nonempty)
+}
+
+test fn immutable_function_results_compose_without_expanding_their_loops() {
+    main()
+}

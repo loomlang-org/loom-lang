@@ -2615,18 +2615,21 @@ control-flow scopes. Distinct named refinements still use an explicit target
 constructor; a proved implication can remove that check without merging their
 nominal identities. See [expression contracts](examples/contracts/expressions.loom).
 
-Known pure Boolean helpers over immutable values can also compose when their
+Known pure functions over immutable values can also compose when their
 loops or recursion have no supported closed formula. The prover retains the
 checked function identity and evaluated argument values, with separate facts
 for the result and successful evaluation. An executed precondition or ordinary
-call can establish those facts; purity alone proves neither truth nor termination.
-This supports immutable scalars, records, tuples and enums, including checked
+call can establish those facts; purity alone proves neither a result property
+nor termination. Arguments and results can be immutable scalars, records, tuples
+and enums. Result fields and enum tags retain distinct identities; only the
+selected enum payload supplies type guarantees. This supports checked
 construction, loop preservation and suspension. Text byte equality permits
 substitution; Float numerical equality does not identify opposite zeros or NaNs.
 Known List callbacks retain checks only through the scan's first exit, preserving
 short-circuit suffixes. Mutable inputs, unknown dispatch and unsupported effects
 do not gain opaque purity or stable value identities. These rules introduce no
-source annotation or runtime wrapper. Try [predicate contracts](examples/predicate_contracts).
+source annotation or runtime wrapper. Try [function contracts](examples/function_contracts)
+and [predicate contracts](examples/predicate_contracts).
 
 A record can have a `where` predicate over immutable `Int`, `Bool`, `Float`,
 `Text`, or nested inline record/refined fields. Shared siblings are allowed when
@@ -3339,7 +3342,10 @@ the proof never guesses a concrete witness. For example, `identity(value)` with
 `ensures result == value` lets a forwarding function prove the same contract.
 Without a summary, the prover can expand a finite pure body using those values. Arguments
 are evaluated in order and their values captured before applying the summary;
-separate call results are not equated merely because they share a callee. The
+separate call results are not equated merely because they share a callee. A known
+pure function with the same immutable arguments can reuse its established result,
+including representation identity for Float values; numeric equality by itself
+does not establish that identity. The
 emitted function keeps its ordinary calls and original locals.
 Unused function-typed inputs may remain opaque, just like abstract receivers;
 they supply no callable-result or effect facts. Unknown callbacks retain only
@@ -3668,8 +3674,10 @@ normal-return contracts. The private typed helper closure checks every source
 member against the group's guarantees before publishing any result; a failed
 member rejects the whole group, including after cached source edits. This is
 partial correctness by induction on finite call depth, not a termination or
-fault-freedom promise. Contract predicates still expand actual finite pure
-bodies: a recursive predicate cannot become an axiom from its own `ensures`.
+fault-freedom promise. Contracts expand finite pure bodies where supported, or
+retain a known pure function's immutable application and separate evaluation
+domain. A recursive function cannot establish its result or termination from
+its own `ensures`.
 See the [recursive contract example](examples/recursive_contracts/main.loom).
 
 Storage frames inspect the bounded reachable synchronous call graph, including

@@ -207,7 +207,11 @@ fn pure(expr Expr, state State) Result[Value, Text] {
         }
     }
     if predicate_application(expr) {
-        return Result.Ok(Value.Boolean(application_fact(expr, state, expr.text == "proof_predicate_defined")?))
+        return Result.Ok(applied_value(expr, function_inputs(expr, pure(get(expr.children, 0), state)?)?))
+    }
+    if expr.kind == ExprKind.Intrinsic && expr.text == "proof_argument" {
+        return Result.Ok(function_argument(get(get(expr.children, 1).children, 0),
+                pure(get(expr.children, 0), state)?))
     }
     if bound_expression(expr) {
         return Result.Ok(Value.Number(variable(expr.index)))
@@ -329,8 +333,8 @@ fn pure(expr Expr, state State) Result[Value, Text] {
 fn bounded(value Value, state State) State {
     match value {
         Value.Sum(_, tag, payloads) => assume(assume(state,
-                Predicate.Compare(">=", tag)),
-            Predicate.Compare("<", add(tag, constant(integer(-length(payloads)))))),
+                integer_limit(">=", tag, 0)),
+            integer_limit("<", tag, length(payloads))),
         Value.Nonlinear(term) => assume(assume(state,
                 integer_limit(">=", term, -9223372036854775808)),
             integer_limit("<=", term, 9223372036854775807))

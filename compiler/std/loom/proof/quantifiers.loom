@@ -70,6 +70,9 @@ fn quantified_views(proof Verification, expr Expr, state State, inside Bool, dep
         return Result.Err("quantified observation depth exhausted")
     }
     var current = state
+    if function_layout(expr) {
+        return Result.Ok(state)
+    }
     let nested = inside || quantified_expression(expr)
     if count_expression(expr) || (inside && list_read_expression(expr)) {
         match pure(get(expr.children, 0), current)? {
@@ -93,6 +96,10 @@ fn quantified_views(proof Verification, expr Expr, state State, inside Bool, dep
     while index < length(expr.children) {
         current = quantified_views(proof, get(expr.children, index), current, nested, depth - 1)?
         index = index + 1
+    }
+    if predicate_application(expr) && expr.text == "proof_function" {
+        current = guarded_value_invariants(proof, expr.ty, pure(expr, current)?,
+            application_fact(expr, current, true)?, current)
     }
     Result.Ok(current)
 }

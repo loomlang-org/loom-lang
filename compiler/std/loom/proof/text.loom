@@ -2,6 +2,7 @@
 // only established equality facts, never disjunctions or native pointer identity.
 fn text_length(value TextValue) IntegerTerm {
     match value {
+        TextValue.Function(_) => IntegerTerm.TextLength(value)
         TextValue.Literal(text) => IntegerTerm.Linear(constant(integer(std.text.length(text))))
         // This fresh identity denotes immutable bytes in the Text domain and
         // their byte length in the numeric domain, never another Int local.

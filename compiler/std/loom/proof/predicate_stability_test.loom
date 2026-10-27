@@ -62,7 +62,7 @@ test fn continuing_guarantees_require_the_selected_enum_payload() {
                 }]
             ..shape
         })
-    let value = Value.Sum(8, variable(10), [[Value.List(20)], []])
+    let value = Value.Sum(8, IntegerTerm.Linear(variable(10)), [[Value.List(20)], []])
     let state = list_bounds(value, State {
             locals = [value]
             facts = []

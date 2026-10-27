@@ -1,6 +1,6 @@
 test fn enum_columns_separate_tags_variants_and_inline_fields_without_freezing_children() {
     let index = variable(1)
-    let tag = variable(2)
+    let tag = IntegerTerm.Linear(variable(2))
     let value = Value.Sum(6, tag, [[Value.Number(variable(3))], [Value.Text(TextValue.Variable(4))]])
     let state = array_observation(10, index, value, Predicate.Variable(5), State {
             locals = []

@@ -14,6 +14,12 @@ record Linear {
     terms List[Term]
 }
 
+record FunctionApplication {
+    target Int
+    arguments List[PredicateKey]
+    path List[Int]
+}
+
 enum TextValue {
     Literal(Text)
     Variable(Int)
@@ -22,6 +28,7 @@ enum TextValue {
     // One source and two mathematical byte offsets. Lists break the recursive
     // Text/integer term layout; neither represents runtime slice storage.
     Slice(List[TextValue], List[IntegerTerm])
+    Function(FunctionApplication)
 }
 
 enum FloatValue {
@@ -29,6 +36,7 @@ enum FloatValue {
     Variable(Int)
     Apply(Text, List[FloatValue])
     Select(Int, List[Int], Linear)
+    Function(FunctionApplication)
 }
 
 enum IntegerTerm {
@@ -38,6 +46,7 @@ enum IntegerTerm {
     Count(Int, List[IntegerTerm])
     TextLength(TextValue)
     TextByte(TextValue, List[IntegerTerm])
+    Function(FunctionApplication)
 }
 
 enum ScalarDomain {
@@ -57,7 +66,7 @@ enum ArrayScalar {
 }
 
 enum Predicate {
-    Application(Int, List[PredicateKey], Bool)
+    Application(FunctionApplication, Bool)
     Constant(Bool)
     Variable(Int)
     Select(Int, List[Int], Linear)
@@ -69,6 +78,7 @@ enum Predicate {
     TextEqual(TextValue, TextValue)
     IntegerCompare(Text, IntegerTerm, IntegerTerm)
     FloatCompare(Text, FloatValue, FloatValue)
+    ValueEqual(List[PredicateKey])
     ArrayRead(Int, List[Int], Linear, ArrayScalar, List[Predicate])
     ArrayWrite(Int, Int, List[Int], Linear, ArrayScalar)
     Forall(Int, Linear, Linear, List[Predicate])
@@ -86,7 +96,7 @@ enum PredicateKey {
     Text(TextValue)
     Float(FloatValue)
     Record(List[PredicateKey])
-    Sum(Int, Linear, List[List[PredicateKey]])
+    Sum(Int, IntegerTerm, List[List[PredicateKey]])
 }
 
 enum Value {
@@ -96,7 +106,7 @@ enum Value {
     Record(List[Value])
     // Nominal sum identity, immutable tag and variant-indexed payload snapshots.
     // Only the selected payload's type invariants may become branch facts.
-    Sum(Int, Linear, List[List[Value]])
+    Sum(Int, IntegerTerm, List[List[Value]])
     Empty
     // An existing, otherwise unmodeled graph. The frontier excludes later
     // allocations; explicit exclusions are checked private call-frame facts.

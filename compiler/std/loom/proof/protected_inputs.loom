@@ -136,8 +136,7 @@ fn protected_input(types List[Type], protected List[InputGuarantee], ty Int, val
                     // Inactive payloads have no storage. In particular, an
                     // uninhabited payload cannot provide an unconditional
                     // continuing predicate after shared interference.
-                    let selected = integer_predicate("==", IntegerTerm.Linear(tag),
-                        IntegerTerm.Linear(constant(integer(variant))))
+                    let selected = integer_limit("==", tag, variant)
                     while loop_holds(selected, current) && field < length(fields) && field < length(types_in_variant) {
                         current = protected_input(types, protected, get(types_in_variant, field),
                             get(fields, field), current, depth + 1)

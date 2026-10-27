@@ -126,6 +126,16 @@ fn count_term_extents(output List[Linear], term IntegerTerm, depth Int) {
         return
     }
     match term {
+        IntegerTerm.Function(value) => count_key_extents(output, value.arguments, depth - 1)
+        IntegerTerm.TextLength(value) => count_text_extents(output, value, depth - 1)
+        IntegerTerm.TextByte(value, bounds) => {
+            count_text_extents(output, value, depth - 1)
+            var index = 0
+            while index < length(bounds) {
+                count_term_extents(output, get(bounds, index), depth - 1)
+                index = index + 1
+            }
+        }
         IntegerTerm.Count(_, inputs) => {
             if length(inputs) == 2 {
                 match get(inputs, 0) {
@@ -155,7 +165,16 @@ fn count_predicate_extents(output List[Linear], value Predicate, depth Int) {
         return
     }
     match value {
-        Predicate.Application(_, keys, _) => count_key_extents(output, keys, depth - 1)
+        Predicate.Application(value, _) => count_key_extents(output, value.arguments, depth - 1)
+        Predicate.ValueEqual(values) => count_key_extents(output, values, depth - 1)
+        Predicate.TextEqual(first, second) => {
+            count_text_extents(output, first, depth - 1)
+            count_text_extents(output, second, depth - 1)
+        }
+        Predicate.FloatCompare(_, first, second) => {
+            count_float_extents(output, first, depth - 1)
+            count_float_extents(output, second, depth - 1)
+        }
         Predicate.BagEqual(_, first, _, second) => {
             count_extent(output, first)
             count_extent(output, second)
@@ -191,16 +210,17 @@ fn count_key_extents(output List[Linear], keys List[PredicateKey], depth Int) {
     while index < length(keys) {
         match get(keys, index) {
             PredicateKey.Integer(term) => count_term_extents(output, term, depth - 1)
+            PredicateKey.Text(term) => count_text_extents(output, term, depth - 1)
+            PredicateKey.Float(term) => count_float_extents(output, term, depth - 1)
             PredicateKey.Boolean(values) => count_predicate_list(output, values, depth - 1)
             PredicateKey.Record(fields) => count_key_extents(output, fields, depth - 1)
-            PredicateKey.Sum(_, _, variants) => {
+            PredicateKey.Sum(_, tag, variants) => {
+                count_term_extents(output, tag, depth - 1)
                 var variant = 0
                 while variant < length(variants) {
                     count_key_extents(output, get(variants, variant), depth - 1)
                     variant = variant + 1
                 }
-            }
-            _ => {
             }
         }
         index = index + 1
@@ -211,6 +231,54 @@ fn count_scalar_extents(output List[Linear], value ArrayScalar, depth Int) {
     match value {
         ArrayScalar.Integer(term) => count_term_extents(output, term, depth)
         ArrayScalar.Boolean(values) => count_predicate_list(output, values, depth)
+        ArrayScalar.Text(term) => count_text_extents(output, term, depth)
+        ArrayScalar.Float(term) => count_float_extents(output, term, depth)
+    }
+}
+
+fn count_text_extents(output List[Linear], value TextValue, depth Int) {
+    if depth <= 0 {
+        return
+    }
+    match value {
+        TextValue.Function(value) => count_key_extents(output, value.arguments, depth - 1)
+        TextValue.Joined(parts) => {
+            var index = 0
+            while index < length(parts) {
+                count_text_extents(output, get(parts, index), depth - 1)
+                index = index + 1
+            }
+        }
+        TextValue.Slice(parts, bounds) => {
+            var index = 0
+            while index < length(parts) {
+                count_text_extents(output, get(parts, index), depth - 1)
+                index = index + 1
+            }
+            index = 0
+            while index < length(bounds) {
+                count_term_extents(output, get(bounds, index), depth - 1)
+                index = index + 1
+            }
+        }
+        _ => {
+        }
+    }
+}
+
+fn count_float_extents(output List[Linear], value FloatValue, depth Int) {
+    if depth <= 0 {
+        return
+    }
+    match value {
+        FloatValue.Function(value) => count_key_extents(output, value.arguments, depth - 1)
+        FloatValue.Apply(_, inputs) => {
+            var index = 0
+            while index < length(inputs) {
+                count_float_extents(output, get(inputs, index), depth - 1)
+                index = index + 1
+            }
+        }
         _ => {
         }
     }

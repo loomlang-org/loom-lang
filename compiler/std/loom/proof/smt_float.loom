@@ -67,6 +67,7 @@ fn smt_float_literal(text Text) Result[Text, Text] {
 fn smt_float(writer SmtWriter, value FloatValue, depth Int) Result[Text, Text] {
     discard smt_step(writer, depth)?
     match value {
+        FloatValue.Function(value) => smt_function(writer, value, "(_ FloatingPoint 11 53)", "loom_fn", false, depth)
         FloatValue.Select(identity, path, index) => smt_select(writer, identity, path, index, ScalarDomain.Float)
         FloatValue.Literal(text) => {
             let size = std.text.length(text)

@@ -25,6 +25,7 @@ fn integer_bounds(value IntegerTerm, facts List[Predicate], budget List[Int]) Re
     }
     set(budget, 0, get(budget, 0) - 1)
     match value {
+        IntegerTerm.Function(_) => Result.Err("function result needs established value bounds")
         IntegerTerm.Linear(term) => Result.Ok(range(term, facts))
         IntegerTerm.Select(_, _, _) => Result.Err("array selection needs established value bounds")
         IntegerTerm.TextLength(_) => Result.Ok(Bounds {
