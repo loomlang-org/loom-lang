@@ -74,3 +74,90 @@ test fn contract_helpers_use_the_defining_packages_private_bindings() {
         }
     }
 }
+
+test fn scan_steps_do_not_establish_checks_the_source_never_evaluated() {
+    let header = """
+        fn advance(value Int) Int
+        requires value > 0
+        {
+            1
+        }
+        fn stopped(value Int) Bool {
+            var index = 0
+            while index < 1 {
+                if value <= 0 {
+                    return false
+                }
+                index = index + advance(value)
+            }
+            true
+        }
+        fn empty(value Int) Bool {
+            var index = 1
+            while index < 1 {
+                index = index + advance(value)
+            }
+            true
+        }
+        """
+    discard accepted(concat(header, """
+        fn safe(value Int) Int
+        requires value <= 0
+        ensures !stopped(value) && empty(value)
+        {
+            0
+        }
+        """))
+    rejects(concat(header, """
+        fn fabricated(value Int) Int
+        requires !stopped(value)
+        ensures value > 0
+        {
+            0
+        }
+        """))
+    rejects(concat(header, """
+        fn fabricated(value Int) Int
+        requires empty(value)
+        ensures value > 0
+        {
+            0
+        }
+        """))
+}
+
+test fn scan_bounds_and_steps_cannot_hide_changes_to_outer_bindings() {
+    let goal = """
+        fn fabricated() Bool
+        ensures changed()
+        {
+            true
+        }
+        """
+    rejects(concat("""
+        fn changed() Bool {
+            var index = 0
+            var count = 0
+            while index < 2 {
+                index = index + {
+                    count = count + 1
+                    1
+                }
+            }
+            count == 1
+        }
+        """, goal))
+    rejects(concat("""
+        fn changed() Bool {
+            var index = 0
+            var limit = 2
+            while index < {
+                limit = limit - 1
+                2
+            } {
+                index = index + 1
+            }
+            limit == 1
+        }
+        """, goal))
+}

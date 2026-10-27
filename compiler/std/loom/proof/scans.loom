@@ -193,7 +193,8 @@ fn expanded_scan(context Expansion, value Expr, guard Expr,
     }
     let cursor = get(limit_test.children, 0)
     if cursor.kind != ExprKind.Local || cursor.ty != 1 ||
-    scan_mentions(get(limit_test.children, 1), cursor.index) {
+    scan_mentions(get(limit_test.children, 1), cursor.index) ||
+    scan_outer_write(get(limit_test.children, 1), bindings, 256) {
         return Result.Err("pure loop proof needs a stable bound and integer cursor")
     }
     let update = get(body.children, length(body.children) - 1)
@@ -202,6 +203,9 @@ fn expanded_scan(context Expansion, value Expr, guard Expr,
         Option.None => {
             return Result.Err("pure scan needs a stable directed cursor step")
         }
+    }
+    if scan_outer_write(stride, bindings, 256) {
+        return Result.Err("pure scan cursor step cannot rebind outer state")
     }
     if counting && (limit_test.text != "<" || !scan_unit_step(update, cursor.index)) {
         return Result.Err("count scan needs a forward unit step")
@@ -234,7 +238,10 @@ fn expanded_scan(context Expansion, value Expr, guard Expr,
     }
     let initial = expanded(context, cursor, guard, bindings, locals, self, calls, depth + 1)?
     let limit = expanded(context, get(limit_test.children, 1), guard, bindings, locals, self, calls, depth + 1)?
-    let step = expanded(context, stride, guard, bindings, locals, self, calls, depth + 1)?
+    // Inspect a stable step without claiming it ran. Empty scans and paths
+    // returning before their update never evaluate it. Actual requirements
+    // and faults are retained below, under the continuing iteration guard.
+    let step = expanded(scan_context(context), stride, guard, clone(bindings), locals, self, calls, depth + 1)?
     let identity = scan_binder(context)
     let domain = scan_domain(context, value, initial, limit, step, identity, limit_test.text == ">", guard)?
     let start = domain.start
