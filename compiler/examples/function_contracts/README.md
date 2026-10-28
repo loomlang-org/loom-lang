@@ -66,6 +66,12 @@ observations while an earlier result retains its sampled value. Getter/setter
 pairs still share one actual cell, and private captures can cross suspension.
 Shared-worker reads require private or read-only storage. Mutable descendants
 need graph snapshots; unknown or writing callbacks do not acquire result facts.
+`cell_collections.loom` applies the same projection to captured Lists and recursive
+records. Replacing a captured handle changes its later reads; writes through a
+shared child invalidate content observations even when the binding is unchanged.
+The runnable example also checks a shared self edge without a separation axiom.
+Unobserved mutable siblings remain omitted, including inside a mutable captured
+record; sampling a binding does not imply reading every descendant.
 
 Successful evaluation is independent of the result: a hypothetical call cannot
 prove its own safety, termination or output. A Float result can be NaN; numeric

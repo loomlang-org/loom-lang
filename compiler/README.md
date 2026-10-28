@@ -3709,12 +3709,14 @@ permission to weaken an invariant. See the [graph example](examples/function_con
 A read from a newly constructed captured binding can use its initializer's value
 after preserving its evaluation checks. Existing environments retain their storage
 snapshots and alias invalidation, including shared children.
-Closed read-only callbacks, including loop bodies, can also compose at the current
-immutable value of a mutable capture cell. Writes change later observations while
+Closed read-only callbacks, including loop bodies, can also compose at a mutable
+capture cell's current input projection: immutable leaves and versioned sequence
+or graph children use the same argument rules. Writes change later observations while
 previous results retain their sampled values. Returned getter/setter pairs keep
 their actual shared cell; this introduces neither a runtime copy nor a frozen
-binding. Shared-worker observations require private or read-only storage, and
-mutable descendants still need a graph snapshot. See the
+binding. Shared-worker observations require private or read-only storage for
+the cell and observed descendants; graph observations retain their coarse
+interference boundary. See the
 [capture example](examples/function_contracts/cell_captures.loom).
 Finite forwarding retains the requested result's function abstraction rather
 than replacing it with unrelated body inference. The verifier checks the current

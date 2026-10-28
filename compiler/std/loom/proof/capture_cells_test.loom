@@ -95,6 +95,41 @@ test fn capture_value_snapshots_require_coherence_and_keep_past_values() {
     }
 }
 
+test fn capture_value_snapshots_check_shared_descendants_too() {
+    let program = capture_cell_program()
+    push(program.types, publication_shape(TypeKind.List, [1]))
+    push(program.types, Type {
+            arguments = [7]
+            fields = [Field {
+                    name = "value"
+                    ty = 7
+                }]
+            ..get(program.types, 6)
+        })
+    let proof = verification(contract_fixture([], 1, literal("0"), [], []), program)
+    let shape = expression(ExprKind.Intrinsic, 8, "proof_cell_value", -1,
+        [expression(ExprKind.Intrinsic, 7, "proof_sequence", -1, [])])
+    let state = with_contents(20, 40, list_bounds(Value.List(20), State {
+                heap = -1
+                locals = []
+                facts = []
+                extents = []
+                observations = []
+            }))
+    let input = Value.Record([Value.List(20)])
+    assert match function_argument_state(proof, shape, input, state) {
+        Result.Ok(_) => true
+        _ => false
+    }
+    assert match function_argument_state(Verification {
+            shared = true
+            ..proof
+        }, shape, input, state) {
+        Result.Err(_) => true
+        _ => false
+    }
+}
+
 test fn capture_cell_stores_and_reads_share_versions_without_freezing_contents() {
     let program = capture_cell_program()
     let cell = expression(ExprKind.Local, 6, "", 0, [])

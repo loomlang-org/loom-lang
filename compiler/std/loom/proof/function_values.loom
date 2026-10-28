@@ -58,7 +58,7 @@ fn function_expression(context Expansion, source Expr, inputs List[Expr]) Result
         let shape = projected_function_shape(context.program, input, get(function.params, index), [256], 0, mode)?
         let layout = proof_expr(input, ExprKind.Intrinsic, input.ty, "proof_layout", -1,
             [shape])
-        let argument = if mode == FunctionInputs.Sequence {
+        let argument = if contains_versioned_input(shape) {
             function_argument_expression(context, shape, input, 0)?
         } else {
             input
