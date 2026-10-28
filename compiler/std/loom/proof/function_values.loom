@@ -13,7 +13,7 @@ fn function_shape(program Program, source Expr, ty Int, depth Int) Expr {
         return proof_expr(source, ExprKind.Coerce, ty, "", -1,
             [function_shape(program, source, get(shape.fields, 0).ty, depth + 1)])
     }
-    if shape.kind == TypeKind.Record || shape.kind == TypeKind.Tuple {
+    if shape.kind == TypeKind.Record || shape.kind == TypeKind.Tuple || shape.kind == TypeKind.Frame {
         let fields = new[Expr]()
         var index = 0
         while index < length(shape.fields) {

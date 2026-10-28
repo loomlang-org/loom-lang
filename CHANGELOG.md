@@ -5,6 +5,10 @@ implementation, not a compatibility ledger for previous prototypes.
 
 ## Unreleased
 
+- Compose known callable contracts over read-only immutable captures, including
+  nested aggregates, List scans and suspension. Capture values keep their
+  evaluation order; mutable cells and shared collections gain no immutable keys.
+
 - Keep opaque contract applications bound to exact source specializations across
   private proof queues and expanded type invariants. Recheck normalized
   applications after source edits; unrelated functions and static arguments

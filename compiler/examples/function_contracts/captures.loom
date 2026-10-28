@@ -1,0 +1,111 @@
+import std.time.sleep_ms
+import std.list.all
+
+fn captured_sum(offset Int) fn(Int) Int {
+    fn(value Int) Int {
+        var index = 0
+        var total = value
+        while index < 2 {
+            total = total + offset
+            index = index + 1
+        }
+        total
+    }
+}
+
+fn observed_capture(value Int, offset Int) Int
+ensures result == captured_sum(offset)(value) {
+    let callback = captured_sum(offset)
+    callback(value)
+}
+
+fn observed_capture_arguments(value Int) Int
+ensures result == captured_sum(value)(value + 1) {
+    var current = value
+    let advance = fn() Int {
+        current = current + 1
+        current
+    }
+    // The receiver captures current before the argument changes it.
+    captured_sum(current)(advance())
+}
+
+fn captured_reading(reading Reading) fn(Int) Int {
+    fn(value Int) Int {
+        var index = 0
+        var total = value
+        while index < 2 {
+            total = total + reading_count(reading)
+            index = index + 1
+        }
+        total
+    }
+}
+
+fn observed_reading_capture(reading Reading, value Int) Int
+ensures result == captured_reading(reading)(value) {
+    captured_reading(reading)(value)
+}
+
+fn captured_threshold(minimum Int) fn(Int) Bool {
+    fn(value Int) Bool {
+        var index = 0
+        var answer = false
+        while index < 2 {
+            answer = value >= minimum
+            index = index + 1
+        }
+        answer
+    }
+}
+
+fn observed_captured_scan(values List[Int], minimum Int) Bool
+ensures result == all(values, captured_threshold(minimum)) {
+    let callback = captured_threshold(minimum)
+    all(values, callback)
+}
+
+fn captured_sign(zero Float) fn(Int) Bool {
+    fn(value Int) Bool {
+        var index = 0
+        var answer = false
+        while index < 2 {
+            answer = value >= 0 && 1.0 / zero > 0.0
+            index = index + 1
+        }
+        answer
+    }
+}
+
+fn observed_captured_sign(value Int, zero Float) Bool
+ensures result == captured_sign(zero)(value) {
+    captured_sign(zero)(value)
+}
+
+async fn captured_after_pause(value Int, offset Int) Int
+ensures result == captured_sum(offset)(value) {
+    let callback = captured_sum(offset)
+    sleep_ms(1).await
+    callback(value)
+}
+
+fn capture_contracts() {
+    assert observed_capture(3, 2) == 7
+    assert observed_capture_arguments(2) == 7
+    assert observed_reading_capture(Reading.Summary(Summary {
+                count = 3
+                text = "capture"
+            }), 1) == 7
+    assert observed_captured_scan([3, 4], 3)
+    assert !observed_captured_scan([2, 4], 3)
+    assert observed_captured_sign(1, 0.0)
+    assert !observed_captured_sign(1, -0.0)
+}
+
+test fn readonly_captures_use_values_instead_of_allocation_identity() {
+    capture_contracts()
+}
+
+test async fn readonly_capture_contracts_survive_suspension() {
+    assert captured_after_pause(3, 2).await == 7
+}

@@ -3682,6 +3682,11 @@ fault-freedom promise. Contracts expand finite pure bodies where supported, or
 retain a known pure function's immutable application and separate evaluation
 domain. A recursive function cannot establish its result or termination from
 its own `ensures`.
+Known closure environments use the same value rules when their checked slots
+are read-only and all captured contents are immutable. A read-only slot holding
+a shared collection remains shared state. The verifier checks the current
+function's frame writes before materializing argument values; capture keys use
+already evaluated values, including across later argument effects or suspension.
 See the [recursive contract example](examples/recursive_contracts/main.loom).
 
 Storage frames inspect the bounded reachable synchronous call graph, including

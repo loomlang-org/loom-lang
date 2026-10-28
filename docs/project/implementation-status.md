@@ -150,6 +150,8 @@ Known pure functions over immutable arguments and results retain independent res
 successful-evaluation facts when body expansion is unavailable. Those facts
 compose through construction, loops, suspension and known List scans without
 assuming termination or granting mutable arguments a stable value identity.
+Read-only closure slots participate when their captured contents are immutable;
+mutable capture cells, shared collection contents and coroutine storage do not.
 Scalar, record, tuple and enum results keep distinct components; immutable
 elements in logical List columns can supply argument values without confusing
 storage identity with content. Source-specialization identities remain coherent
