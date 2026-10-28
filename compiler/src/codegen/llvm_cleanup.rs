@@ -352,6 +352,7 @@ impl<'ctx> FunctionEmitter<'_, 'ctx> {
                 tracers: self.tracers,
                 loop_targets: Vec::new(),
                 cleanups: HashMap::new(),
+                argument_slots: HashMap::new(),
                 runtime_fault: true,
                 shared: self.shared,
                 private_storage: self.private_storage,

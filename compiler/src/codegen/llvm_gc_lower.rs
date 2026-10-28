@@ -189,6 +189,12 @@ pub(super) fn lower<'ctx>(
         let prologue = context.prepend_basic_block(entry, "gc.entry");
         builder.position_at_end(prologue);
         for (slot, _) in &slots {
+            // Incoming aggregate value slots belong to the call ABI and live
+            // throughout this invocation. They already dominate the prologue;
+            // only local allocations need moving before frame registration.
+            if function.get_param_iter().any(|value| value == *slot) {
+                continue;
+            }
             let alloca = slot
                 .as_instruction_value()
                 .ok_or("GC root is not a stack slot")?;

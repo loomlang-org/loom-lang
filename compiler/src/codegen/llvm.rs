@@ -21,6 +21,8 @@ use std::{
     sync::Once,
 };
 
+#[path = "llvm_abi.rs"]
+mod abi;
 #[path = "llvm_cleanup.rs"]
 mod cleanup;
 #[path = "llvm_dyn.rs"]
@@ -234,18 +236,26 @@ fn emit_checked(
     trace_phase("declarations");
     for &id in &reachable {
         let source = &program.functions[id];
-        let ty = native_signature(&context, program, &source.params, source.result)?;
+        let ty = native_signature(
+            &context,
+            program,
+            &target_data,
+            &source.params,
+            source.result,
+        )?;
         let linkage = if library && program.exports.contains(&id) {
             Linkage::External
         } else {
             Linkage::Internal
         };
-        functions[id] = Some(module.add_function(&format!("loom.fn.{id}"), ty, Some(linkage)));
+        let function = module.add_function(&format!("loom.fn.{id}"), ty, Some(linkage));
+        functions[id] = Some(function);
     }
     let witnesses = dynamic::emit_witnesses(
         &context,
         &module,
         program,
+        &target_data,
         &functions,
         &live_witnesses,
         &live_slots,
@@ -272,6 +282,17 @@ fn emit_checked(
             .map(|(id, ty)| {
                 if *ty == Type::Unit || callback_locals.contains(&id) {
                     Ok(None)
+                } else if id < source.params.len()
+                    && abi::indirect(native_type(&context, program, *ty)?, &target_data)
+                {
+                    // The caller supplied a private value snapshot. GC may
+                    // update it without changing the caller's source value.
+                    Ok(Some(
+                        function
+                            .get_nth_param(u32::try_from(id)?)
+                            .ok_or("missing parameter")?
+                            .into_pointer_value(),
+                    ))
                 } else {
                     Ok(Some(builder.build_alloca(
                         native_type(&context, program, *ty)?,
@@ -281,7 +302,12 @@ fn emit_checked(
             })
             .collect::<NativeResult<Vec<_>>>()?;
         for (index, value) in function.get_param_iter().enumerate() {
-            if source.params[index] != Type::Unit {
+            if source.params[index] != Type::Unit
+                && !abi::indirect(
+                    native_type(&context, program, source.params[index])?,
+                    &target_data,
+                )
+            {
                 builder.build_store(locals[index].ok_or("invalid checked parameter")?, value)?;
             }
         }
@@ -344,6 +370,7 @@ fn emit_checked(
             tracers: &mut tracers,
             loop_targets: Vec::new(),
             cleanups: HashMap::new(),
+            argument_slots: HashMap::new(),
             runtime_fault,
             shared,
             private_storage,
@@ -510,12 +537,13 @@ fn emit_checked(
 fn native_signature<'ctx>(
     context: &'ctx Context,
     program: &checked::Program,
+    target: &TargetData,
     params: &[Type],
     result: Type,
 ) -> NativeResult<FunctionType<'ctx>> {
     let params = params
         .iter()
-        .map(|ty| native_type(context, program, *ty).map(Into::into))
+        .map(|ty| abi::parameter(context, program, target, *ty).map(Into::into))
         .collect::<NativeResult<Vec<_>>>()?;
     Ok(if result == Type::Unit {
         context.void_type().fn_type(&params, false)
@@ -636,6 +664,7 @@ struct FunctionEmitter<'a, 'ctx> {
     /// Nearest loop body first via `last()`: (continue target, break target).
     loop_targets: Vec<(BasicBlock<'ctx>, BasicBlock<'ctx>)>,
     cleanups: HashMap<usize, cleanup::Site<'ctx>>,
+    argument_slots: HashMap<Type, Vec<PointerValue<'ctx>>>,
     runtime_fault: bool,
     shared: bool,
     private_storage: &'a storage::PrivateStorage,
@@ -1536,12 +1565,11 @@ impl<'ctx> FunctionEmitter<'_, 'ctx> {
                 let Some(values) = self.operands(args)? else {
                     return Ok(None);
                 };
+                let arguments =
+                    self.abi_arguments(&self.program.functions[*function].params, &values)?;
                 let call = self.builder.build_call(
                     self.functions[*function].ok_or("unresolved checked call")?,
-                    &values
-                        .iter()
-                        .map(|value| (*value).into())
-                        .collect::<Vec<_>>(),
+                    &arguments,
                     if expr.ty == Type::Unit { "" } else { "call" },
                 )?;
                 if self.allocating.contains(function) {
@@ -1601,13 +1629,13 @@ impl<'ctx> FunctionEmitter<'_, 'ctx> {
                     .build_extract_value(callable, 1, "call.entry")?
                     .into_pointer_value();
                 let signature = &self.program.function_types[signature];
+                let arguments = std::iter::once(environment.into())
+                    .chain(self.abi_arguments(&signature.params, &values)?)
+                    .collect::<Vec<_>>();
                 let call = self.builder.build_indirect_call(
-                    dynamic::method_type(self.context, self.program, signature)?,
+                    dynamic::method_type(self.context, self.program, self.target_data, signature)?,
                     entry,
-                    &std::iter::once(environment)
-                        .chain(values)
-                        .map(Into::into)
-                        .collect::<Vec<_>>(),
+                    &arguments,
                     if signature.result == Type::Unit {
                         ""
                     } else {

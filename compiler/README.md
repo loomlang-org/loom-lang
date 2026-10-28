@@ -5189,6 +5189,12 @@ It is distinct from the compiler-latency measurements above.
 The `compiler/examples/data` package exercises records, enums, generic functions,
 and both test forms through the same CLI. Scalar-only records stay native values;
 enum storage uses its largest variant payload, not the sum of all variants.
+Large aggregate arguments use one private stack snapshot after eager operand
+evaluation. Direct calls, closures and dyn witnesses share this parameter rule;
+the callee roots the slot during its invocation. Returning or capturing a value
+copies its representation, while managed children retain ordinary sharing.
+Sequential calls reuse scratch storage; simultaneously passed values remain in
+separate slots, including O0 builds.
 
 The [Loom-written compiler](loom/README.md) uses ordinary source packages for
 syntax, project loading, binding, checking, proof, and typed artifact emission.
