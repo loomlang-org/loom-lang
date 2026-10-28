@@ -18,6 +18,39 @@ fn frame_input_program(owner Int) Program {
     program
 }
 
+test fn opaque_callables_require_immutable_captures_and_the_actual_frame_footprint() {
+    let program = frame_input_program(42)
+    assert !predicate_immutable_type(program, 8, 0)
+    let shape = get(program.types, 8)
+    set(program.types, 8, Type {
+            fields = [get(shape.fields, 0)]
+            ..shape
+        })
+    let input = expression(ExprKind.Local, 8, "", 0, [])
+    let field = expression(ExprKind.Field, 1, "", 0, [input])
+    let helper = contract_fixture([8], 1, field, [], [])
+    push(program.functions, helper)
+    assert predicate_function(program, 0)
+    let stable = get(program.types, 8)
+    set(program.types, 8, Type {
+            symbol = -1
+            ..stable
+        })
+    assert !predicate_immutable_type(program, 8, 0)
+    set(program.types, 8, stable)
+    let write = expression(ExprKind.FrameStore, 0, "", 0, [input, literal("0")])
+    let root = contract_fixture([8], 1,
+        expression(ExprKind.Block, 1, "", -1, [write, field]), [], [])
+    // The current root may be outside program.functions. Its written frame
+    // must remain opaque even when the helper's own closure is read-only.
+    assert match predicate_key(record_parameter_value(verification(root, program), 8, 0), [256]) {
+        Result.Err(_) => true
+        Result.Ok(_) => false
+    }
+    push(program.functions, contract_fixture([8], 0, write, [], []))
+    assert !predicate_function(program, 0)
+}
+
 test fn readonly_frame_inputs_expose_stable_slots_not_immutable_shared_contents() {
     let program = frame_input_program(42)
     let input = expression(ExprKind.Local, 8, "", 0, [])

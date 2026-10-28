@@ -4,6 +4,7 @@ use common::success;
 
 const FUNCTIONS: &str = include_str!("../examples/function_contracts/main.loom");
 const FLOATS: &str = include_str!("../examples/function_contracts/floats.loom");
+const CAPTURES: &str = include_str!("../examples/function_contracts/captures.loom");
 
 const SCOPED_FUNCTIONS: &str = r#"
 fn negative(value Int) Bool {
@@ -138,6 +139,7 @@ fn immutable_function_results_compose_and_reject_unestablished_evidence() {
     let source = package.path().join("main.loom");
     fs::write(&source, FUNCTIONS).unwrap();
     fs::write(package.path().join("floats.loom"), FLOATS).unwrap();
+    fs::write(package.path().join("captures.loom"), CAPTURES).unwrap();
     let cache = package.path().join("cache");
     let check = || common::loom(&["check", path, "--frontend-cache", cache.to_str().unwrap()]);
     success(&check());
@@ -158,6 +160,49 @@ fn immutable_function_results_compose_and_reject_unestablished_evidence() {
         "fn bad(a Float, b Float) Float\nrequires a == b && reciprocal(a) > 0.0\nensures reciprocal(result) > 0.0\n{\n    b\n}\n",
         // Exact aggregate binding cannot establish unrelated output fields.
         "fn bad(value Text) Summary\nensures result.count == 0\n{\n    summarize(value)\n}\n",
+        // Capture values, not allocations, distinguish known closure calls.
+        r#"
+fn bad(value Int, left Int, right Int) Int
+ensures result == captured_sum(left)(value) {
+    captured_sum(right)(value)
+}
+"#,
+        r#"
+fn bad(value Int, offset Int) Bool
+ensures captured_sum(offset)(value) == captured_sum(offset)(value) {
+    true
+}
+"#,
+        r#"
+fn bad(value Int) Int
+ensures result == captured_sum(value + 1)(value + 1) {
+    observed_capture_arguments(value)
+}
+"#,
+        // IEEE equality cannot replace an exact Float capture representation.
+        r#"
+fn bad(value Int, left Float, right Float) Bool
+requires left == right && captured_sign(left)(value)
+ensures captured_sign(right)(value) {
+    true
+}
+"#,
+        // A mutable capture cell is state, not an immutable argument key.
+        r#"
+fn counter(start Int) fn() Int {
+    var count = start
+    fn() Int {
+        count = count + 1
+        count
+    }
+}
+fn bad(start Int) Int
+ensures result == counter(start)() {
+    let callback = counter(start)
+    discard callback()
+    callback()
+}
+"#,
         // Contract results retain the actual function target's identity.
         "fn different(value Text) Int {\n    count_open(value) + 1\n}\nfn bad(value Text) Int\nensures result == different(value)\n{\n    count_open(value)\n}\n",
     ] {

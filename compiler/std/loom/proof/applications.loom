@@ -149,7 +149,13 @@ fn immutable_function_type(program Program, ty Int, depth Int, budget List[Int])
         }
         return true
     }
-    if shape.kind != TypeKind.Refined && shape.kind != TypeKind.Record && shape.kind != TypeKind.Tuple {
+    // Capture slots need a checked read-only footprint. Their contents must
+    // also be immutable: a stable slot containing a List is still shared state.
+    if shape.kind == TypeKind.Frame && !frame_input_program(program, ty) {
+        return false
+    }
+    if shape.kind != TypeKind.Refined && shape.kind != TypeKind.Record &&
+    shape.kind != TypeKind.Tuple && shape.kind != TypeKind.Frame {
         return false
     }
     var index = 0
