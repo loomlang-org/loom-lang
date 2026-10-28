@@ -254,7 +254,7 @@ fn expanded_application(context Expansion, value Expr, guard Expr,
                 push(inputs, get(arguments, index).value)
                 index = index + 1
             }
-            let atom = function_expression(context, value, inputs)
+            let atom = function_expression(context, value, inputs)?
             discard evaluated(context, guard, atom, false)?
             Result.Ok(atom)
         }

@@ -3683,8 +3683,14 @@ retain a known pure function's immutable application and separate evaluation
 domain. A recursive function cannot establish its result or termination from
 its own `ensures`.
 Known closure environments use the same value rules when their checked slots
-are read-only and all captured contents are immutable. A read-only slot holding
-a shared collection remains shared state. The verifier checks the current
+are read-only. A read-only slot holding a shared collection remains shared state.
+Inline inputs can retain an immutable projection while transporting unobserved
+mutable siblings. A static transfer/observation check covers primitive operands,
+control flow, entry predicates and the closed call graph before those handles
+are omitted from a key. Unsupported mutable observations remain unproved; this
+does not infer minimal dependencies. All argument expressions still evaluate.
+Finite forwarding retains the requested result's function abstraction rather
+than replacing it with unrelated body inference. The verifier checks the current
 function's frame writes before materializing argument values; capture keys use
 already evaluated values, including across later argument effects or suspension.
 See the [recursive contract example](examples/recursive_contracts/main.loom).

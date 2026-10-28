@@ -102,7 +102,10 @@ fn contains_application(value Expr) Bool {
 }
 
 fn application_needed(proof Verification, target Int) Bool {
-    let identity = function_identity(proof.program, target)
+    application_identity_needed(proof, function_identity(proof.program, target))
+}
+
+fn application_identity_needed(proof Verification, identity Int) Bool {
     let groups = [proof.function.preconditions, proof.function.postconditions, proof.preservation]
     var group = 0
     while group < length(groups) {
@@ -115,6 +118,23 @@ fn application_needed(proof Verification, target Int) Bool {
             index = index + 1
         }
         group = group + 1
+    }
+    false
+}
+
+// Finite forwarding may expose another function's result. Keep that requested
+// result abstraction instead of replacing it with an unrelated body inference.
+// An application's argument keys are not its result: do not inspect them here.
+fn result_application_needed(proof Verification, value Expr) Bool {
+    if predicate_application(value) {
+        return application_identity_needed(proof, value.index)
+    }
+    var index = 0
+    while index < length(value.children) {
+        if result_application_needed(proof, get(value.children, index)) {
+            return true
+        }
+        index = index + 1
     }
     false
 }
@@ -181,14 +201,16 @@ fn predicate_function(program Program, target Int) Bool {
     var index = 0
     while index < length(function.params) {
         let ty = get(function.params, index)
-        if !predicate_immutable_type(program, ty, 0) {
-            return false
-        }
         push(arguments, proof_expr(function.body, ExprKind.Local, ty, "", index, []))
         index = index + 1
     }
-    // This validator checks the operation/call closure, not shared-input
-    // isolation. The immutable parameter check above supplies that boundary.
+    // Mutable siblings can travel as handles only when the complete operation
+    // closure cannot observe or mutate them, including in entry conditions.
+    if !projected_function_inputs(program, target, [], [4096], 0) {
+        return false
+    }
+    // The validator supplies operation purity; the projection check supplies
+    // isolation for every mutable part omitted from an application key.
     let call = proof_expr(function.body, ExprKind.Call, function.result, "", target, arguments)
     if !predicate_direct_closure(program, call, [], [4096], 0) {
         return false

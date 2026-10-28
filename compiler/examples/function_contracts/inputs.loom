@@ -1,0 +1,156 @@
+import std.bytes.new
+import std.bytes.push
+import std.list.push
+import std.list.get
+import std.list.length
+import std.list.set
+import std.time.sleep_ms
+
+record SharedExtras {
+    values List[Int]
+    bytes Bytes
+}
+
+record SharedContext {
+    initial Int
+    reading Reading
+    extras SharedExtras
+}
+
+fn inspect_context(context SharedContext) Int {
+    let snapshot = context
+    var index = 0
+    var total = snapshot.initial
+    while index < 2 {
+        total = total + reading_count(snapshot.reading)
+        index = index + 1
+    }
+    total
+}
+
+fn forward_context(context SharedContext) Int {
+    inspect_context(context)
+}
+
+fn observed_context(context SharedContext) Int
+ensures result == inspect_context(context) {
+    let value = forward_context(context)
+    std.list.push(context.extras.values, 42)
+    std.bytes.push(context.extras.bytes, 7)
+    value
+}
+
+fn context_reader(context SharedContext) fn() Int {
+    fn() Int {
+        var index = 0
+        var total = context.initial
+        while index < 2 {
+            total = total + reading_count(context.reading)
+            index = index + 1
+        }
+        total
+    }
+}
+
+fn observed_context_reader(context SharedContext) Int
+ensures result == context_reader(context)() {
+    let callback = context_reader(context)
+    let value = callback()
+    std.list.push(context.extras.values, 99)
+    value
+}
+
+fn ignores_values(value Int, unused List[Int]) Int {
+    discard unused
+    var index = 0
+    var total = 0
+    while index < 2 {
+        total = total + value
+        index = index + 1
+    }
+    total
+}
+
+fn observed_ignored_values(value Int, left List[Int], right List[Int]) Int
+ensures result == ignores_values(value, right) {
+    ignores_values(value, left)
+}
+
+fn reads_context(context SharedContext) Int {
+    var index = 0
+    var total = 0
+    while index < 2 {
+        total = get(context.extras.values, 0)
+        index = index + 1
+    }
+    total
+}
+
+fn context_entry(context SharedContext) Int
+requires context_entry_valid(context) {
+    var index = 0
+    var total = context.initial
+    while index < 2 {
+        total = total + reading_count(context.reading)
+        index = index + 1
+    }
+    total
+}
+
+fn context_has_first(context SharedContext) Bool {
+    length(context.extras.values) > 0
+}
+
+fn context_entry_valid(context SharedContext) Bool {
+    length(context.extras.values) > 0 && get(context.extras.values, 0) >= 0
+}
+
+fn replace_context_first(context SharedContext, value Int)
+requires context_has_first(context) {
+    set(context.extras.values, 0, value)
+}
+
+fn eager_ignored_values(value Int, values List[List[Int]], index Int) Int {
+    ignores_values(value, get(values, index))
+}
+
+async fn context_after_pause(context SharedContext) Int
+ensures result == inspect_context(context) {
+    let value = inspect_context(context)
+    sleep_ms(1).await
+    value
+}
+
+fn context_contracts() {
+    let context = SharedContext {
+        initial = 1
+        reading = Reading.Summary(Summary {
+                count = 3
+                text = "context"
+            })
+        extras = SharedExtras {
+            values = [1]
+            bytes = std.bytes.new()
+        }
+    }
+    assert observed_context(context) == 7
+    assert observed_context_reader(context) == 7
+    assert length(context.extras.values) == 3
+    assert observed_ignored_values(3, [1], [2]) == 6
+}
+
+test fn untouched_mutable_siblings_do_not_supply_value_identities() {
+    context_contracts()
+}
+
+test async fn immutable_projections_survive_suspension() {
+    let context = SharedContext {
+        initial = 1
+        reading = Reading.Text("abc")
+        extras = SharedExtras {
+            values = [1]
+            bytes = std.bytes.new()
+        }
+    }
+    assert context_after_pause(context).await == 7
+}

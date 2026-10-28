@@ -48,19 +48,21 @@ fn function_metadata(program Program, source Expr, ty Int) Expr {
         [function_shape(program, source, ty, 0)])
 }
 
-fn function_expression(context Expansion, source Expr, inputs List[Expr]) Expr {
+fn function_expression(context Expansion, source Expr, inputs List[Expr]) Result[Expr, Text] {
     let function = get(context.program.functions, source.index)
     let arguments = new[Expr]()
     var index = 0
     while index < length(inputs) {
         let input = get(inputs, index)
+        let layout = proof_expr(input, ExprKind.Intrinsic, input.ty, "proof_layout", -1,
+            [projected_function_shape(context.program, input, get(function.params, index), [256], 0)?])
         push(arguments, proof_expr(input, ExprKind.Intrinsic, input.ty, "proof_argument", -1,
-                [input, function_metadata(context.program, input, get(function.params, index))]))
+                [input, layout]))
         index = index + 1
     }
     let packed = proof_expr(source, ExprKind.Intrinsic, 0, "proof_pack", -1, arguments)
-    proof_expr(source, ExprKind.Intrinsic, function.result, "proof_function", function_identity(context.program, source.index),
-        [packed, function_metadata(context.program, source, function.result)])
+    Result.Ok(proof_expr(source, ExprKind.Intrinsic, function.result, "proof_function", function_identity(context.program, source.index),
+            [packed, function_metadata(context.program, source, function.result)]))
 }
 
 fn function_component(value FunctionApplication, field Int) FunctionApplication {
@@ -122,6 +124,9 @@ fn same_application(left FunctionApplication, right FunctionApplication) Bool {
 }
 
 fn function_argument(shape Expr, value Value) Value {
+    if omitted_function_input(shape) {
+        return Value.Record([])
+    }
     if shape.kind == ExprKind.Coerce {
         return function_argument(get(shape.children, 0), value)
     }
@@ -164,6 +169,9 @@ fn function_argument(shape Expr, value Value) Value {
 }
 
 fn function_projection(shape Expr, contents Int, path List[Int], index Linear) Value {
+    if omitted_function_input(shape) {
+        return Value.Record([])
+    }
     if shape.kind == ExprKind.Coerce {
         return function_projection(get(shape.children, 0), contents, path, index)
     }

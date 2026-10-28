@@ -487,8 +487,13 @@ fn applied_call(proof Verification, call Expr, function Function, arguments Call
     let values = new[Value]()
     var argument = 0
     while argument < length(arguments.values) {
-        push(values, function_argument(function_shape(proof.program, call, get(function.params, argument), 0),
-                get(arguments.values, argument)))
+        let shape = match projected_function_shape(proof.program, call, get(function.params, argument), [256], 0) {
+            Result.Ok(shape) => shape
+            Result.Err(_) => {
+                return Result.Ok(completed)
+            }
+        }
+        push(values, function_argument(shape, get(arguments.values, argument)))
         argument = argument + 1
     }
     let keys = match predicate_keys(values, [256]) {
@@ -600,7 +605,7 @@ fn applied_call_body(proof Verification, call Expr, function Function, arguments
             return source_body_call(proof, call.index, function, arguments, false, depth)
         }
     }
-    if contains_application(value) && !application_needed(proof, call.index) &&
+    if contains_application(value) && !result_application_needed(proof, value) &&
     predicate_function(proof.program, call.index) {
         // A caller asking for an arithmetic/body relation still needs the
         // existing source inference. Opaque congruence is useful when a clause
