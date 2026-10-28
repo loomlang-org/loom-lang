@@ -50,13 +50,19 @@ jobs:
 
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
+      - name: Install the native test runner
+        uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2.88.0
+        with:
+          tool: cargo-nextest@0.9.150
+
       - name: Format, lint, and test
         run: |
           cargo fmt --all -- --check
           cargo clippy --locked --workspace --all-targets -- -D warnings
           bash scripts/bootstrap.sh
           target/loom fmt --check --recursive compiler/examples
-          cargo test --locked --workspace
+          cargo nextest run --locked --workspace --test-threads 2 --no-fail-fast
+          cargo test --locked --workspace --doc
 
       - name: Reachable edited-source benchmark smoke
         run: node scripts/benchmark-compiler.mjs --compare-edits --check-only --runs 1 --output target/performance/ci-compiler-edits.json
@@ -144,6 +150,11 @@ jobs:
 
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
+      - name: Install the native test runner
+        uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2.88.0
+        with:
+          tool: cargo-nextest@0.9.150
+
       - name: Bootstrap and full native gate
         run: |
           cargo fmt --all -- --check
@@ -151,7 +162,8 @@ jobs:
           bash scripts/bootstrap.sh
           LOOM_OPT_LEVEL=0 target/loom test tools/semantic_change
           LOOM_OPT_LEVEL=0 target/loom test tools/semantic_change_trial
-          cargo test --locked --workspace
+          cargo nextest run --locked --workspace --test-threads 2 --no-fail-fast
+          cargo test --locked --workspace --doc
 
       - name: Relocated toolchain and generic CPU gate
         run: node scripts/stage-toolchain.mjs "$RUNNER_TEMP/loom-relocated-toolchain"
@@ -240,6 +252,11 @@ jobs:
 
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
+      - name: Install the native test runner
+        uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2.88.0
+        with:
+          tool: cargo-nextest@0.9.150
+
       - name: Native bootstrap and full gate
         run: |
           source scripts/windows-env.sh
@@ -250,7 +267,8 @@ jobs:
           target/loom.exe test compiler/std/json
           LOOM_OPT_LEVEL=0 target/loom.exe test tools/semantic_change
           LOOM_OPT_LEVEL=0 target/loom.exe test tools/semantic_change_trial
-          cargo test --locked --workspace --no-fail-fast
+          cargo nextest run --locked --workspace --test-threads 2 --no-fail-fast
+          cargo test --locked --workspace --doc
 
       - name: Relocated toolchain and generic CPU gate
         run: node scripts/stage-toolchain.mjs "$RUNNER_TEMP/loom-relocated-toolchain"
