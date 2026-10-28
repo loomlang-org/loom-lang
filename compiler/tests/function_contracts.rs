@@ -6,6 +6,7 @@ const FUNCTIONS: &str = include_str!("../examples/function_contracts/main.loom")
 const FLOATS: &str = include_str!("../examples/function_contracts/floats.loom");
 const CAPTURES: &str = include_str!("../examples/function_contracts/captures.loom");
 const INPUTS: &str = include_str!("../examples/function_contracts/inputs.loom");
+const SEQUENCES: &str = include_str!("../examples/function_contracts/sequences.loom");
 
 const SCOPED_FUNCTIONS: &str = r#"
 fn negative(value Int) Bool {
@@ -142,6 +143,7 @@ fn immutable_function_results_compose_and_reject_unestablished_evidence() {
     fs::write(package.path().join("floats.loom"), FLOATS).unwrap();
     fs::write(package.path().join("captures.loom"), CAPTURES).unwrap();
     fs::write(package.path().join("inputs.loom"), INPUTS).unwrap();
+    fs::write(package.path().join("sequences.loom"), SEQUENCES).unwrap();
     let cache = package.path().join("cache");
     let check = || common::loom(&["check", path, "--frontend-cache", cache.to_str().unwrap()]);
     success(&check());
@@ -237,6 +239,83 @@ ensures result == context_entry(context) {
 fn bad(value Int, values List[Int], nested List[List[Int]], index Int) Int
 ensures result == eager_ignored_values(value, nested, index) {
     ignores_values(value, values)
+}
+"#,
+        // A successful read binds a content version, not the shared handle.
+        r#"
+fn bad(values List[Int]) Int
+requires length(values) > 0
+ensures result == sequence_total(values) {
+    let total = sequence_total(values)
+    values[0] = 99
+    total
+}
+"#,
+        // Another parameter may be the same storage, even with equal lengths.
+        r#"
+fn bad(values List[Int], alias List[Int]) Int
+requires length(alias) > 0
+ensures result == sequence_total(values) {
+    let total = sequence_total(values)
+    alias[0] = 99
+    total
+}
+"#,
+        // A hypothetical content-dependent call still lacks its own domain.
+        r#"
+fn bad(values List[Int]) Bool
+ensures sequence_total(values) == sequence_total(values) {
+    true
+}
+"#,
+        // Equal extents do not identify the contents of different inputs.
+        r#"
+fn bad(values List[Int], other List[Int]) Int
+requires length(values) == length(other)
+ensures result == sequence_total(values) {
+    sequence_total(other)
+}
+"#,
+        // Type facts belong to the constrained input, not another sequence.
+        r#"
+fn bad(values PositiveSequence, other List[Int]) Int
+ensures result > 0 {
+    sequence_total(other)
+}
+"#,
+        // A type predicate is an entry fact, not an arbitrary result axiom.
+        r#"
+fn bad(values PositiveSequence) Int
+ensures result < 0 {
+    sequence_total(values)
+}
+"#,
+        // Every constrained store still has to preserve the full predicate.
+        r#"
+fn bad(values PositiveSequence) Int
+requires length(values) > 0
+ensures result > 0 {
+    values[0] = -1000
+    sequence_total(values)
+}
+"#,
+        // Child mutation need not change the outer sequence's version.
+        r#"
+fn nested_total(values List[List[Int]]) Int {
+    var total = 0
+    var index = 0
+    while index < length(values) {
+        total = total + sequence_total(get(values, index))
+        index = index + 1
+    }
+    total
+}
+fn bad(values List[List[Int]], child List[Int]) Int
+requires length(child) > 0
+ensures result == nested_total(values) {
+    let total = nested_total(values)
+    child[0] = 99
+    total
 }
 "#,
         // Contract results retain the actual function target's identity.

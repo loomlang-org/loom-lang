@@ -1,0 +1,81 @@
+test fn sequence_application_keys_are_content_versions_not_handles_or_lengths() {
+    let state = State {
+        locals = []
+        facts = []
+        extents = []
+        observations = []
+    }
+    let size = constant(integer(2))
+    let shape = expression(ExprKind.Intrinsic, 7, "proof_sequence", -1, [])
+    let first = with_contents(10, 50, with_extent(10, size, false, state))
+    let second = with_contents(11, 50, with_extent(11, size, false, first))
+    let changed = with_contents(10, 51, second)
+    let left = match function_argument(shape, Value.List(10), second) {
+        Result.Ok(value) => value
+        _ => {
+            assert false
+            return
+        }
+    }
+    let keys = match predicate_keys([left], [256]) {
+        Result.Ok(value) => value
+        _ => {
+            assert false
+            return
+        }
+    }
+    assert match function_argument(shape, Value.List(11), second) {
+        Result.Ok(value) => match predicate_keys([value], [256]) {
+            Result.Ok(other) => same_predicate_keys(keys, other)
+            _ => false
+        }
+        _ => false
+    }
+    assert match function_argument(shape, Value.List(10), changed) {
+        Result.Ok(value) => match predicate_keys([value], [256]) {
+            Result.Ok(other) => !same_predicate_keys(keys, other)
+            _ => false
+        }
+        _ => false
+    }
+    assert match predicate_key(Value.EntryList(size, -1), [256]) {
+        Result.Err(_) => true
+        _ => false
+    }
+    let proof = verification(contract_fixture([], 1, literal("0"), [], []), empty_proof_program())
+    assert match function_argument_state(Verification {
+            shared = true
+            ..proof
+        }, shape, Value.List(10), second) {
+        Result.Err(_) => true
+        _ => false
+    }
+    assert match function_argument_state(Verification {
+            shared = true
+            ..proof
+        }, shape,
+        Value.EntryList(size, 50), second) {
+        Result.Ok(_) => true
+        _ => false
+    }
+}
+
+test fn invariant_entry_rebinding_keeps_function_layouts_and_requests_their_results() {
+    let scalar = expression(ExprKind.Local, 1, "", -1, [])
+    let layout = expression(ExprKind.Intrinsic, 1, "proof_layout", -1, [scalar])
+    let input = expression(ExprKind.Intrinsic, 1, "proof_argument", -1, [local(0), layout])
+    assert invariant_entry_supported(input, 0)
+    let rebound = invariant_entry_at(input, local(4))
+    assert get(rebound.children, 0).index == 4
+    assert get(get(rebound.children, 1).children, 0).index == -1
+    let application = expression(ExprKind.Intrinsic, 1, "proof_function", 21, [input, layout])
+    let program = frame_input_program(42)
+    let shape = get(program.types, 8)
+    set(program.types, 8, Type {
+            constraint = [operation(">", application, literal("0"))]
+            ..shape
+        })
+    let proof = verification(contract_fixture([], 1, literal("0"), [], []), program)
+    assert application_identity_needed(proof, 21)
+    assert !application_identity_needed(proof, 22)
+}

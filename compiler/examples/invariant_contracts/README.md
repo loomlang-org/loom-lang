@@ -19,8 +19,11 @@ calculations, guarded by the branches that actually executed at construction.
 These proof-only helpers do not become new runtime roots.
 
 Unsupported conjuncts supply no evidence; disjunction alternatives are never
-assumed individually. General helper loops/recursion and floating-point algebra
-remain outside this fragment. Exact IEEE comparisons use their separate value
+assumed individually. General helper loop/recursion expansion and floating-point
+algebra remain outside this fragment. Eligible pure helpers can separately retain
+opaque result/domain facts; the [function example](../function_contracts)
+also consumes a loop-based constrained List predicate at its entry version.
+Exact IEEE comparisons use their separate value
 rules; see the [Float contract trial](../floats/contracts.loom).
 Unknown required proofs reject.
 

@@ -1,0 +1,203 @@
+import std.bytes.get
+import std.bytes.length
+import std.bytes.new
+import std.bytes.push
+import std.list.get
+import std.list.length
+import std.list.push
+import std.time.sleep_ms
+import std.result.Result
+import std.result.ConstraintError
+
+fn sequence_total(values List[Int]) Int {
+    var total = 0
+    var index = 0
+    while index < length(values) {
+        total = total + get(values, index)
+        index = index + 1
+    }
+    total
+}
+
+fn observed_total(values List[Int]) Int
+ensures result == sequence_total(values) {
+    sequence_total(values)
+}
+
+fn total_forwarded(values List[Int]) Int
+ensures result == sequence_total(values) {
+    observed_total(values)
+}
+
+fn sequence_positive(values List[Int]) Bool {
+    sequence_total(values) > 0
+}
+
+fn preserve_sequence_positive(values List[Int]) List[Int]
+requires sequence_positive(values)
+ensures sequence_positive(result) {
+    values
+}
+
+type PositiveSequence = List[Int] where sequence_positive(self)
+
+fn refined_sequence_total(values PositiveSequence) Int
+ensures result > 0 {
+    sequence_total(values)
+}
+
+fn checked_positive_sequence(value Int) Result[PositiveSequence, ConstraintError] {
+    PositiveSequence([value])
+}
+
+fn total_with_ignored(values List[Int], ignored Int) Int {
+    sequence_total(values)
+}
+
+fn replace_first(values List[Int]) Int
+requires length(values) > 0 {
+    values[0] = 8
+    0
+}
+
+fn total_after_argument_effects(values List[Int]) Int
+requires length(values) > 0
+ensures result == sequence_total(values) {
+    total_with_ignored(values, replace_first(values))
+}
+
+fn byte_total(values Bytes) Int {
+    var total = 0
+    var index = 0
+    while index < length(values) {
+        total = total + get(values, index)
+        index = index + 1
+    }
+    total
+}
+
+fn observed_byte_total(values Bytes) Int
+ensures result == byte_total(values) {
+    byte_total(values)
+}
+
+fn text_sequence(values List[Text]) Text {
+    var output = ""
+    var index = 0
+    while index < length(values) {
+        output = std.text.concat(output, get(values, index))
+        index = index + 1
+    }
+    output
+}
+
+fn observed_text_sequence(values List[Text]) Text
+ensures result == text_sequence(values) {
+    text_sequence(values)
+}
+
+fn sequence_summary(values List[Summary]) Summary {
+    var output = Summary {
+        count = 0
+        text = ""
+    }
+    var index = 0
+    while index < length(values) {
+        let value = get(values, index)
+        output = Summary {
+            count = output.count + value.count
+            text = std.text.concat(output.text, value.text)
+        }
+        index = index + 1
+    }
+    output
+}
+
+fn observed_sequence_summary(values List[Summary]) Summary
+ensures result.count == sequence_summary(values).count && result.text == sequence_summary(values).text {
+    sequence_summary(values)
+}
+
+record SequenceContext {
+    label Int
+    values List[Int]
+    ignored List[List[Int]]
+}
+
+fn context_total(context SequenceContext) Int {
+    context.label + sequence_total(context.values)
+}
+
+fn observed_context_total(context SequenceContext) Int
+ensures result == context_total(context) {
+    context_total(context)
+}
+
+fn total_reader(values List[Int]) fn() Int {
+    fn() Int {
+        sequence_total(values)
+    }
+}
+
+fn observed_reader(values List[Int]) Int
+ensures result == total_reader(values)() {
+    total_reader(values)()
+}
+
+async fn past_total(values List[Int]) Int
+requires length(values) > 0
+ensures result == sequence_total(old(values)) {
+    let total = sequence_total(values)
+    values[0] = 30
+    sleep_ms(0).await
+    total
+}
+
+fn sequence_contracts() {
+    let values = [3, 4]
+    assert observed_total(values) == 7
+    assert total_forwarded(values) == 7
+    assert sequence_positive(preserve_sequence_positive(values))
+    assert refined_sequence_total(PositiveSequence([3, 4])) == 7
+    assert match checked_positive_sequence(5) {
+        Result.Ok(positive) => refined_sequence_total(positive) == 5
+        Result.Err(_) => false
+    }
+    assert match checked_positive_sequence(0) {
+        Result.Ok(_) => false
+        Result.Err(_) => true
+    }
+    push(values, 5)
+    assert observed_total(values) == 12
+    let bytes = new()
+    push(bytes, 7)
+    push(bytes, 9)
+    assert observed_byte_total(bytes) == 16
+    assert observed_text_sequence(["one", "two"]) == "onetwo"
+    let summary = observed_sequence_summary([Summary {
+                count = 2
+                text = "a"
+            },
+            Summary {
+                count = 3
+                text = "b"
+            }])
+    assert summary.count == 5 && summary.text == "ab"
+    assert observed_context_total(SequenceContext {
+            label = 10
+            values = values
+            ignored = [[99]]
+        }) == 22
+    assert observed_reader(values) == 12
+    assert total_after_argument_effects([1, 2]) == 10
+}
+
+test fn sequence_results_use_current_content_versions() {
+    sequence_contracts()
+}
+
+test async fn entry_sequence_results_survive_suspension_and_later_alias_writes() {
+    let values = [3, 4, 5]
+    assert past_total(values).await == 12
+    assert observed_total(values) == 39
+}

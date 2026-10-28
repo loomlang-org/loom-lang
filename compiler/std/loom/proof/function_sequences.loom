@@ -1,0 +1,95 @@
+// These reads observe one outer sequence. Mutable elements cannot be followed
+// through that version: a child write need not change its parent's contents.
+fn sequence_input_read(program Program, primitive Text, params List[Int], output_type Int) Bool {
+    if length(params) == 0 || !entry_list_type(program, get(params, 0), 0) {
+        return false
+    }
+    let operation = sequence_operation(primitive)
+    if operation == "list_len" {
+        return output_type == 1
+    }
+    if operation == "list_get" {
+        return predicate_immutable_type(program, output_type, 0)
+    }
+    primitive == "bytes_utf8" || primitive == "bytes_text_copy"
+}
+
+fn function_sequence_shape(shape Expr) Bool {
+    shape.kind == ExprKind.Intrinsic && shape.text == "proof_sequence"
+}
+
+fn contains_sequence_input(value Expr) Bool {
+    if function_sequence_shape(value) {
+        return true
+    }
+    var index = 0
+    while index < length(value.children) {
+        if contains_sequence_input(get(value.children, index)) {
+            return true
+        }
+        index = index + 1
+    }
+    false
+}
+
+// Prepare versions only at the actual invocation boundary, after every eager
+// argument has executed. A shared unprotected sequence cannot stand for all
+// the observations made during a multi-read source helper.
+fn function_argument_state(proof Verification, shape Expr, value Value, state State) Result[State, Text] {
+    if !contains_sequence_input(shape) {
+        return Result.Ok(state)
+    }
+    if function_sequence_shape(shape) {
+        match value {
+            Value.EntryList(_, _) => {
+                return Result.Ok(state)
+            }
+            Value.List(identity) => {
+                let extent = list_state(identity, state)?
+                if proof.shared && !stable_storage(extent) {
+                    return Result.Err("function input is not proved interference-safe")
+                }
+                return array_contents(proof, identity, state)
+            }
+            _ => {
+                return Result.Err("function input needs a tracked sequence")
+            }
+        }
+    }
+    if shape.kind == ExprKind.Coerce {
+        return function_argument_state(proof, get(shape.children, 0), value, state)
+    }
+    match value {
+        Value.Record(fields) => {
+            if shape.kind != ExprKind.Record {
+                return Result.Ok(state)
+            }
+            var current = state
+            var field = 0
+            while field < length(fields) {
+                current = function_argument_state(proof, get(get(shape.children, field).children, 0),
+                    get(fields, field), current)?
+                field = field + 1
+            }
+            Result.Ok(current)
+        }
+        _ => Result.Ok(state)
+    }
+}
+
+fn sequence_function_argument(value Value, state State) Result[Value, Text] {
+    match value {
+        Value.EntryList(_, _) => {
+            return Result.Ok(value)
+        }
+        Value.List(identity) => {
+            let extent = list_state(identity, state)?
+            if extent.contents >= 0 {
+                return Result.Ok(Value.EntryList(extent.size, extent.contents))
+            }
+        }
+        _ => {
+        }
+    }
+    Result.Err("function input needs a known content version")
+}

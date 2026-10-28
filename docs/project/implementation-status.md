@@ -157,7 +157,15 @@ graph before omitting a handle. Mutable contents and coroutine storage still
 supply no value identity; argument evaluation and faults remain independent.
 Scalar, record, tuple and enum results keep distinct components; immutable
 elements in logical List columns can supply argument values without confusing
-storage identity with content. Source-specialization identities remain coherent
+storage identity with content. Read-only helpers over List/Bytes also compose at
+one logical outer content version and extent, through direct calls, forwarding
+and known read-only captures. Eager argument effects precede that snapshot;
+possible writes invalidate current versions, while entry versions can survive
+writes and suspension. Unprotected concurrent storage and reads through mutable
+children remain unsupported. Expanded constrained-input predicates use the same
+versioned applications to prove result properties without repeated preconditions;
+this supplies neither an arbitrary result axiom nor permission to break an
+invariant at a store. Source-specialization identities remain coherent
 across cached contracts and separately expanded type invariants; private queue
 positions cannot identify functions across those scopes. Float result binding
 preserves representation,

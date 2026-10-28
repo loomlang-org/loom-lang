@@ -1,6 +1,9 @@
 // Type construction has established these predicates. Reuse the ordinary entry
 // read machinery, not a runtime assertion or a promise of private storage.
 fn invariant_entry_supported(value Expr, depth Int) Bool {
+    if function_layout(value) {
+        return true
+    }
     if depth >= 32 || proof_operation(value).arity < 0 ||
     (value.kind == ExprKind.Local && value.index != 0) {
         return false
@@ -16,6 +19,9 @@ fn invariant_entry_supported(value Expr, depth Int) Bool {
 }
 
 fn invariant_entry_at(value Expr, input Expr) Expr {
+    if function_layout(value) {
+        return value
+    }
     if value.kind == ExprKind.Local {
         return input
     }
@@ -38,7 +44,8 @@ fn invariant_entry_clauses(types List[Type], ty Int, input Expr, clauses List[Ex
         var index = 0
         while index < length(shape.constraint) {
             let predicate = get(shape.constraint, index)
-            if contains_list_read(predicate) && bounded_contract(predicate) && invariant_entry_supported(predicate, 0) {
+            if (contains_list_read(predicate) || contains_sequence_input(predicate)) &&
+            bounded_contract(predicate) && invariant_entry_supported(predicate, 0) {
                 match preservation_predicate(predicate, 256) {
                     Result.Ok(current) => push(clauses, invariant_entry_at(current, input))
                     Result.Err(_) => {

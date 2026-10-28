@@ -119,6 +119,22 @@ fn application_identity_needed(proof Verification, identity Int) Bool {
         }
         group = group + 1
     }
+    // Expanded type guarantees can request a helper result even when the
+    // postcondition only mentions a scalar result. This supplies demand, not
+    // predicate truth: ordinary typed-entry and storage-version rules still
+    // have to establish the actual facts.
+    var ty = 0
+    while ty < length(proof.program.types) {
+        let clauses = get(proof.program.types, ty).constraint
+        var index = 0
+        while index < length(clauses) {
+            if mentions_application(get(clauses, index), identity) {
+                return true
+            }
+            index = index + 1
+        }
+        ty = ty + 1
+    }
     false
 }
 
@@ -206,7 +222,8 @@ fn predicate_function(program Program, target Int) Bool {
     }
     // Mutable siblings can travel as handles only when the complete operation
     // closure cannot observe or mutate them, including in entry conditions.
-    if !projected_function_inputs(program, target, [], [4096], 0) {
+    if !projected_function_inputs(program, target, [], [4096], 0) &&
+    !projected_function_inputs(program, target, [], [4096], 0, true) {
         return false
     }
     // The validator supplies operation purity; the projection check supplies
@@ -310,6 +327,11 @@ fn predicate_key(value Value, budget List[Int]) Result[PredicateKey, Text] {
         }
         Value.Text(term) => checked_scalar_key(PredicateKey.Text(term), budget)
         Value.Float(term) => checked_scalar_key(PredicateKey.Float(term), budget)
+        Value.EntryList(size, contents) => if contents >= 0 {
+            Result.Ok(PredicateKey.Sequence(contents, size))
+        } else {
+            Result.Err("function input needs a known content version")
+        }
         Value.Record(fields) => Result.Ok(PredicateKey.Record(predicate_keys(fields, budget)?))
         Value.Sum(ty, tag, payloads) => {
             if !integer_key_size(tag, budget) {
@@ -394,6 +416,7 @@ fn predicate_key_sizes(keys List[PredicateKey], budget List[Int]) Bool {
             PredicateKey.Integer(value) => integer_key_size(value, budget)
             PredicateKey.Text(value) => text_key_size(value, budget)
             PredicateKey.Float(value) => float_key_size(value, budget)
+            PredicateKey.Sequence(_, _) => true
             PredicateKey.Boolean(values) => predicate_boolean_sizes(values, budget)
             PredicateKey.Record(fields) => predicate_key_sizes(fields, budget)
             PredicateKey.Sum(_, tag, variants) => {
@@ -452,6 +475,10 @@ fn same_predicate_key(left PredicateKey, right PredicateKey) Bool {
         }
         PredicateKey.Record(value) => match right {
             PredicateKey.Record(other) => same_predicate_keys(value, other)
+            _ => false
+        }
+        PredicateKey.Sequence(contents, size) => match right {
+            PredicateKey.Sequence(other, extent) => contents == other && compare(size.constant, extent.constant) == 0 && same_terms(size.terms, extent.terms)
             _ => false
         }
         PredicateKey.Sum(ty, tag, fields) => match right {
