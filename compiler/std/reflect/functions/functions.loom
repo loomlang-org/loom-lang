@@ -1,0 +1,6 @@
+// Inspect a known function without invoking it. Non-function stored values,
+// unsupported or erased call graphs return false. Success covers the bounded
+// closed execution/CTFE operation checks, including entry conditions; it does
+// not establish argument availability, definedness, termination, input isolation
+// or read-only captures. Compile-time evaluation can mutate its supplied data.
+pub intrinsic fn comptime_callable[F](comptime callback F) Bool

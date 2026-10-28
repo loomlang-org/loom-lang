@@ -1,0 +1,51 @@
+// A closed query excludes erased dispatch and implicit resource traversals.
+// Naming a function does not execute its body; direct calls include their entry
+// conditions. Source arguments are never evaluated by this inspection.
+// Callers supply checked IR; input isolation and evaluation success are separate.
+pub fn validate_closed(program Program, expression Expr) Result[Bool, Failure] {
+    discard closed_execution(program, expression, [], [4096], 0)?
+    validate(program, expression)
+}
+
+fn closed_execution(program Program, value Expr, seen List[Int], budget List[Int], depth Int) Result[Bool, Failure] {
+    if depth >= 64 || get(budget, 0) <= 0 || value.kind == ExprKind.ResourceDrain ||
+    value.kind == ExprKind.IndirectCall || value.kind == ExprKind.DynCall || value.kind == ExprKind.Deferred {
+        return Result.Err(failure(value, "compile-time callable needs a bounded closed direct call graph"))
+    }
+    std.list.set(budget, 0, get(budget, 0) - 1)
+    if value.kind == ExprKind.Call {
+        var index = 0
+        while index < length(seen) && get(seen, index) != value.index {
+            index = index + 1
+        }
+        if index == length(seen) {
+            if value.index < 0 || value.index >= length(program.functions) {
+                return Result.Err(failure(value, "compile-time callable needs a bounded closed direct call graph"))
+            }
+            push(seen, value.index)
+            let function = get(program.functions, value.index)
+            discard closed_execution(program, function.body, seen, budget, depth + 1)?
+            index = 0
+            while index < length(function.preconditions) {
+                discard closed_execution(program, get(function.preconditions, index), seen, budget, depth + 1)?
+                index = index + 1
+            }
+        }
+    }
+    var index = 0
+    while index < length(value.children) {
+        discard closed_execution(program, get(value.children, index), seen, budget, depth + 1)?
+        index = index + 1
+    }
+    index = 0
+    while index < length(value.arms) {
+        let body = get(value.arms, index).body
+        var item = 0
+        while item < length(body) {
+            discard closed_execution(program, get(body, item), seen, budget, depth + 1)?
+            item = item + 1
+        }
+        index = index + 1
+    }
+    Result.Ok(true)
+}

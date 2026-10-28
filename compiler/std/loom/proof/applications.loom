@@ -1,4 +1,4 @@
-import std.loom.eval.validate
+import std.loom.eval.validate_closed
 
 fn predicate_application(value Expr) Bool {
     value.kind == ExprKind.Intrinsic &&
@@ -229,10 +229,7 @@ fn predicate_function(program Program, target Int) Bool {
     // The validator supplies operation purity; the projection check supplies
     // isolation for every mutable part omitted from an application key.
     let call = proof_expr(function.body, ExprKind.Call, function.result, "", target, arguments)
-    if !predicate_direct_closure(program, call, [], [4096], 0) {
-        return false
-    }
-    match std.loom.eval.validate(program, call) {
+    match std.loom.eval.validate_closed(program, call) {
         Result.Ok(_) => true
         Result.Err(_) => false
     }
@@ -248,58 +245,6 @@ fn function_identity(program Program, target Int) Int {
     get(program.function_identities, target)
 }
 
-// Opaque applications need a statically closed execution target. Resource
-// drains and erased dispatch may invoke callbacks not exposed by scalar IR;
-// ordinary expansion can still handle supported instances of those forms.
-fn predicate_direct_closure(program Program, value Expr, seen List[Int], budget List[Int], depth Int) Bool {
-    if depth >= 64 || !conjunction_step(budget) || value.kind == ExprKind.ResourceDrain ||
-    value.kind == ExprKind.IndirectCall || value.kind == ExprKind.DynCall || value.kind == ExprKind.Deferred {
-        return false
-    }
-    if value.kind == ExprKind.Call {
-        var index = 0
-        while index < length(seen) && get(seen, index) != value.index {
-            index = index + 1
-        }
-        if index == length(seen) {
-            if value.index < 0 || value.index >= length(program.functions) {
-                return false
-            }
-            push(seen, value.index)
-            let function = get(program.functions, value.index)
-            if !predicate_direct_closure(program, function.body, seen, budget, depth + 1) {
-                return false
-            }
-            index = 0
-            while index < length(function.preconditions) {
-                if !predicate_direct_closure(program, get(function.preconditions, index), seen, budget, depth + 1) {
-                    return false
-                }
-                index = index + 1
-            }
-        }
-    }
-    var index = 0
-    while index < length(value.children) {
-        if !predicate_direct_closure(program, get(value.children, index), seen, budget, depth + 1) {
-            return false
-        }
-        index = index + 1
-    }
-    index = 0
-    while index < length(value.arms) {
-        let body = get(value.arms, index).body
-        var item = 0
-        while item < length(body) {
-            if !predicate_direct_closure(program, get(body, item), seen, budget, depth + 1) {
-                return false
-            }
-            item = item + 1
-        }
-        index = index + 1
-    }
-    true
-}
 
 fn predicate_keys(values List[Value], budget List[Int]) Result[List[PredicateKey], Text] {
     let output = new[PredicateKey]()

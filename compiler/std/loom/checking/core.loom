@@ -515,6 +515,7 @@ fn prepare_with_inputs(source std.loom.binding.Program, inputs BuildInputs, decl
             proof_instances_by_signature = std.map.new[Int, List[Int]]()
             fact_calls = new[Instance]()
             sealing_factories = new[Int]()
+            callable_queries = new[StaticValue]()
         })
     let env = Environment {
         inputs = input_state

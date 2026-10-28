@@ -1,0 +1,67 @@
+import std.loom.eval.validate_closed
+import std.list.transfer.take_last
+
+fn callable_intrinsic(env Environment, owner Int) Bool {
+    let item = symbol(env, owner)
+    if item.name != "comptime_callable" || !has(item.node, NodeKind.Intrinsic) {
+        return false
+    }
+    let file = get(env.source.files, item.file)
+    file.trusted_std &&
+    package_label(env.source.modules, env.source.packages, file.package) == "std.reflect.functions"
+}
+
+fn inspect_callable(context Context, node Node, value StaticValue) Result[Bool, Failure] {
+    // Resolve the exact source identity in a private queue. Capture *types* are
+    // enough to check the operation closure; neither their values nor the
+    // callback execute, and no reference enters native reachability.
+    let stage = staging(context, node)?
+    let reference = reify_function(stage, node, value.ty, value.number, value.arguments)?
+    let program = prepared(stage)?
+    let function = get(program.functions, reference.index)
+    let arguments = new[Expr]()
+    var index = 0
+    while index < length(function.params) {
+        push(arguments, atom(ExprKind.Local, get(function.params, index), node, index))
+        index = index + 1
+    }
+    let call = expression(ExprKind.Call, function.result, node, "", reference.index, arguments, true)
+    // Typing and required-contract errors above remain errors. Only an
+    // otherwise checked execution closure may be classified as unsupported.
+    match std.loom.eval.validate_closed(program, call) {
+        Result.Ok(_) => Result.Ok(true)
+        Result.Err(_) => Result.Ok(false)
+    }
+}
+
+fn callable_description(context Context, node Node, value StaticValue) Result[Expr, Failure] {
+    if !value.known || !concrete(context.env, value.ty) {
+        if abstract_context(context) {
+            return Result.Ok(expression(ExprKind.Deferred, 2, node, "$typeguard", -1, [], true))
+        }
+        return deferred(context, node, 2)
+    }
+    var admitted = false
+    if get(context.env.types, value.ty).kind == TypeKind.Function {
+        let active = get(context.env.inputs, 0).callable_queries
+        var index = 0
+        while index < length(active) {
+            let prior = get(active, index)
+            if prior.number == value.number && prior.ty == value.ty && same(prior.arguments, value.arguments) {
+                return Result.Err(error(context, node, "recursive callable reflection"))
+            }
+            index = index + 1
+        }
+        push(active, value)
+        let inspected = inspect_callable(context, node, value)
+        discard take_last(active)
+        // Never turn recursive inspection or an invalid required contract into
+        // false: doing so could select a different effectful source body.
+        admitted = inspected?
+    }
+    Result.Ok(expression(ExprKind.Bool, 2, node, if admitted {
+                "true"
+            } else {
+                "false"
+            }, -1, [], true))
+}

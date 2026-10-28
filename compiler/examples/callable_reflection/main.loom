@@ -1,0 +1,111 @@
+import std.reflect.functions.comptime_callable
+import std.list.push
+import std.list.length
+import std.io.write_text
+
+fn increment(value Int) Int {
+    value + 1
+}
+
+fn labelled(value Int, label Text) (Int, Text) {
+    (value + 1, label)
+}
+
+fn guarded(value Int) Int
+requires value > 0 {
+    value
+}
+
+fn forever(value Int) Int {
+    forever(value)
+}
+
+fn noisy(value Int) Int {
+    discard write_text("callback must not execute")
+    value
+}
+
+fn dispatch(value Int, callback fn(Int) Int) Int {
+    callback(value)
+}
+
+async fn queued(value Int) Int {
+    value
+}
+
+fn extend(values List[Int]) Int {
+    push(values, 7)
+    length(values)
+}
+
+fn no_result() {
+    let values = [1]
+    push(values, 2)
+}
+
+fn numeric_callback_works() Bool
+ensures result {
+    comptime_callable(increment)
+}
+
+fn counter(start Int) fn() Int {
+    var value = start
+    fn() Int {
+        value = value + 1
+        value
+    }
+}
+
+fn forward[T](value T) T {
+    value
+}
+
+fn inspected_counter(comptime action fn() Int) (Int, Bool, Int) {
+    let before = action()
+    let admitted = comptime_callable(forward(action))
+    (before, admitted, action())
+}
+
+// The requirement is public; eligibility says nothing about the result value.
+pub fn checked_apply[Ts..., R](comptime action fn(Ts...) R, values Ts...) R
+requires comptime_callable(action) {
+    action(values...)
+}
+
+pub fn selected[T](value T, comptime action fn(T) T) T {
+    comptime if comptime_callable(action) {
+        action(value)
+    } else {
+        value
+    }
+}
+
+fn main() {
+    assert numeric_callback_works()
+    assert comptime_callable(increment)
+    assert comptime_callable(guarded)
+    assert comptime_callable(forever)
+    assert comptime_callable(extend)
+    assert comptime_callable(no_result)
+    assert !comptime_callable(noisy)
+    assert !comptime_callable(dispatch)
+    assert !comptime_callable(queued)
+    assert !comptime_callable(3)
+    assert checked_apply(increment, 4) == 5
+    let pair = comptime {
+        checked_apply(labelled, 4, "mixed")
+    }
+    assert pair.0 == 5 && pair.1 == "mixed"
+    checked_apply(no_result)
+    assert selected(4, increment) == 5
+    assert selected(4, noisy) == 4
+    let before, admitted, after = inspected_counter(counter(10))
+    assert before == 11 && admitted && after == 12
+    assert comptime {
+        comptime_callable(increment) && !comptime_callable(noisy)
+    }
+}
+
+test fn inspecting_callables_neither_runs_nor_resets_them() {
+    main()
+}

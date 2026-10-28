@@ -833,7 +833,7 @@ fn invoke_selected(context Context, node Node, instance Instance, inputs CallInp
                 })
             let value = static_argument(context, input, checked, target, identity)?
             push(constants, value)
-            if value.storage >= 0 {
+            if value.storage >= 0 && !callable_intrinsic(context.env, signature.symbol) {
                 if first_runtime < 0 {
                     first_runtime = index
                 }
@@ -890,6 +890,9 @@ fn invoke_ready(context Context, node Node, instance Instance, signature Signatu
     }
     if reflection_intrinsic(context.env, signature.symbol) {
         discard validate_intrinsic(context.env, instance.signature)?
+        if callable_intrinsic(context.env, signature.symbol) {
+            return callable_description(context, node, get(constants, 0))
+        }
         if symbol(context.env, signature.symbol).name == "refinement_base" {
             return reflected_base(context, node, get(instance.arguments, 0), signature.result)
         }

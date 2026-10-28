@@ -52,14 +52,20 @@ test fn predicate_boolean_keys_bound_shared_expression_expansion() {
     assert !predicate_boolean_size(value, [256])
 }
 
-test fn predicate_admission_rejects_mutable_inputs_and_hidden_dispatch() {
+test fn immutable_input_types_and_closed_dispatch_have_separate_checks() {
     let program = atomic_pair_program()
     assert predicate_immutable_type(program, 3, 0)
     assert !predicate_immutable_type(program, 6, 0)
     let raw = expression(ExprKind.ResourceDrain, 2, "", -1, [])
-    assert !predicate_direct_closure(program, raw, [], [4096], 0)
+    assert match std.loom.eval.validate_closed(program, raw) {
+        Result.Err(_) => true
+        _ => false
+    }
     let erased = expression(ExprKind.IndirectCall, 2, "", -1, [])
-    assert !predicate_direct_closure(program, erased, [], [4096], 0)
+    assert match std.loom.eval.validate_closed(program, erased) {
+        Result.Err(_) => true
+        _ => false
+    }
 }
 
 test fn scalar_function_keys_bound_shared_arguments_in_every_theory() {

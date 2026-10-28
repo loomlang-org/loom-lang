@@ -360,10 +360,12 @@ fn bind_mode(project Project, tests Bool, strict Bool) Result[Program, Failure] 
                         std.loom.project.package_label(project.modules, project.packages, source.package) == "std.reflect") ||
                         ((node.value == "describe" || node.value == "implies") &&
                             std.loom.project.package_label(project.modules, project.packages, source.package) == "std.reflect.predicates") ||
+                        (node.value == "comptime_callable" &&
+                            std.loom.project.package_label(project.modules, project.packages, source.package) == "std.reflect.functions") ||
                         (node.value == "refinement_base" &&
                             std.loom.project.package_label(project.modules, project.packages, source.package) == "std.meta")
                     if has(node, NodeKind.Intrinsic) && (!source.trusted_std || test_only || (has(node, NodeKind.Public) && !build_input && !reflection)) {
-                        return Result.Err(failure(file, node, "intrinsics require trusted standard-library source; only build inputs and type reflection can be public"))
+                        return Result.Err(failure(file, node, "intrinsics require trusted standard-library source; only build inputs and reflection can be public"))
                     }
                     let owner = length(symbols)
                     push(symbols, Symbol { file = file node = node name = node.value

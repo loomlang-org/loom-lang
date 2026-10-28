@@ -1,0 +1,103 @@
+fn callable_program(text Text) Result[std.loom.typed.Program, Failure] {
+    callable_program(text, "pub intrinsic fn comptime_callable[F](comptime callback F) Bool", true)
+}
+
+fn callable_program(text Text, declaration Text, trusted Bool) Result[std.loom.typed.Program, Failure] {
+    let files = source_files(concat("import std.reflect.functions.comptime_callable\n", text))
+    push(files, source_file("std.reflect.functions", declaration, trusted))
+    checked(files)
+}
+
+test fn callable_queries_check_bodies_without_running_or_retaining_them() {
+    let program = match callable_program("""
+        fn divide(value Int) Int {
+            1 / value
+        }
+        fn forever(value Int) Int {
+            forever(value)
+        }
+        fn choose(value Int, callback fn(Int) Int) Int {
+            callback(value)
+        }
+        fn type_factory() type {
+            Int
+        }
+        fn captured() fn() Int {
+            var count = 0
+            fn() Int {
+                count = count + 1
+                count
+            }
+        }
+        fn main() {
+            assert comptime { comptime_callable(divide) }
+            assert comptime { comptime_callable(forever) }
+            assert comptime { comptime_callable(type_factory) }
+            assert comptime { !comptime_callable(choose) }
+            assert comptime { !comptime_callable(7) }
+            assert comptime_callable(captured())
+        }
+        """) {
+        Result.Ok(value) => value
+        Result.Err(failed) => {
+            discard std.io.write_error(failed.diagnostic.message)
+            assert false
+            return
+        }
+    }
+    assert length(program.functions) == 1
+}
+
+test fn callable_reflection_requires_the_trusted_declaration_model() {
+    let source = """
+        fn value() Int {
+            1
+        }
+        fn main() {
+            discard comptime_callable(value)
+        }
+        """
+    assert match callable_program(source, "pub intrinsic fn comptime_callable[F](comptime callback F) Bool", false) {
+        Result.Err(failed) => std.text.contains(failed.diagnostic.message, "trusted standard-library")
+        _ => false
+    }
+    assert match callable_program(source, "pub intrinsic fn comptime_callable[F](callback F) Bool", true) {
+        Result.Err(failed) => std.text.contains(failed.diagnostic.message, "one comptime value")
+        _ => false
+    }
+    assert match callable_program(source, "pub intrinsic fn comptime_callable[F](comptime callback F) Int", true) {
+        Result.Err(failed) => std.text.contains(failed.diagnostic.message, "runtime signature")
+        _ => false
+    }
+}
+
+test fn callable_queries_preserve_required_errors_and_reject_recursive_inspection() {
+    let required = callable_program("""
+        fn wrong(value Int) Int
+        ensures result > value {
+            value
+        }
+        fn main() {
+            discard comptime_callable(wrong)
+        }
+        """)
+    assert match required {
+        Result.Err(failed) => std.text.contains(failed.diagnostic.message, "postcondition")
+        _ => false
+    }
+    let recursive = callable_program("""
+        fn first() Bool {
+            comptime_callable(second)
+        }
+        fn second() Bool {
+            comptime_callable(first)
+        }
+        fn main() {
+            discard comptime_callable(first)
+        }
+        """)
+    assert match recursive {
+        Result.Err(failed) => failed.diagnostic.message == "recursive callable reflection"
+        _ => false
+    }
+}

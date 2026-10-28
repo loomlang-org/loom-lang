@@ -5,10 +5,16 @@ implementation, not a compatibility ledger for previous prototypes.
 
 ## Unreleased
 
+- Inspect known callbacks with `std.reflect.functions.comptime_callable`, sharing
+  bounded closed execution checks with contracts without invoking or retaining
+  callbacks. Eligibility grants no domain, termination or isolation guarantee.
+
 - Compose pure helper results over immutable input projections while leaving
   unobserved List/Bytes siblings shared. Check observations across entry
   predicates and transitive calls, retain forwarding result evidence, and keep
   every argument evaluation even when its value is absent from a proof key.
+  Read-only sequence versions and constrained-input predicates use the same
+  result/domain rules across writes and suspension.
 
 - Compose known callable contracts over read-only immutable captures, including
   nested aggregates, List scans and suspension. Capture values keep their

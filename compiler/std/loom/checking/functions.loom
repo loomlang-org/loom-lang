@@ -505,7 +505,12 @@ fn validate_intrinsic(env Environment, id Int) Result[Text, Failure] {
                 }
             })
     } else if reflection_intrinsic(env, current.symbol) {
-        if predicate_intrinsic(env, current.symbol) {
+        if callable_intrinsic(env, current.symbol) {
+            if !same(current.compile_time, ints(0)) {
+                return Result.Err(failure(env, current.symbol, item.node, "callable reflection requires one comptime value"))
+            }
+            runtime(1, ints(get(abstract_arguments(env, 1), 0)), 2)
+        } else if predicate_intrinsic(env, current.symbol) {
             if item.name == "implies" {
                 runtime(2, new[Int](), 2)
             } else {
