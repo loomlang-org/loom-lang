@@ -2,10 +2,11 @@
 // read-only applications consume these descriptions; returned closures keep
 // their original construction and sharing in the source-call executor.
 fn function_argument_expression(context Expansion, shape Expr, value Expr, depth Int) Result[Expr, Text] {
-    discard expansion_step(context, depth)?
-    if omitted_function_input(shape) {
-        return Result.Ok(proof_expr(value, ExprKind.Record, 0, "", -1, []))
+    if !function_cell_shape(shape) && shape.kind != ExprKind.Coerce &&
+    shape.kind != ExprKind.Record && shape.kind != ExprKind.Variant {
+        return Result.Ok(value)
     }
+    discard expansion_step(context, depth)?
     if value.kind == ExprKind.If && length(value.children) == 3 {
         return Result.Ok(proof_choice(get(value.children, 0),
                 function_argument_expression(context, shape, get(value.children, 1), depth + 1)?,
