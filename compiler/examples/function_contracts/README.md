@@ -39,6 +39,11 @@ invalidate the current relation, while `old(values)` retains its entry version
 across writes and suspension without a runtime copy. Unprotected worker data and
 reads through mutable child graphs cannot supply this whole-call snapshot.
 Distinct versions are not assumed equal even when their lengths match.
+`sum_inputs.loom` uses the same structural projection for enum tags and payloads,
+including recursive List-backed branches. Unobserved children remain shared;
+observed List/Bytes payloads retain their content versions. Inactive concrete
+alternatives need no storage snapshot. Guards and entry predicates still count
+as reads, and hypothetical alternatives establish no successful-call evidence.
 `PositiveSequence` also consumes a loop-based predicate from a constrained input
 type: its positive total needs no repeated `requires`. Unknown construction still
 returns a checked `Result`, and each constrained store must preserve the predicate.

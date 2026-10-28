@@ -73,6 +73,26 @@ fn function_argument_state(proof Verification, shape Expr, value Value, state St
             }
             Result.Ok(current)
         }
+        Value.Sum(_, tag, payloads) => {
+            if shape.kind != ExprKind.Variant {
+                return Result.Ok(state)
+            }
+            var current = state
+            var variant = 0
+            while variant < length(payloads) {
+                if function_payload_selected(tag, variant) {
+                    let values = get(payloads, variant)
+                    let shapes = get(shape.children, variant).children
+                    var field = 0
+                    while field < length(values) {
+                        current = function_argument_state(proof, get(shapes, field), get(values, field), current)?
+                        field = field + 1
+                    }
+                }
+                variant = variant + 1
+            }
+            Result.Ok(current)
+        }
         _ => Result.Ok(state)
     }
 }

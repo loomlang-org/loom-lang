@@ -98,8 +98,17 @@ fn quantified_views(proof Verification, expr Expr, state State, inside Bool, dep
         index = index + 1
     }
     if predicate_application(expr) && expr.text == "proof_function" {
-        current = guarded_value_invariants(proof, expr.ty, pure(expr, current)?,
-            application_fact(expr, current, true)?, current)
+        // This walk also visits skipped alternatives before guarded argument
+        // observations. An unevaluated payload may have no content version;
+        // it supplies no result facts, rather than requiring that read here.
+        match pure(expr, current) {
+            Result.Ok(value) => {
+                current = guarded_value_invariants(proof, expr.ty, value,
+                    application_fact(expr, current, true)?, current)
+            }
+            Result.Err(_) => {
+            }
+        }
     }
     Result.Ok(current)
 }

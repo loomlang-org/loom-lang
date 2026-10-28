@@ -5,6 +5,10 @@ implementation, not a compatibility ledger for previous prototypes.
 
 ## Unreleased
 
+- Compose pure function contracts over enum input projections and versioned
+  sequence payloads, preserving copied tags and shared recursive descendants.
+  Hypothetical inactive alternatives supply no premature result facts.
+
 - Pass large native value arguments through one private invocation snapshot,
   preserving eager evaluation, shared children and moving-GC roots across direct,
   captured and dynamic calls.

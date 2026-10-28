@@ -7,6 +7,7 @@ const FLOATS: &str = include_str!("../examples/function_contracts/floats.loom");
 const CAPTURES: &str = include_str!("../examples/function_contracts/captures.loom");
 const INPUTS: &str = include_str!("../examples/function_contracts/inputs.loom");
 const SEQUENCES: &str = include_str!("../examples/function_contracts/sequences.loom");
+const SUM_INPUTS: &str = include_str!("../examples/function_contracts/sum_inputs.loom");
 
 const SCOPED_FUNCTIONS: &str = r#"
 fn negative(value Int) Bool {
@@ -144,6 +145,7 @@ fn immutable_function_results_compose_and_reject_unestablished_evidence() {
     fs::write(package.path().join("captures.loom"), CAPTURES).unwrap();
     fs::write(package.path().join("inputs.loom"), INPUTS).unwrap();
     fs::write(package.path().join("sequences.loom"), SEQUENCES).unwrap();
+    fs::write(package.path().join("sum_inputs.loom"), SUM_INPUTS).unwrap();
     let cache = package.path().join("cache");
     let check = || common::loom(&["check", path, "--frontend-cache", cache.to_str().unwrap()]);
     success(&check());
@@ -316,6 +318,51 @@ ensures result == nested_total(values) {
     let total = nested_total(values)
     child[0] = 99
     total
+}
+"#,
+        // Matching a copied tag cannot erase observable inline payloads.
+        r#"
+fn bad(value Branch, other Branch) Int
+ensures result == branch_score(value) {
+    branch_score(other)
+}
+"#,
+        r#"
+fn bad(values List[Int]) Int
+ensures result == batch_total(Batch.Missing()) {
+    batch_total(Batch.Items(values))
+}
+"#,
+        // An enum wrapper does not freeze its List, including possible aliases.
+        r#"
+fn bad(value Batch, alias List[Int]) Int
+ensures result == batch_total(value) {
+    let total = batch_total(value)
+    push(alias, 99)
+    total
+}
+"#,
+        // Omitting a child from an immutable key must not omit a guard read.
+        r#"
+fn guarded_branch(value Branch) Int {
+    match value {
+        Branch.Leaf(number) => branch_score(Branch.Leaf(number))
+        Branch.Node(number, children) if length(children) > 0 => branch_score(Branch.Leaf(number))
+        _ => 0
+    }
+}
+fn bad(value Branch, children List[Branch]) Int
+ensures result == guarded_branch(value) {
+    let score = guarded_branch(value)
+    push(children, Branch.Leaf(99))
+    score
+}
+"#,
+        // A concrete alternative still needs successful evaluation evidence.
+        r#"
+fn bad(value Batch) Bool
+ensures batch_total(value) == batch_total(value) {
+    true
 }
 "#,
         // Contract results retain the actual function target's identity.

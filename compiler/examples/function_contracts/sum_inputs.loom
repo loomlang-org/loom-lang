@@ -1,0 +1,100 @@
+// Tags and inline payloads are copied values; descendants retain sharing.
+enum Branch {
+    Leaf(Int)
+    Node(Int, List[Branch])
+}
+
+fn branch_score(value Branch) Int {
+    let number = match value {
+        Branch.Leaf(number) => number
+        Branch.Node(number, _) => number
+    }
+    var index = 0
+    var total = 0
+    while index < 2 {
+        total = total + number
+        index = index + 1
+    }
+    total
+}
+
+fn observed_branch(value Branch, children List[Branch]) Int
+ensures result == branch_score(value) {
+    let score = branch_score(value)
+    std.list.push(children, Branch.Leaf(99))
+    score
+}
+
+fn independent_branches(number Int, first List[Branch], second List[Branch]) Int
+ensures result == branch_score(Branch.Node(number, second)) {
+    branch_score(Branch.Node(number, first))
+}
+
+fn branch_reader(value Branch) fn() Int {
+    fn() Int {
+        branch_score(value)
+    }
+}
+
+fn observed_branch_reader(value Branch, children List[Branch]) Int
+ensures result == branch_reader(value)() {
+    let score = branch_reader(value)()
+    std.list.push(children, Branch.Leaf(99))
+    score
+}
+
+async fn retained_branch(value Branch) Int
+ensures result == branch_score(value) {
+    let score = branch_score(value)
+    std.time.sleep_ms(0).await
+    score
+}
+
+enum Batch {
+    Missing
+    Items(List[Int])
+    Raw(Bytes)
+}
+
+fn batch_total(value Batch) Int {
+    match value {
+        Batch.Missing => 0
+        Batch.Items(values) => sequence_total(values)
+        Batch.Raw(values) => byte_total(values)
+    }
+}
+
+fn observed_batch(value Batch) Int
+ensures result == batch_total(value) {
+    batch_total(value)
+}
+
+fn sum_input_contracts() {
+    let children = [Branch.Leaf(1)]
+    let tree = Branch.Node(7, children)
+    assert observed_branch(tree, children) == 14
+    assert std.list.length(children) == 2
+    assert observed_branch_reader(tree, children) == 14
+    assert independent_branches(7, children, []) == 14
+    assert observed_branch(Branch.Leaf(3), children) == 6
+    assert observed_batch(Batch.Missing()) == 0
+    let values = [3, 4]
+    assert observed_batch(Batch.Items(values)) == 7
+    std.list.push(values, 5)
+    assert observed_batch(Batch.Items(values)) == 12
+    let bytes = std.bytes.new()
+    std.bytes.push(bytes, 7)
+    assert observed_batch(Batch.Raw(bytes)) == 7
+}
+
+test fn enum_inputs_keep_tags_inline_projections_and_sequence_versions() {
+    sum_input_contracts()
+}
+
+test async fn copied_enum_projections_survive_suspension_and_child_writes() {
+    let children = [Branch.Leaf(1)]
+    let tree = Branch.Node(7, children)
+    let task = retained_branch(tree)
+    std.list.push(children, Branch.Leaf(99))
+    assert task.await == 14
+}

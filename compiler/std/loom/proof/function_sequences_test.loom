@@ -79,3 +79,69 @@ test fn invariant_entry_rebinding_keeps_function_layouts_and_requests_their_resu
     assert application_identity_needed(proof, 21)
     assert !application_identity_needed(proof, 22)
 }
+
+test fn enum_sequence_inputs_prepare_only_present_payloads_and_keep_content_versions() {
+    let sequence = expression(ExprKind.Intrinsic, 7, "proof_sequence", -1, [])
+    let shape = expression(ExprKind.Variant, 8, "", -1, [
+            expression(ExprKind.Record, 0, "", 0, []),
+            expression(ExprKind.Record, 0, "", 1, [sequence])])
+    let state = with_contents(10, 50, with_extent(10, constant(integer(2)), false, State {
+                locals = []
+                facts = []
+                extents = []
+                observations = []
+            }))
+    // There is no tracked sequence in the inactive alternative.
+    let missing = Value.Sum(8, IntegerTerm.Linear(constant(integer(0))), [[], [Value.Empty]])
+    let proof = Verification {
+        shared = true
+        ..verification(contract_fixture([], 1, literal("0"), [], []), empty_proof_program())
+    }
+    assert match function_argument_state(proof, shape, missing, state) {
+        Result.Ok(_) => true
+        _ => false
+    }
+    let missing_key = match function_argument(shape, missing, state) {
+        Result.Ok(value) => predicate_key(value, [256])
+        Result.Err(message) => Result.Err(message)
+    }
+    assert match missing_key {
+        Result.Ok(_) => true
+        _ => false
+    }
+    let present = Value.Sum(8, IntegerTerm.Linear(constant(integer(1))), [[], [Value.List(10)]])
+    assert match function_argument_state(proof, shape, present, state) {
+        Result.Err(_) => true
+        _ => false
+    }
+    let before = match function_argument(shape, present, state) {
+        Result.Ok(value) => predicate_key(value, [256])
+        Result.Err(message) => Result.Err(message)
+    }
+    let after = match function_argument(shape, present, with_contents(10, 51, state)) {
+        Result.Ok(value) => predicate_key(value, [256])
+        Result.Err(message) => Result.Err(message)
+    }
+    assert match before {
+        Result.Ok(left) => match after {
+            Result.Ok(right) => !same_predicate_key(left, right)
+            _ => false
+        }
+        _ => false
+    }
+    let input = expression(ExprKind.Intrinsic, 8, "proof_argument", -1, [local(0),
+            expression(ExprKind.Intrinsic, 8, "proof_layout", -1, [shape])])
+    let call = expression(ExprKind.Intrinsic, 1, "proof_function", 21, [
+            expression(ExprKind.Intrinsic, 0, "proof_pack", -1, [input]),
+            expression(ExprKind.Intrinsic, 1, "proof_layout", -1, [local(0)])])
+    let unknown = State {
+        locals = [present]
+        ..with_contents(10, -1, state)
+    }
+    // Visiting a hypothetical, possibly skipped result must not demand a read
+    // before guarded observations, or assert its successful evaluation.
+    assert match quantified_views(proof, call, unknown, false, 256) {
+        Result.Ok(current) => length(current.facts) == length(unknown.facts)
+        _ => false
+    }
+}
