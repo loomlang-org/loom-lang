@@ -3694,6 +3694,11 @@ mutable siblings. A static transfer/observation check covers primitive operands,
 control flow, entry predicates and the closed call graph before those handles
 are omitted from a key. Unsupported mutable observations remain unproved; this
 does not infer minimal dependencies. All argument expressions still evaluate.
+Enum inputs retain their nominal tags and recursively projected payloads under
+the same rule, including List-backed recursive data. Observed List/Bytes payloads
+use their content versions; unobserved descendants remain shared. Inactive
+concrete alternatives need no snapshot, and hypothetical alternatives supply
+no result facts before their argument keys exist.
 Finite forwarding retains the requested result's function abstraction rather
 than replacing it with unrelated body inference. The verifier checks the current
 function's frame writes before materializing argument values; capture keys use

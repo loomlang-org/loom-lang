@@ -91,8 +91,12 @@ fn projected_input_expression(program Program, value Expr, seen List[Int], budge
         value.kind == ExprKind.Binary || value.kind == ExprKind.Assert ||
         ((value.kind == ExprKind.If || value.kind == ExprKind.While || value.kind == ExprKind.Match) && index == 0)
         if observes && input.ty != 0 && !predicate_immutable_type(program, input.ty, 0) {
-            if !sequences || value.kind != ExprKind.Intrinsic || index != 0 ||
-            !sequence_input_read(program, value.text, [input.ty], value.ty) {
+            // A checked enum match observes its copied tag. Payload uses are
+            // checked separately in each arm; matching does not read children.
+            let tag = value.kind == ExprKind.Match && index == 0 &&
+            proof_enum_type(program, input.ty, 0) >= 0
+            if !tag && (!sequences || value.kind != ExprKind.Intrinsic || index != 0 ||
+                !sequence_input_read(program, value.text, [input.ty], value.ty)) {
                 return false
             }
         }
@@ -155,8 +159,21 @@ fn projected_function_shape(program Program, source Expr, ty Int, budget List[In
             }
             return Result.Ok(proof_expr(source, ExprKind.Record, ty, "", -1, fields))
         }
-        if shape.kind == TypeKind.Enum && predicate_immutable_type(program, ty, 0) {
-            return Result.Ok(function_shape(program, source, ty, 0))
+        if shape.kind == TypeKind.Enum {
+            let variants = new[Expr]()
+            var variant = 0
+            while variant < length(shape.variants) {
+                let fields = new[Expr]()
+                let types = get(shape.variants, variant).fields
+                var field = 0
+                while field < length(types) {
+                    push(fields, projected_function_shape(program, source, get(types, field), budget, depth + 1, sequences)?)
+                    field = field + 1
+                }
+                push(variants, proof_expr(source, ExprKind.Record, 0, "", variant, fields))
+                variant = variant + 1
+            }
+            return Result.Ok(proof_expr(source, ExprKind.Variant, ty, "", -1, variants))
         }
         if sequences && (shape.kind == TypeKind.List || shape.kind == TypeKind.Bytes) {
             return Result.Ok(proof_expr(source, ExprKind.Intrinsic, ty, "proof_sequence", -1, []))

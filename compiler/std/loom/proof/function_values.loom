@@ -124,6 +124,15 @@ fn same_application(left FunctionApplication, right FunctionApplication) Bool {
     same_predicate_keys(left.arguments, right.arguments)
 }
 
+// Inactive concrete payloads have no value or storage to snapshot. Symbolic
+// tags keep every alternative, just as predicate_key does for sums.
+fn function_payload_selected(tag IntegerTerm, variant Int) Bool {
+    match projection_index(integer_value(tag)) {
+        Result.Ok(selected) => selected == variant
+        Result.Err(_) => true
+    }
+}
+
 fn function_argument(shape Expr, value Value, state State) Result[Value, Text] {
     if omitted_function_input(shape) {
         return Result.Ok(Value.Record([]))
@@ -159,7 +168,7 @@ fn function_argument(shape Expr, value Value, state State) Result[Value, Text] {
                 let values = get(payloads, variant)
                 let shapes = get(shape.children, variant).children
                 var field = 0
-                while field < length(values) {
+                while function_payload_selected(tag, variant) && field < length(values) {
                     push(fields, function_argument(get(shapes, field), get(values, field), state)?)
                     field = field + 1
                 }
