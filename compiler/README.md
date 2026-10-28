@@ -2615,7 +2615,7 @@ control-flow scopes. Distinct named refinements still use an explicit target
 constructor; a proved implication can remove that check without merging their
 nominal identities. See [expression contracts](examples/contracts/expressions.loom).
 
-Known pure functions over immutable values can also compose when their
+Known pure functions can also compose at a checked input projection when their
 loops or recursion have no supported closed formula. The prover retains the
 checked function identity and evaluated argument values, with separate facts
 for the result and successful evaluation. An executed precondition or ordinary
@@ -2626,8 +2626,12 @@ selected enum payload supplies type guarantees. This supports checked
 construction, loop preservation and suspension. Text byte equality permits
 substitution; Float numerical equality does not identify opposite zeros or NaNs.
 Known List callbacks retain checks only through the scan's first exit, preserving
-short-circuit suffixes. Mutable inputs, unknown dispatch and unsupported effects
-do not gain opaque purity or stable value identities. These rules introduce no
+short-circuit suffixes. A closed input-read check can omit unobserved mutable
+siblings, or retain a read-only List/Bytes outer content version and extent.
+All eager argument effects precede the invocation snapshot. Writes and possible
+aliases invalidate current versions; `old` keeps its logical entry version.
+Mutable child reads, unprotected concurrent data, unknown dispatch and unsupported
+effects do not acquire a stable whole-call identity. These rules introduce no
 source annotation or runtime wrapper. Try [function contracts](examples/function_contracts)
 and [predicate contracts](examples/predicate_contracts).
 
@@ -3343,7 +3347,8 @@ the proof never guesses a concrete witness. For example, `identity(value)` with
 Without a summary, the prover can expand a finite pure body using those values. Arguments
 are evaluated in order and their values captured before applying the summary;
 separate call results are not equated merely because they share a callee. A known
-pure function with the same immutable arguments can reuse its established result,
+pure function with the same checked input projection or read-only sequence
+version can reuse its established result,
 including representation identity for Float values; numeric equality by itself
 does not establish that identity. The
 emitted function keeps its ordinary calls and original locals.
@@ -3683,8 +3688,14 @@ retain a known pure function's immutable application and separate evaluation
 domain. A recursive function cannot establish its result or termination from
 its own `ensures`.
 Known closure environments use the same value rules when their checked slots
-are read-only and all captured contents are immutable. A read-only slot holding
-a shared collection remains shared state. The verifier checks the current
+are read-only. A read-only slot holding a shared collection remains shared state.
+Inline inputs can retain an immutable projection while transporting unobserved
+mutable siblings. A static transfer/observation check covers primitive operands,
+control flow, entry predicates and the closed call graph before those handles
+are omitted from a key. Unsupported mutable observations remain unproved; this
+does not infer minimal dependencies. All argument expressions still evaluate.
+Finite forwarding retains the requested result's function abstraction rather
+than replacing it with unrelated body inference. The verifier checks the current
 function's frame writes before materializing argument values; capture keys use
 already evaluated values, including across later argument effects or suspension.
 See the [recursive contract example](examples/recursive_contracts/main.loom).
@@ -3839,8 +3850,13 @@ Int/Bool predicates use the existing bounded
 fragment. If direct facts are insufficient, acyclic pure predicate helpers expand
 in a private checked closure, retaining their guarded preconditions and successful
 checked calculations. This does not add runtime calls or change construction
-checks. Unsupported conjuncts and general helper loops/recursion supply no
-evidence. See the [input invariant example](examples/invariant_contracts).
+checks. Eligible pure helpers also contribute their independent result/domain
+facts at a validated input projection or read-only sequence version. A constrained
+input can therefore establish a loop-computed result property without repeating
+its predicate as `requires`; this neither proves the loop's internal formula nor
+permits an invariant-breaking store. Unsupported conjuncts supply no evidence.
+See the [input invariant example](examples/invariant_contracts) and
+[function contracts](examples/function_contracts).
 
 The current proof fragment supports scalar linear arithmetic, comparisons,
 Boolean facts, local assignments, branches/returns, and the scalar loops above. It reasons from

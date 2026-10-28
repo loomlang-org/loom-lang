@@ -77,7 +77,7 @@ fn immutable_predicate_evidence_survives_composition_and_rechecks_edits() {
 }
 
 #[test]
-fn opaque_predicates_do_not_bypass_effect_or_mutable_input_checks() {
+fn opaque_predicates_do_not_bypass_effect_or_stale_input_checks() {
     let package = tempfile::tempdir().unwrap();
     let source = package.path().join("main.loom");
     for (helper, contract) in [
@@ -112,6 +112,7 @@ fn changing(values List[Int]) Bool {
 requires changing(values)
 ensures changing(result)
 {
+    std.list.push(values, -1)
     values
 }
 "#,

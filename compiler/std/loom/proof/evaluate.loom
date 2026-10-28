@@ -210,8 +210,8 @@ fn pure(expr Expr, state State) Result[Value, Text] {
         return Result.Ok(applied_value(expr, function_inputs(expr, pure(get(expr.children, 0), state)?)?))
     }
     if expr.kind == ExprKind.Intrinsic && expr.text == "proof_argument" {
-        return Result.Ok(function_argument(get(get(expr.children, 1).children, 0),
-                pure(get(expr.children, 0), state)?))
+        return function_argument(get(get(expr.children, 1).children, 0),
+            pure(get(expr.children, 0), state)?, state)
     }
     if bound_expression(expr) {
         return Result.Ok(Value.Number(variable(expr.index)))

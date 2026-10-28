@@ -48,19 +48,22 @@ fn function_metadata(program Program, source Expr, ty Int) Expr {
         [function_shape(program, source, ty, 0)])
 }
 
-fn function_expression(context Expansion, source Expr, inputs List[Expr]) Expr {
+fn function_expression(context Expansion, source Expr, inputs List[Expr]) Result[Expr, Text] {
     let function = get(context.program.functions, source.index)
+    let sequences = !projected_function_inputs(context.program, source.index, [], [4096], 0)
     let arguments = new[Expr]()
     var index = 0
     while index < length(inputs) {
         let input = get(inputs, index)
+        let layout = proof_expr(input, ExprKind.Intrinsic, input.ty, "proof_layout", -1,
+            [projected_function_shape(context.program, input, get(function.params, index), [256], 0, sequences)?])
         push(arguments, proof_expr(input, ExprKind.Intrinsic, input.ty, "proof_argument", -1,
-                [input, function_metadata(context.program, input, get(function.params, index))]))
+                [input, layout]))
         index = index + 1
     }
     let packed = proof_expr(source, ExprKind.Intrinsic, 0, "proof_pack", -1, arguments)
-    proof_expr(source, ExprKind.Intrinsic, function.result, "proof_function", function_identity(context.program, source.index),
-        [packed, function_metadata(context.program, source, function.result)])
+    Result.Ok(proof_expr(source, ExprKind.Intrinsic, function.result, "proof_function", function_identity(context.program, source.index),
+            [packed, function_metadata(context.program, source, function.result)]))
 }
 
 fn function_component(value FunctionApplication, field Int) FunctionApplication {
@@ -121,27 +124,33 @@ fn same_application(left FunctionApplication, right FunctionApplication) Bool {
     same_predicate_keys(left.arguments, right.arguments)
 }
 
-fn function_argument(shape Expr, value Value) Value {
+fn function_argument(shape Expr, value Value, state State) Result[Value, Text] {
+    if omitted_function_input(shape) {
+        return Result.Ok(Value.Record([]))
+    }
+    if function_sequence_shape(shape) {
+        return sequence_function_argument(value, state)
+    }
     if shape.kind == ExprKind.Coerce {
-        return function_argument(get(shape.children, 0), value)
+        return function_argument(get(shape.children, 0), value, state)
     }
     match value {
-        Value.Projected(contents, path, index) => function_projection(shape, contents, path, index)
+        Value.Projected(contents, path, index) => Result.Ok(function_projection(shape, contents, path, index))
         Value.Record(values) => {
             if shape.kind != ExprKind.Record || length(values) != length(shape.children) {
-                return value
+                return Result.Ok(value)
             }
             let fields = new[Value]()
             var field = 0
             while field < length(values) {
-                push(fields, function_argument(get(get(shape.children, field).children, 0), get(values, field)))
+                push(fields, function_argument(get(get(shape.children, field).children, 0), get(values, field), state)?)
                 field = field + 1
             }
-            Value.Record(fields)
+            Result.Ok(Value.Record(fields))
         }
         Value.Sum(ty, tag, payloads) => {
             if shape.kind != ExprKind.Variant {
-                return value
+                return Result.Ok(value)
             }
             let variants = new[List[Value]]()
             var variant = 0
@@ -151,19 +160,22 @@ fn function_argument(shape Expr, value Value) Value {
                 let shapes = get(shape.children, variant).children
                 var field = 0
                 while field < length(values) {
-                    push(fields, function_argument(get(shapes, field), get(values, field)))
+                    push(fields, function_argument(get(shapes, field), get(values, field), state)?)
                     field = field + 1
                 }
                 push(variants, fields)
                 variant = variant + 1
             }
-            Value.Sum(ty, tag, variants)
+            Result.Ok(Value.Sum(ty, tag, variants))
         }
-        _ => value
+        _ => Result.Ok(value)
     }
 }
 
 fn function_projection(shape Expr, contents Int, path List[Int], index Linear) Value {
+    if omitted_function_input(shape) {
+        return Value.Record([])
+    }
     if shape.kind == ExprKind.Coerce {
         return function_projection(get(shape.children, 0), contents, path, index)
     }

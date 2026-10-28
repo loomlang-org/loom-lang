@@ -1,0 +1,166 @@
+// Copying an inline aggregate transports its immutable projection. Observing
+// mutable contents is a different operation. This is a static type-flow check,
+// not evaluation, and never assigns an identity to an omitted handle.
+fn immutable_function_inputs(program Program, function Function) Bool {
+    var index = 0
+    while index < length(function.params) {
+        if !predicate_immutable_type(program, get(function.params, index), 0) {
+            return false
+        }
+        index = index + 1
+    }
+    true
+}
+
+fn projected_function_inputs(program Program, target Int, seen List[Int], budget List[Int], depth Int) Bool {
+    projected_function_inputs(program, target, seen, budget, depth, false)
+}
+
+fn projected_function_inputs(program Program, target Int, seen List[Int], budget List[Int], depth Int, sequences Bool) Bool {
+    if depth >= 64 || !conjunction_step(budget) || target < 0 || target >= length(program.functions) {
+        return false
+    }
+    let function = get(program.functions, target)
+    // Closed immutable inputs already supply isolation to the ordinary purity
+    // validator, including helpers that allocate and mutate private storage.
+    if immutable_function_inputs(program, function) {
+        return true
+    }
+    if function.runtime_name != "" {
+        return sequences && sequence_input_read(program, function.runtime_name, function.params, function.result)
+    }
+    var index = 0
+    while index < length(seen) {
+        if get(seen, index) == target {
+            return true
+        }
+        index = index + 1
+    }
+    push(seen, target)
+    if !projected_input_expression(program, function.body, seen, budget, depth + 1, sequences) {
+        return false
+    }
+    index = 0
+    while index < length(function.preconditions) {
+        if !projected_input_expression(program, get(function.preconditions, index), seen, budget, depth + 1, sequences) {
+            return false
+        }
+        index = index + 1
+    }
+    true
+}
+
+fn projected_input_receiver(program Program, ty Int, depth Int) Bool {
+    if depth >= 16 || ty < 0 || ty >= length(program.types) {
+        return false
+    }
+    let shape = get(program.types, ty)
+    if shape.kind == TypeKind.Refined && length(shape.fields) == 1 {
+        return projected_input_receiver(program, get(shape.fields, 0).ty, depth + 1)
+    }
+    shape.kind == TypeKind.Record || shape.kind == TypeKind.Tuple ||
+    (shape.kind == TypeKind.Frame && frame_input_program(program, ty))
+}
+
+fn projected_input_expression(program Program, value Expr, seen List[Int], budget List[Int], depth Int, sequences Bool) Bool {
+    if depth >= 128 || !conjunction_step(budget) || value.kind == ExprKind.FrameStore {
+        return false
+    }
+    if value.kind == ExprKind.Record || value.kind == ExprKind.FrameNew {
+        var field = 0
+        while field < length(value.children) {
+            let initializer = get(value.children, field)
+            if length(initializer.children) != 1 ||
+            !projected_input_expression(program, get(initializer.children, 0), seen, budget, depth + 1, sequences) {
+                return false
+            }
+            field = field + 1
+        }
+        return true
+    }
+    if value.kind == ExprKind.Field &&
+    (length(value.children) != 1 || !projected_input_receiver(program, get(value.children, 0).ty, 0)) {
+        return false
+    }
+    var index = 0
+    while index < length(value.children) {
+        let input = get(value.children, index)
+        // Primitive observations need their whole operands. Conditions and
+        // match discriminants are observations too, even on an ignored result.
+        let observes = value.kind == ExprKind.Intrinsic || value.kind == ExprKind.Unary ||
+        value.kind == ExprKind.Binary || value.kind == ExprKind.Assert ||
+        ((value.kind == ExprKind.If || value.kind == ExprKind.While || value.kind == ExprKind.Match) && index == 0)
+        if observes && input.ty != 0 && !predicate_immutable_type(program, input.ty, 0) {
+            if !sequences || value.kind != ExprKind.Intrinsic || index != 0 ||
+            !sequence_input_read(program, value.text, [input.ty], value.ty) {
+                return false
+            }
+        }
+        if !projected_input_expression(program, input, seen, budget, depth + 1, sequences) {
+            return false
+        }
+        index = index + 1
+    }
+    if value.kind == ExprKind.Call && !projected_function_inputs(program, value.index, seen, budget, depth + 1, sequences) {
+        return false
+    }
+    index = 0
+    while index < length(value.arms) {
+        let body = get(value.arms, index).body
+        var item = 0
+        while item < length(body) {
+            if !projected_input_expression(program, get(body, item), seen, budget, depth + 1, sequences) {
+                return false
+            }
+            item = item + 1
+        }
+        index = index + 1
+    }
+    true
+}
+
+fn omitted_function_input(value Expr) Bool {
+    value.kind == ExprKind.Intrinsic && value.text == "proof_omitted"
+}
+
+fn projected_function_shape(program Program, source Expr, ty Int, budget List[Int], depth Int) Result[Expr, Text] {
+    projected_function_shape(program, source, ty, budget, depth, false)
+}
+
+fn projected_function_shape(program Program, source Expr, ty Int, budget List[Int], depth Int, sequences Bool) Result[Expr, Text] {
+    if !conjunction_step(budget) {
+        return Result.Err("function input projection budget exhausted")
+    }
+    if scalar_type(ty) {
+        return Result.Ok(function_shape(program, source, ty, 0))
+    }
+    if depth >= 16 {
+        return Result.Err("function input projection budget exhausted")
+    }
+    if ty >= 0 && ty < length(program.types) {
+        let shape = get(program.types, ty)
+        if shape.kind == TypeKind.Refined && length(shape.fields) == 1 {
+            return Result.Ok(proof_expr(source, ExprKind.Coerce, ty, "", -1,
+                    [projected_function_shape(program, source, get(shape.fields, 0).ty, budget, depth + 1, sequences)?]))
+        }
+        if shape.kind == TypeKind.Record || shape.kind == TypeKind.Tuple ||
+        (shape.kind == TypeKind.Frame && frame_input_program(program, ty)) {
+            let fields = new[Expr]()
+            var index = 0
+            while index < length(shape.fields) {
+                let field = get(shape.fields, index)
+                push(fields, proof_expr(source, ExprKind.Field, field.ty, "", index,
+                        [projected_function_shape(program, source, field.ty, budget, depth + 1, sequences)?]))
+                index = index + 1
+            }
+            return Result.Ok(proof_expr(source, ExprKind.Record, ty, "", -1, fields))
+        }
+        if shape.kind == TypeKind.Enum && predicate_immutable_type(program, ty, 0) {
+            return Result.Ok(function_shape(program, source, ty, 0))
+        }
+        if sequences && (shape.kind == TypeKind.List || shape.kind == TypeKind.Bytes) {
+            return Result.Ok(proof_expr(source, ExprKind.Intrinsic, ty, "proof_sequence", -1, []))
+        }
+    }
+    Result.Ok(proof_expr(source, ExprKind.Intrinsic, 0, "proof_omitted", -1, []))
+}

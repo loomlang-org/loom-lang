@@ -117,6 +117,9 @@ length or restoring observations lost to interference. These frames compose
 with finite histograms only within the proved preserved extent. Directed Boolean
 scans, direct tail-recursive folds and known callbacks now compose through the
 same bounded sequence rules, including generic elements and read-only captures.
+Read-only content helpers also retain deterministic partial results at an outer
+sequence version and extent, without treating a shared handle as a value or
+assuming that mutable child graphs are frozen.
 General content
 induction and constrained shared-alias preservation remain open.
 

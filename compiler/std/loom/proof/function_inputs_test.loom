@@ -1,0 +1,66 @@
+fn projected_test_keys(shape Expr, value Int, handle Int) List[PredicateKey] {
+    let projected = match function_argument(shape,
+        Value.Record([Value.Number(constant(integer(value))), Value.List(handle)]),
+        State {
+            locals = []
+            facts = []
+            extents = []
+            observations = []
+        }) {
+        Result.Ok(value) => value
+        _ => {
+            assert false
+            return []
+        }
+    }
+    match predicate_keys([projected], [256]) {
+        Result.Ok(keys) => keys
+        Result.Err(_) => {
+            assert false
+            []
+        }
+    }
+}
+
+test fn immutable_input_projections_omit_handles_only_after_read_isolation() {
+    let program = frame_input_program(42)
+    let input = expression(ExprKind.Local, 8, "", 0, [])
+    let field = expression(ExprKind.Field, 1, "", 0, [input])
+    push(program.functions, contract_fixture([8], 1, field, [], []))
+    assert predicate_function(program, 0)
+    let shape = match projected_function_shape(program, input, 8, [256], 0) {
+        Result.Ok(value) => value
+        _ => {
+            assert false
+            return
+        }
+    }
+    let left = projected_test_keys(shape, 3, 10)
+    assert same_predicate_keys(left, projected_test_keys(shape, 3, 11))
+    assert !same_predicate_keys(left, projected_test_keys(shape, 4, 10))
+    let sequence = expression(ExprKind.Field, 7, "", 1, [input])
+    let size = expression(ExprKind.Intrinsic, 1, "list_len", -1, [sequence])
+    push(program.functions, contract_fixture([8], 1, size, [], []))
+    assert !projected_function_inputs(program, 1, [], [4096], 0)
+    assert predicate_function(program, 1)
+    let condition = operation(">", size, literal("0"))
+    push(program.functions, contract_fixture([8], 1, field, [condition], []))
+    assert !projected_function_inputs(program, 2, [], [4096], 0)
+    assert predicate_function(program, 2)
+    let write = expression(ExprKind.Intrinsic, 0, "list_set", -1, [sequence, literal("0"), literal("1")])
+    push(program.functions, contract_fixture([8], 1,
+            expression(ExprKind.Block, 1, "", -1, [write, field]), [], []))
+    assert !predicate_function(program, 3)
+}
+
+test fn forwarding_keeps_requested_result_applications_outside_argument_keys() {
+    let wanted = expression(ExprKind.Intrinsic, 1, "proof_function", 21, [])
+    let root = contract_fixture([], 1, literal("0"), [], [operation("==", local(0), wanted)])
+    let proof = verification(root, empty_proof_program())
+    assert result_application_needed(proof, wanted)
+    assert result_application_needed(proof, operation("+", wanted, literal("1")))
+    // Naming the requested function only inside an unrelated atom's argument
+    // cannot replace the source inference needed for that atom's own result.
+    assert !result_application_needed(proof,
+        expression(ExprKind.Intrinsic, 1, "proof_function", 22, [wanted]))
+}

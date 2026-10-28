@@ -96,6 +96,8 @@ enum PredicateKey {
     Boolean(List[Predicate])
     Text(TextValue)
     Float(FloatValue)
+    // A logical outer content version and its observed extent, never a handle.
+    Sequence(Int, Linear)
     Record(List[PredicateKey])
     Sum(Int, IntegerTerm, List[List[PredicateKey]])
 }

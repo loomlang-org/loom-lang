@@ -5,6 +5,11 @@ implementation, not a compatibility ledger for previous prototypes.
 
 ## Unreleased
 
+- Compose pure helper results over immutable input projections while leaving
+  unobserved List/Bytes siblings shared. Check observations across entry
+  predicates and transitive calls, retain forwarding result evidence, and keep
+  every argument evaluation even when its value is absent from a proof key.
+
 - Compose known callable contracts over read-only immutable captures, including
   nested aggregates, List scans and suspension. Capture values keep their
   evaluation order; mutable cells and shared collections gain no immutable keys.

@@ -478,22 +478,43 @@ fn applied_summary(proof Verification, call Expr, function Function, state State
     Result.Ok(output)
 }
 
-fn applied_call(proof Verification, call Expr, function Function, arguments CallArguments, depth Int) Result[List[Outcome], Text] {
-    let completed = applied_call_body(proof, call, function, arguments, depth)?
-    if !application_needed(proof, call.index) ||
-    !predicate_function(proof.program, call.index) {
-        return Result.Ok(completed)
-    }
+fn applied_call_inputs(proof Verification, call Expr, function Function, arguments CallArguments) Result[(State, List[PredicateKey]), Text] {
+    let sequences = !projected_function_inputs(proof.program, call.index, [], [4096], 0)
     let values = new[Value]()
+    var current = arguments.state
     var argument = 0
     while argument < length(arguments.values) {
-        push(values, function_argument(function_shape(proof.program, call, get(function.params, argument), 0),
-                get(arguments.values, argument)))
+        let shape = projected_function_shape(proof.program, call, get(function.params, argument), [256], 0, sequences)?
+        let value = get(arguments.values, argument)
+        current = function_argument_state(proof, shape, value, current)?
+        push(values, function_argument(shape, value, current)?)
         argument = argument + 1
     }
-    let keys = match predicate_keys(values, [256]) {
-        Result.Ok(value) => value
-        Result.Err(_) => {
+    Result.Ok((current, predicate_keys(values, [256])?))
+}
+
+fn applied_call(proof Verification, call Expr, function Function, arguments CallArguments, depth Int) Result[List[Outcome], Text] {
+    var inputs Option[(State, List[PredicateKey])] = Option.None
+    if application_needed(proof, call.index) && predicate_function(proof.program, call.index) {
+        match applied_call_inputs(proof, call, function, arguments) {
+            Result.Ok(value) => {
+                inputs = Option.Some(value)
+            }
+            Result.Err(_) => {
+            }
+        }
+    }
+    let prepared = match inputs {
+        Option.Some((state, _)) => CallArguments {
+            state = state
+            values = arguments.values
+        }
+        Option.None => arguments
+    }
+    let completed = applied_call_body(proof, call, function, prepared, depth)?
+    let keys = match inputs {
+        Option.Some((_, keys)) => keys
+        Option.None => {
             return Result.Ok(completed)
         }
     }
@@ -600,7 +621,7 @@ fn applied_call_body(proof Verification, call Expr, function Function, arguments
             return source_body_call(proof, call.index, function, arguments, false, depth)
         }
     }
-    if contains_application(value) && !application_needed(proof, call.index) &&
+    if contains_application(value) && !result_application_needed(proof, value) &&
     predicate_function(proof.program, call.index) {
         // A caller asking for an arithmetic/body relation still needs the
         // existing source inference. Opaque congruence is useful when a clause

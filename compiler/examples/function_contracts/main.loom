@@ -152,6 +152,8 @@ ensures all(result, reading_nonempty)
 }
 
 fn main() {
+    sequence_contracts()
+    context_contracts()
     capture_contracts()
     assert observed_count("(a(b)") == 2
     assert checked_count("(checked)") == 1

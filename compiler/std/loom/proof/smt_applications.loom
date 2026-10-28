@@ -16,6 +16,7 @@ fn smt_predicate_keys(writer SmtWriter) {
           (((pk_int (pk_int_value Int))
             (pk_bool (pk_bool_value Bool))
             (pk_text (pk_text_value (Seq (_ BitVec 8))))
+            (pk_sequence (pk_sequence_version Int) (pk_sequence_size Int))
             (pk_record (pk_record_fields loom_pks))
             (pk_sum (pk_sum_type Int) (pk_sum_tag Int) (pk_sum_fields loom_pks))
             (pk_float (pk_float_origin loom_float_origin)))
@@ -116,6 +117,8 @@ fn smt_key(writer SmtWriter, value PredicateKey, depth Int) Result[Text, Text] {
         }
         PredicateKey.Text(term) => Result.Ok(concat("(pk_text ", concat(smt_text(writer, term, depth + 1)?, ")")))
         PredicateKey.Float(term) => smt_float_key(writer, term, depth + 1)
+        PredicateKey.Sequence(contents, size) => Result.Ok(concat("(pk_sequence ",
+                concat(std.int.to_text(contents), concat(" ", concat(smt_linear(writer, size)?, ")")))))
         PredicateKey.Record(fields) => Result.Ok(concat("(pk_record ", concat(smt_key_list(writer, fields, depth + 1)?, ")")))
         PredicateKey.Sum(ty, tag, fields) => {
             let selected = smt_integer(writer, tag, depth + 1)?

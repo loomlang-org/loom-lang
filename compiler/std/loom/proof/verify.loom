@@ -262,7 +262,7 @@ fn required_conditions(proof Verification, conditions List[Expr], state State) R
     while index < length(conditions) {
         let source = get(conditions, index)
         returned = quantified_views(proof, source, returned, false, 256)?
-        let observed = if proof.shared || contains_list_read(source) || contains_enum_payload(source) || contains_type_guard(source) {
+        let observed = if proof.shared || contains_list_read(source) || contains_sequence_input(source) || contains_enum_payload(source) || contains_type_guard(source) {
             contract_observations(proof, source, proof_bool(source, true), returned)?
         } else {
             EntrySnapshot {
@@ -694,9 +694,11 @@ fn execute_expression(proof Verification, expr Expr, state State, depth Int) Res
         var index = 0
         while index < length(inputs) {
             let input = get(inputs, index)
+            let shape = get(get(expr.children, 1).children, 0)
+            let current = function_argument_state(proof, shape, input.value, input.state)?
             discard add_outcome(output, Outcome {
-                    state = input.state
-                    value = function_argument(get(get(expr.children, 1).children, 0), input.value)
+                    state = current
+                    value = function_argument(shape, input.value, current)?
                 })?
             index = index + 1
         }
