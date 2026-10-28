@@ -453,6 +453,33 @@ ensures result == deferred_graph(values) {
     deferred_graph(values)
 }
 "#,
+        // A fresh-cell read cannot freeze an existing environment or its data.
+        r#"
+fn bad(value Int) Int
+ensures result == fresh_reader(value)() {
+    let read, write = mutable_capture_pair(value)
+    write(0)
+    read()
+}
+"#,
+        r#"
+fn bad(root GraphNode, child List[GraphNode]) Int
+ensures result == fresh_graph_reader(root, 2)() {
+    let read = fresh_graph_reader(root, 2)
+    let saved = read()
+    push(child, GraphNode {
+        value = 9
+        children = []
+    })
+    saved
+}
+"#,
+        r#"
+fn bad(value Int) Bool
+ensures fresh_reader(10 / value)() == fresh_reader(10 / value)() {
+    true
+}
+"#,
         // Contract results retain the actual function target's identity.
         "fn different(value Text) Int {\n    count_open(value) + 1\n}\nfn bad(value Text) Int\nensures result == different(value)\n{\n    count_open(value)\n}\n",
     ] {

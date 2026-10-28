@@ -95,6 +95,10 @@ fn cell_read_expression(value Expr) Bool {
     value.kind == ExprKind.Intrinsic && value.text == "cell_get" && length(value.children) == 1
 }
 
+fn fresh_cell_initialization(value Expr) Bool {
+    value.kind == ExprKind.Intrinsic && value.text == "proof_cell_init"
+}
+
 fn cell_read_view(value Expr) Expr {
     proof_expr(value, ExprKind.Intrinsic, value.ty, "list_get", value.index,
         [get(value.children, 0), proof_expr(value, ExprKind.Integer, 1, "0", -1, [])])

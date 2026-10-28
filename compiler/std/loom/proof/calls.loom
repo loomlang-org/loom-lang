@@ -646,7 +646,9 @@ fn applied_call_body(proof Verification, call Expr, function Function, arguments
         }
     }
     if !bounded_contract(value) {
-        return Result.Err("body helper proof expansion budget exhausted")
+        // Unconsumed initialization metadata cannot become executable capture
+        // expressions: the source body allocates their shared storage once.
+        return source_body_call(proof, call.index, function, arguments, false, depth)
     }
     call_results(proof, value, context, state, boundary, depth)
 }

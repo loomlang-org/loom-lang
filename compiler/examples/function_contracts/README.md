@@ -19,6 +19,9 @@ immutable records/enums and exact Float representations. The example composes
 them through direct calls, List scans and suspension. Receiver evaluation keeps
 its capture before later argument effects. Mutable capture cells and shared
 collections cannot supply immutable application identities.
+A read from a newly constructed captured binding can use its initialized value,
+with eager evaluation checks retained. Existing environments and shared descendants
+continue to use ordinary storage snapshots and alias invalidation.
 
 An inline context may also carry List/Bytes fields that the helper never
 observes. Its key retains the immutable projection and omits those handles.
