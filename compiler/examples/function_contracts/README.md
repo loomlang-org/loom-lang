@@ -17,8 +17,8 @@ the same rules. No purity annotation or runtime wrapper is required.
 Known closures retain the values in read-only capture slots, including nested
 immutable records/enums and exact Float representations. The example composes
 them through direct calls, List scans and suspension. Receiver evaluation keeps
-its capture before later argument effects. Mutable capture cells and shared
-collections cannot supply immutable application identities.
+its capture before later argument effects. Shared collections require versioned
+observations rather than immutable handle identities.
 A read from a newly constructed captured binding can use its initialized value,
 with eager evaluation checks retained. Existing environments and shared descendants
 continue to use ordinary storage snapshots and alias invalidation.
@@ -58,7 +58,20 @@ write, unknown call, hot Task creation and suspension invalidates that version.
 Closed read-only calls and loops preserve it. Root names imply no separation.
 This coarse rule rejects current graph observations in shared-worker proofs;
 it does not prove recursive algorithms, termination or arbitrary graph invariants.
-Staged callback contracts with mutable capture bindings still reject.
+
+`cell_captures.loom` composes closed read-only callbacks over mutable bindings
+whose contents are immutable values, including records and Float representations.
+Loops use the same sampled contents rule as direct reads. A setter changes later
+observations while an earlier result retains its sampled value. Getter/setter
+pairs still share one actual cell, and private captures can cross suspension.
+Shared-worker reads require private or read-only storage. Mutable descendants
+need graph snapshots; unknown or writing callbacks do not acquire result facts.
+`cell_collections.loom` applies the same projection to captured Lists and recursive
+records. Replacing a captured handle changes its later reads; writes through a
+shared child invalidate content observations even when the binding is unchanged.
+The runnable example also checks a shared self edge without a separation axiom.
+Unobserved mutable siblings remain omitted, including inside a mutable captured
+record; sampling a binding does not imply reading every descendant.
 
 Successful evaluation is independent of the result: a hypothetical call cannot
 prove its own safety, termination or output. A Float result can be NaN; numeric

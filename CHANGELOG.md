@@ -5,6 +5,11 @@ implementation, not a compatibility ledger for previous prototypes.
 
 ## Unreleased
 
+- Compose read-only callback contracts over sampled capture-cell input projections,
+  including loops, versioned List/graph children and private suspension. Preserve
+  actual getter/setter sharing, invalidate later reads on writes, and retain past
+  result observations.
+
 - Expand reads of newly constructed captured bindings through their checked
   initializers, preserving eager checks and existing mutable-environment semantics.
 

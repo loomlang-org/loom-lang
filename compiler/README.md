@@ -3705,11 +3705,19 @@ different root names imply no separation. Possible writes, unknown calls, hot
 Task creation and suspension invalidate the coarse version, while closed read-only
 calls and loops retain it. Current graph snapshots reject in shared-worker
 verification; this is congruence of normal results, not general graph induction or
-permission to weaken an invariant. Staged contracts over mutable capture bindings
-remain unsupported. See the [graph example](examples/function_contracts/graphs.loom).
+permission to weaken an invariant. See the [graph example](examples/function_contracts/graphs.loom).
 A read from a newly constructed captured binding can use its initializer's value
 after preserving its evaluation checks. Existing environments retain their storage
 snapshots and alias invalidation, including shared children.
+Closed read-only callbacks, including loop bodies, can also compose at a mutable
+capture cell's current input projection: immutable leaves and versioned sequence
+or graph children use the same argument rules. Writes change later observations while
+previous results retain their sampled values. Returned getter/setter pairs keep
+their actual shared cell; this introduces neither a runtime copy nor a frozen
+binding. Shared-worker observations require private or read-only storage for
+the cell and observed descendants; graph observations retain their coarse
+interference boundary. See the
+[capture example](examples/function_contracts/cell_captures.loom).
 Finite forwarding retains the requested result's function abstraction rather
 than replacing it with unrelated body inference. The verifier checks the current
 function's frame writes before materializing argument values; capture keys use

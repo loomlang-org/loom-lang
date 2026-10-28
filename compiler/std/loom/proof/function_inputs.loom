@@ -47,8 +47,7 @@ fn projected_function_inputs(program Program, target Int, seen List[Int], budget
     }
     if function.runtime_name != "" {
         return (mode == FunctionInputs.Graph && immutable_function_inputs(program, function)) ||
-        (mode != FunctionInputs.Projected && sequence_input_read(program, function.runtime_name, function.params, function.result)) ||
-        (mode == FunctionInputs.Graph && graph_input_read(program, function.runtime_name, function.params))
+        function_input_read(program, function.runtime_name, function.params, function.result, mode)
     }
     var index = 0
     while index < length(seen) {
@@ -121,10 +120,9 @@ fn projected_input_expression(program Program, value Expr, seen List[Int], budge
             // checked separately in each arm; matching does not read children.
             let tag = value.kind == ExprKind.Match && index == 0 &&
             proof_enum_type(program, input.ty, 0) >= 0
-            let sequence = mode != FunctionInputs.Projected && value.kind == ExprKind.Intrinsic && index == 0 &&
-            (sequence_input_read(program, value.text, [input.ty], value.ty) ||
-                (mode == FunctionInputs.Graph && graph_input_read(program, value.text, [input.ty])))
-            if !tag && !sequence {
+            let snapshot = value.kind == ExprKind.Intrinsic && index == 0 &&
+            function_input_read(program, value.text, [input.ty], value.ty, mode)
+            if !tag && !snapshot {
                 return false
             }
         }
@@ -175,8 +173,11 @@ fn projected_function_shape(program Program, source Expr, ty Int, budget List[In
             return Result.Ok(proof_expr(source, ExprKind.Coerce, ty, "", -1,
                     [projected_function_shape(program, source, get(shape.fields, 0).ty, budget, depth + 1, mode)?]))
         }
-        if mode == FunctionInputs.Graph &&
-        (shape.kind == TypeKind.List || shape.kind == TypeKind.Bytes || capture_cell_shape(shape)) {
+        if capture_cell_shape(shape) {
+            return Result.Ok(proof_expr(source, ExprKind.Intrinsic, ty, "proof_cell_value", -1,
+                    [projected_function_shape(program, source, get(shape.arguments, 0), budget, depth + 1, mode)?]))
+        }
+        if mode == FunctionInputs.Graph && (shape.kind == TypeKind.List || shape.kind == TypeKind.Bytes) {
             return Result.Ok(proof_expr(source, ExprKind.Intrinsic, ty, "proof_graph", -1, []))
         }
         if shape.kind == TypeKind.Record || shape.kind == TypeKind.Tuple ||

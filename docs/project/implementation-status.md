@@ -164,8 +164,13 @@ possible writes invalidate current versions, while entry versions can survive
 writes and suspension. Read-only helpers following mutable descendants can also
 use a tracked root and one logical heap version. Possible writes, unknown calls,
 hot Task creation and suspension invalidate it; closed read-only calls and loops
-preserve it. Shared-worker graph observations, staged mutable capture bindings,
-general graph induction and arbitrary graph-invariant preservation remain open.
+preserve it. Read-only callbacks over mutable capture bindings compose at their
+sampled input projections, including loop bodies, immutable values and versioned
+List/graph descendants. Writes invalidate later reads without changing past
+results or breaking getter/setter sharing. Shared-worker cells and observed
+descendants require private or read-only storage. Shared-worker graph
+observations, general graph induction and arbitrary graph-invariant preservation
+remain open.
 Enum tags and payloads use the same structural
 projection, including recursive List-backed inputs and observed sequence payloads.
 Inactive concrete payloads need no snapshot; guards and entry predicates still

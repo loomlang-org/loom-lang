@@ -1,9 +1,16 @@
 import std.loom.eval.validate_closed
 
-// These reads observe one outer sequence. Mutable elements cannot be followed
-// through that version: a child write need not change its parent's contents.
-fn sequence_input_read(program Program, primitive Text, params List[Int], output_type Int) Bool {
-    if length(params) == 0 || !entry_list_type(program, get(params, 0), 0) {
+// A cell read copies its current value, whose children use the selected input
+// projection. Sequence reads observe one outer version; following mutable
+// elements needs the graph mode because child writes need not change parents.
+fn function_input_read(program Program, primitive Text, params List[Int], output_type Int, mode FunctionInputs) Bool {
+    if length(params) == 0 {
+        return false
+    }
+    if primitive == "cell_get" {
+        return capture_cell_type(program, get(params, 0))
+    }
+    if mode == FunctionInputs.Projected || !entry_list_type(program, get(params, 0), 0) {
         return false
     }
     let operation = sequence_operation(primitive)
@@ -11,7 +18,7 @@ fn sequence_input_read(program Program, primitive Text, params List[Int], output
         return output_type == 1
     }
     if operation == "list_get" {
-        return predicate_immutable_type(program, output_type, 0)
+        return mode == FunctionInputs.Graph || predicate_immutable_type(program, output_type, 0)
     }
     primitive == "bytes_utf8" || primitive == "bytes_text_copy"
 }
@@ -24,8 +31,16 @@ fn function_graph_shape(shape Expr) Bool {
     shape.kind == ExprKind.Intrinsic && shape.text == "proof_graph"
 }
 
+fn function_cell_shape(shape Expr) Bool {
+    shape.kind == ExprKind.Intrinsic && shape.text == "proof_cell_value"
+}
+
+fn function_cell_snapshot(value Expr) Bool {
+    value.kind == ExprKind.Intrinsic && value.text == "proof_cell_snapshot" && length(value.children) == 1
+}
+
 fn contains_versioned_input(value Expr) Bool {
-    if function_sequence_shape(value) || function_graph_shape(value) {
+    if function_sequence_shape(value) || function_graph_shape(value) || function_cell_shape(value) {
         return true
     }
     var index = 0
@@ -44,6 +59,25 @@ fn contains_versioned_input(value Expr) Bool {
 fn function_argument_state(proof Verification, shape Expr, value Value, state State) Result[State, Text] {
     if !contains_versioned_input(shape) {
         return Result.Ok(state)
+    }
+    if function_cell_shape(shape) {
+        var current = state
+        match value {
+            Value.List(identity) => {
+                current = input_capture_cells(proof, shape.ty, value, current, 0)?
+                if proof.shared && !stable_storage(list_state(identity, current)?) {
+                    return Result.Err("capture function input is not proved interference-safe")
+                }
+            }
+            _ => {
+            }
+        }
+        current = function_argument_state(proof, get(shape.children, 0),
+            cell_function_content(value, current)?, current)?
+        if !immutable_snapshot(cell_function_argument(shape, value, current)?) {
+            return Result.Err("capture function input needs a value snapshot")
+        }
+        return Result.Ok(current)
     }
     if function_graph_shape(shape) {
         match value {
@@ -125,6 +159,24 @@ fn function_argument_state(proof Verification, shape Expr, value Value, state St
     }
 }
 
+fn cell_function_content(value Value, state State) Result[Value, Text] {
+    Result.Ok(match value {
+            Value.List(identity) => known_element(identity, constant(integer(0)), state)?
+            Value.Record(fields) => if length(fields) == 1 {
+                get(fields, 0)
+            } else {
+                return Result.Err("capture function input needs one initialized value")
+            }
+            _ => {
+                return Result.Err("capture function input needs a tracked cell or past snapshot")
+            }
+        })
+}
+
+fn cell_function_argument(shape Expr, value Value, state State) Result[Value, Text] {
+    Result.Ok(Value.Record([function_argument(get(shape.children, 0), cell_function_content(value, state)?, state)?]))
+}
+
 fn sequence_function_argument(value Value, state State) Result[Value, Text] {
     match value {
         Value.EntryList(_, _) => {
@@ -156,21 +208,6 @@ fn changed_heap(proof Verification, state State) State {
         heap = version
         ..state
     }
-}
-
-fn graph_input_read(program Program, primitive Text, params List[Int]) Bool {
-    if length(params) == 0 {
-        return false
-    }
-    if primitive == "cell_get" {
-        return capture_cell_type(program, get(params, 0))
-    }
-    if !entry_list_type(program, get(params, 0), 0) {
-        return false
-    }
-    let operation = sequence_operation(primitive)
-    operation == "list_len" || operation == "list_get" ||
-    primitive == "bytes_utf8" || primitive == "bytes_text_copy"
 }
 
 fn graph_readonly_function(program Program, target Int) Bool {

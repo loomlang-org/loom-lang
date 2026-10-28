@@ -1,0 +1,113 @@
+fn cell_list_pair(values List[Int]) (fn() Int, fn(List[Int])) {
+    var stored = values
+    let read = fn() Int {
+        var index = 0
+        var total = 0
+        while index < std.list.length(stored) {
+            total = total + stored[index]
+            index = index + 1
+        }
+        total
+    }
+    let write = fn(next List[Int]) {
+        stored = next
+    }
+    (read, write)
+}
+
+fn observed_cell_list(values List[Int]) Int
+ensures result == cell_list_pair(values).0() {
+    cell_list_pair(values).0()
+}
+
+fn replaced_cell_list(values List[Int], replacement List[Int]) Int
+ensures result == cell_list_pair(replacement).0() {
+    let read, write = cell_list_pair(values)
+    write(replacement)
+    read()
+}
+
+fn cell_graph_pair(root GraphNode) (fn() Int, fn(GraphNode)) {
+    var stored = root
+    let read = fn() Int {
+        var total = stored.value
+        var index = 0
+        while index < std.list.length(stored.children) {
+            total = total + stored.children[index].value
+            index = index + 1
+        }
+        total
+    }
+    let write = fn(next GraphNode) {
+        stored = next
+    }
+    (read, write)
+}
+
+fn observed_cell_graph(root GraphNode) Int
+ensures result == cell_graph_pair(root).0() {
+    cell_graph_pair(root).0()
+}
+
+fn replaced_cell_graph(root GraphNode, replacement GraphNode) Int
+ensures result == cell_graph_pair(replacement).0() {
+    let read, write = cell_graph_pair(root)
+    write(replacement)
+    read()
+}
+
+fn cell_root_value(root GraphNode) fn() Int {
+    var stored = root
+    fn() Int {
+        var index = 0
+        var total = 0
+        while index < 2 {
+            total = total + stored.value
+            index = index + 1
+        }
+        total
+    }
+}
+
+fn captured_root_ignores_children(root GraphNode) Int
+ensures result == cell_root_value(root)() {
+    let saved = cell_root_value(root)()
+    push(root.children, root)
+    saved
+}
+
+fn cell_collection_contracts() {
+    let values = [2, 3]
+    assert observed_cell_list(values) == 5
+    assert replaced_cell_list(values, [7]) == 7
+    let read, write = cell_list_pair(values)
+    assert read() == 5
+    values[0] = 9
+    assert read() == 12
+    write([4])
+    assert read() == 4
+    let children = new[GraphNode]()
+    let root = GraphNode {
+        value = 3
+        children = children
+    }
+    // A shared self edge needs no identity separation or recursive induction.
+    push(children, root)
+    assert observed_cell_graph(root) == 6
+    assert replaced_cell_graph(root, GraphNode {
+            value = 8
+            children = []
+        }) == 8
+    let graph_read, graph_write = cell_graph_pair(root)
+    discard graph_write
+    children[0] = GraphNode {
+        value = 5
+        children = []
+    }
+    assert graph_read() == 8
+    assert captured_root_ignores_children(root) == 6
+}
+
+test fn captured_collections_use_their_current_sequence_and_graph_snapshots() {
+    cell_collection_contracts()
+}

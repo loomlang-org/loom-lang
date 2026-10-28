@@ -9,6 +9,8 @@ const INPUTS: &str = include_str!("../examples/function_contracts/inputs.loom");
 const SEQUENCES: &str = include_str!("../examples/function_contracts/sequences.loom");
 const SUM_INPUTS: &str = include_str!("../examples/function_contracts/sum_inputs.loom");
 const GRAPHS: &str = include_str!("../examples/function_contracts/graphs.loom");
+const CELL_CAPTURES: &str = include_str!("../examples/function_contracts/cell_captures.loom");
+const CELL_COLLECTIONS: &str = include_str!("../examples/function_contracts/cell_collections.loom");
 
 const SCOPED_FUNCTIONS: &str = r#"
 fn negative(value Int) Bool {
@@ -148,6 +150,12 @@ fn immutable_function_results_compose_and_reject_unestablished_evidence() {
     fs::write(package.path().join("sequences.loom"), SEQUENCES).unwrap();
     fs::write(package.path().join("sum_inputs.loom"), SUM_INPUTS).unwrap();
     fs::write(package.path().join("graphs.loom"), GRAPHS).unwrap();
+    fs::write(package.path().join("cell_captures.loom"), CELL_CAPTURES).unwrap();
+    fs::write(
+        package.path().join("cell_collections.loom"),
+        CELL_COLLECTIONS,
+    )
+    .unwrap();
     let cache = package.path().join("cache");
     let check = || common::loom(&["check", path, "--frontend-cache", cache.to_str().unwrap()]);
     success(&check());
@@ -478,6 +486,70 @@ ensures result == fresh_graph_reader(root, 2)() {
 fn bad(value Int) Bool
 ensures fresh_reader(10 / value)() == fresh_reader(10 / value)() {
     true
+}
+"#,
+        r#"
+fn bad(value Int, offset Int) Int
+ensures result == cell_sum_pair(offset).0(value) {
+    let read, write = cell_sum_pair(offset)
+    write(0)
+    read(value)
+}
+"#,
+        r#"
+fn bad(value Int, offset Int) Bool
+ensures cell_sum_pair(offset).0(value) == cell_sum_pair(offset).0(value) {
+    true
+}
+"#,
+        r#"
+fn bad(value Int) Bool
+ensures cell_sum_pair(10 / value).0(0) == cell_sum_pair(10 / value).0(0) {
+    true
+}
+"#,
+        r#"
+fn bad(left Float, right Float) Bool
+requires left == right
+ensures result == cell_sign(left)() {
+    cell_sign(right)()
+}
+"#,
+        r#"
+fn bad(values List[Int], replacement List[Int]) Int
+ensures result == cell_list_pair(values).0() {
+    let read, write = cell_list_pair(values)
+    write(replacement)
+    read()
+}
+"#,
+        r#"
+fn bad(values List[Int]) Int
+requires std.list.length(values) > 0
+ensures result == cell_list_pair(values).0() {
+    let saved = cell_list_pair(values).0()
+    values[0] = 0
+    saved
+}
+"#,
+        r#"
+fn bad(root GraphNode, replacement GraphNode) Int
+ensures result == cell_graph_pair(root).0() {
+    let read, write = cell_graph_pair(root)
+    write(replacement)
+    read()
+}
+"#,
+        r#"
+fn bad(root GraphNode) Int
+requires std.list.length(root.children) > 0
+ensures result == cell_graph_pair(root).0() {
+    let saved = cell_graph_pair(root).0()
+    root.children[0] = GraphNode {
+        value = 0
+        children = []
+    }
+    saved
 }
 "#,
         // Contract results retain the actual function target's identity.

@@ -404,7 +404,7 @@ fn expanded_block(context Expansion, value Expr, guard Expr, bindings List[Expan
 
 fn expanded(context Expansion, value Expr, guard Expr, bindings List[ExpansionBinding], locals List[Local], self Bool, calls Int, depth Int) Result[Expr, Text] {
     discard expansion_step(context, depth)?
-    if function_layout(value) || fresh_cell_initialization(value) {
+    if function_layout(value) || fresh_cell_initialization(value) || function_cell_snapshot(value) {
         return Result.Ok(value)
     }
     if logical_expression(value) {

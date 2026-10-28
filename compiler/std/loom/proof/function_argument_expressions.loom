@@ -1,0 +1,58 @@
+// Arguments have already expanded their eager evaluations. Only closed,
+// read-only applications consume these descriptions; returned closures keep
+// their original construction and sharing in the source-call executor.
+fn function_argument_expression(context Expansion, shape Expr, value Expr, depth Int) Result[Expr, Text] {
+    if !function_cell_shape(shape) && shape.kind != ExprKind.Coerce &&
+    shape.kind != ExprKind.Record && shape.kind != ExprKind.Variant {
+        return Result.Ok(value)
+    }
+    discard expansion_step(context, depth)?
+    if value.kind == ExprKind.If && length(value.children) == 3 {
+        return Result.Ok(proof_choice(get(value.children, 0),
+                function_argument_expression(context, shape, get(value.children, 1), depth + 1)?,
+                function_argument_expression(context, shape, get(value.children, 2), depth + 1)?))
+    }
+    if shape.kind == ExprKind.Coerce {
+        if value.kind == ExprKind.Coerce && length(value.children) == 1 {
+            return Result.Ok(proof_expr(value, value.kind, value.ty, value.text, value.index,
+                    [function_argument_expression(context, get(shape.children, 0), get(value.children, 0), depth + 1)?]))
+        }
+        return function_argument_expression(context, get(shape.children, 0), value, depth + 1)
+    }
+    if function_cell_shape(shape) && fresh_cell_initialization(value) && length(value.children) == 1 {
+        let field = get(value.children, 0)
+        if field.kind != ExprKind.Field || field.index != 0 || length(field.children) != 1 {
+            return Result.Err("capture function input needs one initialized value")
+        }
+        return Result.Ok(proof_expr(value, ExprKind.Intrinsic, value.ty, "proof_cell_snapshot", -1, field.children))
+    }
+    if shape.kind == ExprKind.Record && value.kind == ExprKind.Record {
+        let fields = new[Expr]()
+        var index = 0
+        while index < length(value.children) {
+            let field = get(value.children, index)
+            if field.kind != ExprKind.Field || field.index < 0 || field.index >= length(shape.children) || length(field.children) != 1 {
+                return Result.Err("invalid function input record projection")
+            }
+            push(fields, proof_expr(field, ExprKind.Field, field.ty, "", field.index,
+                    [function_argument_expression(context, get(get(shape.children, field.index).children, 0),
+                            get(field.children, 0), depth + 1)?]))
+            index = index + 1
+        }
+        return Result.Ok(proof_expr(value, value.kind, value.ty, value.text, value.index, fields))
+    }
+    if shape.kind == ExprKind.Variant && value.kind == ExprKind.Variant {
+        if value.index < 0 || value.index >= length(shape.children) {
+            return Result.Err("invalid function input variant projection")
+        }
+        let fields = new[Expr]()
+        let layouts = get(shape.children, value.index).children
+        var index = 0
+        while index < length(value.children) {
+            push(fields, function_argument_expression(context, get(layouts, index), get(value.children, index), depth + 1)?)
+            index = index + 1
+        }
+        return Result.Ok(proof_expr(value, value.kind, value.ty, value.text, value.index, fields))
+    }
+    Result.Ok(value)
+}
