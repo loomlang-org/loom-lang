@@ -30,6 +30,7 @@ record CheckInputs {
     fact_calls List[Instance]
     // Visiting factory queries cannot certify their own recursive result.
     sealing_factories List[Int]
+    callable_queries List[StaticValue]
 }
 
 record StaticReferenceQuery {

@@ -13,17 +13,25 @@ record ReflectionModel {
 }
 
 fn reflection_intrinsic(env Environment, owner Int) Bool {
-    if predicate_intrinsic(env, owner) {
-        return true
-    }
     let item = symbol(env, owner)
-    let file = get(env.source.files, item.file)
-    if item.name == "refinement_base" && has(item.node, NodeKind.Intrinsic) && file.trusted_std &&
-    package_label(env.source.modules, env.source.packages, file.package) == "std.meta" {
-        return true
+    if !has(item.node, NodeKind.Intrinsic) || (item.name != "describe" &&
+        item.name != "from_fields" && item.name != "implies" &&
+        item.name != "refinement_base" && item.name != "comptime_callable") {
+        return false
     }
-    (item.name == "describe" || item.name == "from_fields") && has(item.node, NodeKind.Intrinsic) && file.trusted_std &&
-    package_label(env.source.modules, env.source.packages, file.package) == "std.reflect"
+    let file = get(env.source.files, item.file)
+    if !file.trusted_std {
+        return false
+    }
+    let owner_package = package_label(env.source.modules, env.source.packages, file.package)
+    if item.name == "refinement_base" {
+        return owner_package == "std.meta"
+    }
+    if item.name == "comptime_callable" {
+        return owner_package == "std.reflect.functions"
+    }
+    (item.name == "describe" || item.name == "from_fields") && owner_package == "std.reflect" ||
+    (item.name == "describe" || item.name == "implies") && owner_package == "std.reflect.predicates"
 }
 
 fn reflected_record(context Context, node Node, ty Int, value Expr) Result[Expr, Failure] {
@@ -44,7 +52,12 @@ fn reflected_record(context Context, node Node, ty Int, value Expr) Result[Expr,
         return Result.Err(error(context, node, "from_fields cannot create a MustScope resource"))
     }
     let local = length(context.locals)
-    push(context.locals, Local { name = "" ty = value.ty mutable = false is_scoped = false })
+    push(context.locals, Local {
+            name = ""
+            ty = value.ty
+            mutable = false
+            is_scoped = false
+        })
     let body = expressions(expression(ExprKind.Let, 0, node, "", local, expressions(value), value.falls))
     let members = new[Expr]()
     var index = 0

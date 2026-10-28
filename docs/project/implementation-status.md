@@ -323,6 +323,11 @@ an optional source witness binds both endpoint types. Unproved queries return
 false, never migration or application-compatibility evidence.
 Tracked files, build options and target properties bind checks, caches, editor
 freshness and receipts; pure evaluation cannot hide external I/O.
+`std.reflect.functions.comptime_callable` inspects a known callback through a
+private queue and the shared closed execution validator. Queries neither invoke
+nor retain callbacks; mutable capture state stays live. Eligibility supplies no
+result, domain, termination or input-isolation fact. Ordinary typing/contracts
+and cyclic inspection still reject; unknown dispatch remains unsupported.
 
 ## Constraints and required proofs
 

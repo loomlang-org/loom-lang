@@ -4019,7 +4019,8 @@ The [static-parameter example](examples/comptime_parameters/main.loom) covers
 generic recursion, pure argument computation, static Text, shadowing, returned
 ordinary and static callbacks, shared results and runtime argument order. Concept
 and implementation methods support the same parameter forms, including dynamic
-calls; intrinsics do not. Taking a reference to a declaration with static
+calls. Ordinary runtime intrinsics do not; recognized build and reflection
+operations have separately checked static signatures. Taking a reference to a declaration with static
 parameters still rejects until explicit partial
 specialization can supply a complete function identity. Static value packs use
 the [variadic form](#variadic-functions). [Type-valued computation](#first-class-types)
@@ -4072,6 +4073,14 @@ diagnostics, never a fallback to runtime execution.
 Result expansion is bounded too. Successful pure computations may be reused
 within one check after type/capture validation, but each use still reconstructs
 fresh runtime containers. This is not a persistent or incremental build cache.
+
+`std.reflect.functions.comptime_callable` inspects a known callback through the
+same bounded closed execution checks used by contracts. It neither invokes the
+callback nor retains it as native code. Use the Boolean in an explicit public
+requirement or `comptime if`; it grants no result, domain, termination or
+input-isolation guarantee. CTFE can mutate supplied data. Selected bodies still
+need ordinary typing and required proofs, and cyclic inspection rejects. See
+[callable reflection](examples/callable_reflection).
 
 ### Explicit build options
 
