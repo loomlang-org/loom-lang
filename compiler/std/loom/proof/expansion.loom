@@ -404,7 +404,7 @@ fn expanded_block(context Expansion, value Expr, guard Expr, bindings List[Expan
 
 fn expanded(context Expansion, value Expr, guard Expr, bindings List[ExpansionBinding], locals List[Local], self Bool, calls Int, depth Int) Result[Expr, Text] {
     discard expansion_step(context, depth)?
-    if function_layout(value) {
+    if function_layout(value) || fresh_cell_initialization(value) {
         return Result.Ok(value)
     }
     if logical_expression(value) {
@@ -503,8 +503,9 @@ fn expanded(context Expansion, value Expr, guard Expr, bindings List[ExpansionBi
         let receiver = expanded(context, get(value.children, 0), guard, bindings, locals, self, calls, depth + 1)?
         return expanded_field(context, value, receiver, depth + 1)
     }
+    let fresh_cell = value.kind == ExprKind.FrameNew && capture_cell_type(context.program, value.ty)
     if value.kind == ExprKind.Record ||
-    (value.kind == ExprKind.FrameNew && frame_input_program(context.program, value.ty)) {
+    (value.kind == ExprKind.FrameNew && (fresh_cell || frame_input_program(context.program, value.ty))) {
         let fields = new[Expr]()
         var index = 0
         while index < length(value.children) {
@@ -515,7 +516,17 @@ fn expanded(context Expansion, value Expr, guard Expr, bindings List[ExpansionBi
             push(fields, proof_expr(field, ExprKind.Field, field.ty, "", field.index, children))
             index = index + 1
         }
-        return Result.Ok(proof_expr(value, ExprKind.Record, value.ty, "", -1, fields))
+        // This describes initialization, not a handle or executable allocation.
+        // Substituting the capture must not create separate mutable cells.
+        return Result.Ok(proof_expr(value, if fresh_cell {
+                    ExprKind.Intrinsic
+                } else {
+                    ExprKind.Record
+                }, value.ty, if fresh_cell {
+                    "proof_cell_init"
+                } else {
+                    ""
+                }, -1, fields))
     }
     if value.kind == ExprKind.Variant {
         let fields = new[Expr]()
@@ -550,6 +561,18 @@ fn expanded(context Expansion, value Expr, guard Expr, bindings List[ExpansionBi
             push(children, expanded(context, child, next, bindings, locals, self, calls, depth + 1)?)
         }
         operand = operand + 1
+    }
+    if cell_read_expression(value) {
+        let receiver = get(children, 0)
+        if fresh_cell_initialization(receiver) && capture_cell_type(context.program, receiver.ty) &&
+        length(receiver.children) == 1 {
+            let field = get(receiver.children, 0)
+            if field.kind == ExprKind.Field && field.index == 0 && length(field.children) == 1 {
+                // Initializer evaluations and their obligations were retained
+                // above. Existing handles never match this constructor rule.
+                return Result.Ok(get(field.children, 0))
+            }
+        }
     }
     var observation = -1
     if length(context.observations) != 0 && (list_length_expression(value) || list_read_expression(value) || cell_read_expression(value) ||
@@ -729,7 +752,7 @@ pub fn implies_with_helpers(program Program, locals List[Local], premise Expr, c
 // Expansion validates the scalar grammar. This bounds its substituted trees
 // without imposing refinement implication's canonical self-local identity.
 fn contract_size(value Expr, budget List[Int], depth Int) Bool {
-    if depth >= 64 || !conjunction_step(budget) {
+    if depth >= 64 || !conjunction_step(budget) || fresh_cell_initialization(value) {
         return false
     }
     var index = 0

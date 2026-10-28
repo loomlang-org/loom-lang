@@ -3707,6 +3707,9 @@ calls and loops retain it. Current graph snapshots reject in shared-worker
 verification; this is congruence of normal results, not general graph induction or
 permission to weaken an invariant. Staged contracts over mutable capture bindings
 remain unsupported. See the [graph example](examples/function_contracts/graphs.loom).
+A read from a newly constructed captured binding can use its initializer's value
+after preserving its evaluation checks. Existing environments retain their storage
+snapshots and alias invalidation, including shared children.
 Finite forwarding retains the requested result's function abstraction rather
 than replacing it with unrelated body inference. The verifier checks the current
 function's frame writes before materializing argument values; capture keys use

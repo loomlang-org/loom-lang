@@ -5,6 +5,9 @@ implementation, not a compatibility ledger for previous prototypes.
 
 ## Unreleased
 
+- Expand reads of newly constructed captured bindings through their checked
+  initializers, preserving eager checks and existing mutable-environment semantics.
+
 - Compose closed read-only function results over tracked shared/cyclic graphs
   using logical heap snapshots. Writes, unknown calls, hot Tasks and suspension
   invalidate current graph facts without copying or freezing source data.

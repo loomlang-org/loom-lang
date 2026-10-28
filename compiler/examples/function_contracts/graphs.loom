@@ -94,6 +94,18 @@ ensures result == graph_reader(root, steps)() {
     graph_reader(root, steps)()
 }
 
+fn fresh_graph_reader(root GraphNode, steps Int) fn() Int {
+    var current = root
+    fn() Int {
+        walk_graph(current, steps)
+    }
+}
+
+fn observed_fresh_graph_reader(root GraphNode, steps Int) Int
+ensures result == fresh_graph_reader(root, steps)() {
+    fresh_graph_reader(root, steps)()
+}
+
 fn graph_contracts() {
     assert observed_graph_total([[3, 4], [5]]) == 12
     assert retained_graph_total([[3, 4], [5]], 2) == 12
@@ -116,6 +128,7 @@ fn graph_contracts() {
     std.list.push(children, cycle)
     assert observed_walk(cycle, 4) == 8
     assert observed_graph_reader(cycle, 4) == 8
+    assert observed_fresh_graph_reader(cycle, 4) == 8
 }
 
 test fn readonly_graph_results_preserve_sharing_and_cycles() {

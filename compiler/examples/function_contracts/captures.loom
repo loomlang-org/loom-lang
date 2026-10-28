@@ -1,6 +1,36 @@
 import std.time.sleep_ms
 import std.list.all
 
+fn fresh_reader(value Int) fn() Int {
+    var current = value
+    fn() Int {
+        current
+    }
+}
+
+fn observed_fresh_capture(value Int) Int
+ensures result == fresh_reader(value)() {
+    fresh_reader(value)()
+}
+
+fn mutable_capture_pair(value Int) (fn() Int, fn(Int)) {
+    var current = value
+    let read = fn() Int {
+        current
+    }
+    let write = fn(next Int) {
+        current = next
+    }
+    (read, write)
+}
+
+fn updated_capture(value Int) Int
+ensures result == 0 {
+    let read, write = mutable_capture_pair(value)
+    write(0)
+    read()
+}
+
 fn captured_sum(offset Int) fn(Int) Int {
     fn(value Int) Int {
         var index = 0
@@ -90,6 +120,8 @@ ensures result == captured_sum(offset)(value) {
 }
 
 fn capture_contracts() {
+    assert observed_fresh_capture(7) == 7
+    assert updated_capture(7) == 0
     assert observed_capture(3, 2) == 7
     assert observed_capture_arguments(2) == 7
     assert observed_reading_capture(Reading.Summary(Summary {
