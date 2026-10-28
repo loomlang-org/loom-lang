@@ -31,9 +31,7 @@ fn frame_value(value Expr, locals List[Value], entry State, budget List[Int]) Va
     }
     match pure(value, State {
             locals = locals
-            facts = entry.facts
-            extents = entry.extents
-            observations = entry.observations
+            ..entry
         }) {
         Result.Ok(value) => value
         Result.Err(_) => Value.Empty

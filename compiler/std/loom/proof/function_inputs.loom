@@ -1,6 +1,25 @@
 // Copying an inline aggregate transports its immutable projection. Observing
 // mutable contents is a different operation. This is a static type-flow check,
 // not evaluation, and never assigns an identity to an omitted handle.
+enum FunctionInputs {
+    Projected
+    Sequence
+    Graph
+}
+
+fn function_input_mode(program Program, target Int) Result[FunctionInputs, Text] {
+    if projected_function_inputs(program, target, [], [4096], 0, FunctionInputs.Projected) {
+        return Result.Ok(FunctionInputs.Projected)
+    }
+    if projected_function_inputs(program, target, [], [4096], 0, FunctionInputs.Sequence) {
+        return Result.Ok(FunctionInputs.Sequence)
+    }
+    if projected_function_inputs(program, target, [], [4096], 0, FunctionInputs.Graph) {
+        return Result.Ok(FunctionInputs.Graph)
+    }
+    Result.Err("function inputs have no supported observation snapshot")
+}
+
 fn immutable_function_inputs(program Program, function Function) Bool {
     var index = 0
     while index < length(function.params) {
@@ -13,21 +32,23 @@ fn immutable_function_inputs(program Program, function Function) Bool {
 }
 
 fn projected_function_inputs(program Program, target Int, seen List[Int], budget List[Int], depth Int) Bool {
-    projected_function_inputs(program, target, seen, budget, depth, false)
+    projected_function_inputs(program, target, seen, budget, depth, FunctionInputs.Projected)
 }
 
-fn projected_function_inputs(program Program, target Int, seen List[Int], budget List[Int], depth Int, sequences Bool) Bool {
+fn projected_function_inputs(program Program, target Int, seen List[Int], budget List[Int], depth Int, mode FunctionInputs) Bool {
     if depth >= 64 || !conjunction_step(budget) || target < 0 || target >= length(program.functions) {
         return false
     }
     let function = get(program.functions, target)
     // Closed immutable inputs already supply isolation to the ordinary purity
     // validator, including helpers that allocate and mutate private storage.
-    if immutable_function_inputs(program, function) {
+    if mode != FunctionInputs.Graph && immutable_function_inputs(program, function) {
         return true
     }
     if function.runtime_name != "" {
-        return sequences && sequence_input_read(program, function.runtime_name, function.params, function.result)
+        return (mode == FunctionInputs.Graph && immutable_function_inputs(program, function)) ||
+        (mode != FunctionInputs.Projected && sequence_input_read(program, function.runtime_name, function.params, function.result)) ||
+        (mode == FunctionInputs.Graph && graph_input_read(program, function.runtime_name, function.params))
     }
     var index = 0
     while index < length(seen) {
@@ -37,12 +58,12 @@ fn projected_function_inputs(program Program, target Int, seen List[Int], budget
         index = index + 1
     }
     push(seen, target)
-    if !projected_input_expression(program, function.body, seen, budget, depth + 1, sequences) {
+    if !projected_input_expression(program, function.body, seen, budget, depth + 1, mode) {
         return false
     }
     index = 0
     while index < length(function.preconditions) {
-        if !projected_input_expression(program, get(function.preconditions, index), seen, budget, depth + 1, sequences) {
+        if !projected_input_expression(program, get(function.preconditions, index), seen, budget, depth + 1, mode) {
             return false
         }
         index = index + 1
@@ -62,8 +83,13 @@ fn projected_input_receiver(program Program, ty Int, depth Int) Bool {
     (shape.kind == TypeKind.Frame && frame_input_program(program, ty))
 }
 
-fn projected_input_expression(program Program, value Expr, seen List[Int], budget List[Int], depth Int, sequences Bool) Bool {
+fn projected_input_expression(program Program, value Expr, seen List[Int], budget List[Int], depth Int, mode FunctionInputs) Bool {
     if depth >= 128 || !conjunction_step(budget) || value.kind == ExprKind.FrameStore {
+        return false
+    }
+    if mode == FunctionInputs.Graph &&
+    (value.kind == ExprKind.Defer || value.kind == ExprKind.Cleanup || value.kind == ExprKind.ResourceDrain ||
+        value.kind == ExprKind.Await || value.kind == ExprKind.Suspend || value.kind == ExprKind.TaskCall) {
         return false
     }
     if value.kind == ExprKind.Record || value.kind == ExprKind.FrameNew {
@@ -71,7 +97,7 @@ fn projected_input_expression(program Program, value Expr, seen List[Int], budge
         while field < length(value.children) {
             let initializer = get(value.children, field)
             if length(initializer.children) != 1 ||
-            !projected_input_expression(program, get(initializer.children, 0), seen, budget, depth + 1, sequences) {
+            !projected_input_expression(program, get(initializer.children, 0), seen, budget, depth + 1, mode) {
                 return false
             }
             field = field + 1
@@ -95,17 +121,19 @@ fn projected_input_expression(program Program, value Expr, seen List[Int], budge
             // checked separately in each arm; matching does not read children.
             let tag = value.kind == ExprKind.Match && index == 0 &&
             proof_enum_type(program, input.ty, 0) >= 0
-            if !tag && (!sequences || value.kind != ExprKind.Intrinsic || index != 0 ||
-                !sequence_input_read(program, value.text, [input.ty], value.ty)) {
+            let sequence = mode != FunctionInputs.Projected && value.kind == ExprKind.Intrinsic && index == 0 &&
+            (sequence_input_read(program, value.text, [input.ty], value.ty) ||
+                (mode == FunctionInputs.Graph && graph_input_read(program, value.text, [input.ty])))
+            if !tag && !sequence {
                 return false
             }
         }
-        if !projected_input_expression(program, input, seen, budget, depth + 1, sequences) {
+        if !projected_input_expression(program, input, seen, budget, depth + 1, mode) {
             return false
         }
         index = index + 1
     }
-    if value.kind == ExprKind.Call && !projected_function_inputs(program, value.index, seen, budget, depth + 1, sequences) {
+    if value.kind == ExprKind.Call && !projected_function_inputs(program, value.index, seen, budget, depth + 1, mode) {
         return false
     }
     index = 0
@@ -113,7 +141,7 @@ fn projected_input_expression(program Program, value Expr, seen List[Int], budge
         let body = get(value.arms, index).body
         var item = 0
         while item < length(body) {
-            if !projected_input_expression(program, get(body, item), seen, budget, depth + 1, sequences) {
+            if !projected_input_expression(program, get(body, item), seen, budget, depth + 1, mode) {
                 return false
             }
             item = item + 1
@@ -128,10 +156,10 @@ fn omitted_function_input(value Expr) Bool {
 }
 
 fn projected_function_shape(program Program, source Expr, ty Int, budget List[Int], depth Int) Result[Expr, Text] {
-    projected_function_shape(program, source, ty, budget, depth, false)
+    projected_function_shape(program, source, ty, budget, depth, FunctionInputs.Projected)
 }
 
-fn projected_function_shape(program Program, source Expr, ty Int, budget List[Int], depth Int, sequences Bool) Result[Expr, Text] {
+fn projected_function_shape(program Program, source Expr, ty Int, budget List[Int], depth Int, mode FunctionInputs) Result[Expr, Text] {
     if !conjunction_step(budget) {
         return Result.Err("function input projection budget exhausted")
     }
@@ -145,7 +173,11 @@ fn projected_function_shape(program Program, source Expr, ty Int, budget List[In
         let shape = get(program.types, ty)
         if shape.kind == TypeKind.Refined && length(shape.fields) == 1 {
             return Result.Ok(proof_expr(source, ExprKind.Coerce, ty, "", -1,
-                    [projected_function_shape(program, source, get(shape.fields, 0).ty, budget, depth + 1, sequences)?]))
+                    [projected_function_shape(program, source, get(shape.fields, 0).ty, budget, depth + 1, mode)?]))
+        }
+        if mode == FunctionInputs.Graph &&
+        (shape.kind == TypeKind.List || shape.kind == TypeKind.Bytes || capture_cell_shape(shape)) {
+            return Result.Ok(proof_expr(source, ExprKind.Intrinsic, ty, "proof_graph", -1, []))
         }
         if shape.kind == TypeKind.Record || shape.kind == TypeKind.Tuple ||
         (shape.kind == TypeKind.Frame && frame_input_program(program, ty)) {
@@ -154,7 +186,7 @@ fn projected_function_shape(program Program, source Expr, ty Int, budget List[In
             while index < length(shape.fields) {
                 let field = get(shape.fields, index)
                 push(fields, proof_expr(source, ExprKind.Field, field.ty, "", index,
-                        [projected_function_shape(program, source, field.ty, budget, depth + 1, sequences)?]))
+                        [projected_function_shape(program, source, field.ty, budget, depth + 1, mode)?]))
                 index = index + 1
             }
             return Result.Ok(proof_expr(source, ExprKind.Record, ty, "", -1, fields))
@@ -167,7 +199,7 @@ fn projected_function_shape(program Program, source Expr, ty Int, budget List[In
                 let types = get(shape.variants, variant).fields
                 var field = 0
                 while field < length(types) {
-                    push(fields, projected_function_shape(program, source, get(types, field), budget, depth + 1, sequences)?)
+                    push(fields, projected_function_shape(program, source, get(types, field), budget, depth + 1, mode)?)
                     field = field + 1
                 }
                 push(variants, proof_expr(source, ExprKind.Record, 0, "", variant, fields))
@@ -175,7 +207,7 @@ fn projected_function_shape(program Program, source Expr, ty Int, budget List[In
             }
             return Result.Ok(proof_expr(source, ExprKind.Variant, ty, "", -1, variants))
         }
-        if sequences && (shape.kind == TypeKind.List || shape.kind == TypeKind.Bytes) {
+        if mode == FunctionInputs.Sequence && (shape.kind == TypeKind.List || shape.kind == TypeKind.Bytes) {
             return Result.Ok(proof_expr(source, ExprKind.Intrinsic, ty, "proof_sequence", -1, []))
         }
     }

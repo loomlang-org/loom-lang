@@ -86,10 +86,8 @@ fn fixed_capture_cell(identity Int, state State) State {
         index = index + 1
     }
     State {
-        locals = initialized.locals
-        facts = initialized.facts
         extents = extents
-        observations = initialized.observations
+        ..initialized
     }
 }
 

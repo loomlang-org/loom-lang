@@ -123,10 +123,8 @@ fn storage_birth(identity Int, floor Int, state State) State {
         index = index + 1
     }
     State {
-        locals = state.locals
-        facts = state.facts
         extents = extents
-        observations = state.observations
+        ..state
     }
 }
 
@@ -151,10 +149,8 @@ fn separate_storage(identity Int, excluded List[Int], state State) State {
         index = index + 1
     }
     State {
-        locals = state.locals
-        facts = state.facts
         extents = extents
-        observations = state.observations
+        ..state
     }
 }
 
@@ -222,10 +218,8 @@ fn stored_graph(proof Verification, identity Int, state State) State {
         index = index + 1
     }
     State {
-        locals = state.locals
-        facts = state.facts
         extents = extents
-        observations = state.observations
+        ..state
     }
 }
 
@@ -242,9 +236,7 @@ fn unframed_graphs(state State, identities List[Int]) State {
         index = index + 1
     }
     State {
-        locals = state.locals
-        facts = state.facts
         extents = extents
-        observations = state.observations
+        ..state
     }
 }

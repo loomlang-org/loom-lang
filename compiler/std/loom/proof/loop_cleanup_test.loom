@@ -6,6 +6,7 @@ test fn tagged_cleanup_uses_its_checked_body_not_a_resource_exemption() {
     let function = fixture(local(0), [], operation("==", local(1), local(0)))
     let proof = verification(function, empty_proof_program())
     let entry = State {
+        heap = -1
         locals = [Value.Number(variable(0)), Value.Empty]
         facts = []
         extents = []

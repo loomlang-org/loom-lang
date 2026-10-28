@@ -161,8 +161,12 @@ storage identity with content. Read-only helpers over List/Bytes also compose at
 one logical outer content version and extent, through direct calls, forwarding
 and known read-only captures. Eager argument effects precede that snapshot;
 possible writes invalidate current versions, while entry versions can survive
-writes and suspension. Unprotected concurrent storage and reads through mutable
-children remain unsupported. Enum tags and payloads use the same structural
+writes and suspension. Read-only helpers following mutable descendants can also
+use a tracked root and one logical heap version. Possible writes, unknown calls,
+hot Task creation and suspension invalidate it; closed read-only calls and loops
+preserve it. Shared-worker graph observations, staged mutable capture bindings,
+general graph induction and arbitrary graph-invariant preservation remain open.
+Enum tags and payloads use the same structural
 projection, including recursive List-backed inputs and observed sequence payloads.
 Inactive concrete payloads need no snapshot; guards and entry predicates still
 constrain the read set. Expanded constrained-input predicates use the same

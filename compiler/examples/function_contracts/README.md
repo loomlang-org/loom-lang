@@ -48,7 +48,16 @@ as reads, and hypothetical alternatives establish no successful-call evidence.
 type: its positive total needs no repeated `requires`. Unknown construction still
 returns a checked `Result`, and each constrained store must preserve the predicate.
 
+`graphs.loom` also composes read-only functions over tracked mutable roots and
+their descendants. A logical heap version binds one coherent invocation;
+recursive data, shared edges and cycles require no runtime copy. Every possible
+write, unknown call, hot Task creation and suspension invalidates that version.
+Closed read-only calls and loops preserve it. Root names imply no separation.
+This coarse rule rejects current graph observations in shared-worker proofs;
+it does not prove recursive algorithms, termination or arbitrary graph invariants.
+Staged callback contracts with mutable capture bindings still reject.
+
 Successful evaluation is independent of the result: a hypothetical call cannot
 prove its own safety, termination or output. A Float result can be NaN; numeric
-equality cannot substitute signed zeros. Mutable graphs and unknown callbacks
-do not gain immutable identities from this mechanism.
+equality cannot substitute signed zeros. Mutable graphs need their logical heap
+snapshot; unknown callbacks supply no guessed behavior.

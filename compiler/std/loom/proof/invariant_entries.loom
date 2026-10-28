@@ -44,7 +44,7 @@ fn invariant_entry_clauses(types List[Type], ty Int, input Expr, clauses List[Ex
         var index = 0
         while index < length(shape.constraint) {
             let predicate = get(shape.constraint, index)
-            if (contains_list_read(predicate) || contains_sequence_input(predicate)) &&
+            if (contains_list_read(predicate) || contains_versioned_input(predicate)) &&
             bounded_contract(predicate) && invariant_entry_supported(predicate, 0) {
                 match preservation_predicate(predicate, 256) {
                     Result.Ok(current) => push(clauses, invariant_entry_at(current, input))

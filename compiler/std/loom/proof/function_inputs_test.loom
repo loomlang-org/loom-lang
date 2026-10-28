@@ -2,6 +2,7 @@ fn projected_test_keys(shape Expr, value Int, handle Int) List[PredicateKey] {
     let projected = match function_argument(shape,
         Value.Record([Value.Number(constant(integer(value))), Value.List(handle)]),
         State {
+            heap = -1
             locals = []
             facts = []
             extents = []

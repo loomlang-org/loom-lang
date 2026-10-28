@@ -82,10 +82,8 @@ fn with_extent(identity Int, size Linear, allocated Bool, initially_private Bool
             cells = new[ListCell]()
         })
     extent_bounds(size, State {
-            locals = state.locals
-            facts = state.facts
             extents = extents
-            observations = state.observations
+            ..state
         })
 }
 
@@ -123,7 +121,7 @@ fn list_bounds(value Value, state State) State {
 fn forget_extents(proof Verification, state State) State {
     let modified = new[Int]()
     push(modified, -1)
-    forget_modified_extents(proof, published_storage(state), modified)
+    forget_modified_extents(proof, published_storage(changed_heap(proof, state)), modified)
 }
 
 // Fresh handles are private until publication. Opaque calls or storing a
@@ -145,10 +143,8 @@ fn published_storage(state State) State {
         index = index + 1
     }
     State {
-        locals = state.locals
-        facts = state.facts
         extents = extents
-        observations = state.observations
+        ..state
     }
 }
 
@@ -165,10 +161,8 @@ fn published_storage(state State, identities List[Int]) State {
         index = index + 1
     }
     State {
-        locals = state.locals
-        facts = state.facts
         extents = extents
-        observations = state.observations
+        ..state
     }
 }
 
@@ -215,7 +209,7 @@ fn interference(proof Verification, state State, shared Bool) State {
     if !shared {
         return state
     }
-    var current = state
+    var current = changed_heap(proof, state)
     var index = 0
     while index < length(state.extents) {
         let extent = get(state.extents, index)

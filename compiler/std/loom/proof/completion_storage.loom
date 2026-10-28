@@ -82,6 +82,7 @@ fn private_factory_body(program Program, target Int) Bool {
     let proof = verification(function, isolated)
     let values = new[Value]()
     var state = State {
+        heap = -1
         locals = []
         facts = []
         extents = []
@@ -159,9 +160,7 @@ fn framed_completion_storage(value Value, state State) State {
         index = index + 1
     }
     State {
-        locals = state.locals
-        facts = state.facts
         extents = extents
-        observations = state.observations
+        ..state
     }
 }

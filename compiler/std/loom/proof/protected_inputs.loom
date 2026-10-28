@@ -55,10 +55,8 @@ fn protected_extent(identity Int, guarantee InputGuarantee, state State) State {
         index = index + 1
     }
     State {
-        locals = state.locals
-        facts = state.facts
         extents = extents
-        observations = state.observations
+        ..state
     }
 }
 
@@ -157,10 +155,9 @@ fn protected_input(types List[Type], protected List[InputGuarantee], ty Int, val
 // an equality with current storage or hypothetical entry/path assumptions.
 fn captured_input_invariants(proof Verification, before State, after State) State {
     var scope = State {
-        locals = after.locals
-        facts = after.facts
+        heap = before.heap
         extents = before.extents
-        observations = after.observations
+        ..after
     }
     var index = 0
     while index < length(before.extents) {
@@ -172,9 +169,7 @@ fn captured_input_invariants(proof Verification, before State, after State) Stat
         index = index + 1
     }
     State {
-        locals = after.locals
         facts = scope.facts
-        extents = after.extents
-        observations = after.observations
+        ..after
     }
 }

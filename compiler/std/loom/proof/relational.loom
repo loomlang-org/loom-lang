@@ -379,6 +379,7 @@ fn scalar_facts_imply(premises List[Expr], conclusion Expr, backend ProofBackend
         index = index + 1
     }
     var state = State {
+        heap = -1
         locals = values
         facts = new[Predicate]()
         extents = new[ListExtent]()

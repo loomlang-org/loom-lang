@@ -8,6 +8,7 @@ test fn symbolic_difference_bounds_do_not_use_local_slots_as_identities() {
     push(locals, Value.Number(add(x, constant(integer(-100)))))
     push(locals, Value.Record(new[Value]()))
     let state = difference_facts(State {
+            heap = -1
             locals = locals
             facts = facts
             extents = new[ListExtent]()
@@ -25,6 +26,7 @@ test fn symbolic_difference_bounds_do_not_use_local_slots_as_identities() {
         index = index + 1
     }
     let exhausted = difference_facts(State {
+            heap = -1
             locals = locals
             facts = facts
             extents = new[ListExtent]()

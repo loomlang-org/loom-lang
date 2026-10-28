@@ -216,6 +216,8 @@ fn count_key_extents(output List[Linear], keys List[PredicateKey], depth Int) {
             PredicateKey.Record(fields) => count_key_extents(output, fields, depth - 1)
             PredicateKey.Sequence(_, _) => {
             }
+            PredicateKey.Graph(_, _) => {
+            }
             PredicateKey.Sum(_, tag, variants) => {
                 count_term_extents(output, tag, depth - 1)
                 var variant = 0

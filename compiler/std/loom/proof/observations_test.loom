@@ -1,5 +1,6 @@
 test fn conditional_facts_require_a_proved_alternative() {
     let state = State {
+        heap = -1
         locals = new[Value]()
         facts = new[Predicate]()
         extents = new[ListExtent]()
@@ -26,6 +27,7 @@ test fn observations_keep_evaluation_identity_and_guard_boundaries() {
     let read = proof_expr(source, ExprKind.Intrinsic, 1, "list_len", 7, children)
     let other = proof_expr(source, ExprKind.Intrinsic, 1, "list_len", 8, children)
     let state = State {
+        heap = -1
         locals = new[Value]()
         facts = new[Predicate]()
         extents = new[ListExtent]()
@@ -53,6 +55,7 @@ test fn observations_keep_evaluation_identity_and_guard_boundaries() {
     }
     let condition = operation(">", local(0), literal("0"))
     let branch = State {
+        heap = -1
         locals = [Value.Number(variable(0))]
         facts = new[Predicate]()
         extents = new[ListExtent]()

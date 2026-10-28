@@ -1,3 +1,5 @@
+import std.loom.eval.validate_closed
+
 // These reads observe one outer sequence. Mutable elements cannot be followed
 // through that version: a child write need not change its parent's contents.
 fn sequence_input_read(program Program, primitive Text, params List[Int], output_type Int) Bool {
@@ -18,13 +20,17 @@ fn function_sequence_shape(shape Expr) Bool {
     shape.kind == ExprKind.Intrinsic && shape.text == "proof_sequence"
 }
 
-fn contains_sequence_input(value Expr) Bool {
-    if function_sequence_shape(value) {
+fn function_graph_shape(shape Expr) Bool {
+    shape.kind == ExprKind.Intrinsic && shape.text == "proof_graph"
+}
+
+fn contains_versioned_input(value Expr) Bool {
+    if function_sequence_shape(value) || function_graph_shape(value) {
         return true
     }
     var index = 0
     while index < length(value.children) {
-        if contains_sequence_input(get(value.children, index)) {
+        if contains_versioned_input(get(value.children, index)) {
             return true
         }
         index = index + 1
@@ -36,8 +42,30 @@ fn contains_sequence_input(value Expr) Bool {
 // argument has executed. A shared unprotected sequence cannot stand for all
 // the observations made during a multi-read source helper.
 fn function_argument_state(proof Verification, shape Expr, value Value, state State) Result[State, Text] {
-    if !contains_sequence_input(shape) {
+    if !contains_versioned_input(shape) {
         return Result.Ok(state)
+    }
+    if function_graph_shape(shape) {
+        match value {
+            Value.Graph(_, _) => {
+                return Result.Ok(state)
+            }
+            Value.List(_) => {
+                if proof.shared {
+                    return Result.Err("graph function input is not proved interference-safe")
+                }
+                if state.heap < 0 {
+                    return Result.Ok(State {
+                            heap = array_identity(proof)
+                            ..state
+                        })
+                }
+                return Result.Ok(state)
+            }
+            _ => {
+                return Result.Err("graph function input needs a tracked root")
+            }
+        }
     }
     if function_sequence_shape(shape) {
         match value {
@@ -112,4 +140,79 @@ fn sequence_function_argument(value Value, state State) Result[Value, Text] {
         }
     }
     Result.Err("function input needs a known content version")
+}
+
+// Versions are proof symbols. Allocation/GC addresses and source execution
+// clocks never enter an application key.
+fn changed_heap(proof Verification, state State) State {
+    if state.heap < 0 {
+        return state
+    }
+    var version = array_identity(proof)
+    if version == state.heap {
+        version = array_identity(proof)
+    }
+    State {
+        heap = version
+        ..state
+    }
+}
+
+fn graph_input_read(program Program, primitive Text, params List[Int]) Bool {
+    if length(params) == 0 {
+        return false
+    }
+    if primitive == "cell_get" {
+        return capture_cell_type(program, get(params, 0))
+    }
+    if !entry_list_type(program, get(params, 0), 0) {
+        return false
+    }
+    let operation = sequence_operation(primitive)
+    operation == "list_len" || operation == "list_get" ||
+    primitive == "bytes_utf8" || primitive == "bytes_text_copy"
+}
+
+fn graph_readonly_function(program Program, target Int) Bool {
+    if target < 0 || target >= length(program.functions) {
+        return false
+    }
+    let function = get(program.functions, target)
+    if function.is_async || length(function.result_cleanup) != 0 ||
+    !projected_function_inputs(program, target, [], [4096], 0, FunctionInputs.Graph) {
+        return false
+    }
+    let arguments = new[Expr]()
+    var index = 0
+    while index < length(function.params) {
+        push(arguments, proof_expr(function.body, ExprKind.Local, get(function.params, index), "", index, []))
+        index = index + 1
+    }
+    match std.loom.eval.validate_closed(program,
+        proof_expr(function.body, ExprKind.Call, function.result, "", target, arguments)) {
+        Result.Ok(_) => true
+        Result.Err(_) => false
+    }
+}
+
+fn graph_readonly_expression(program Program, value Expr) Bool {
+    if !projected_input_expression(program, value, [], [4096], 0, FunctionInputs.Graph) {
+        return false
+    }
+    match std.loom.eval.validate_closed(program, value) {
+        Result.Ok(_) => true
+        Result.Err(_) => false
+    }
+}
+
+fn graph_function_argument(value Value, state State) Result[Value, Text] {
+    match value {
+        Value.List(root) => if state.heap >= 0 {
+            Result.Ok(Value.Graph(root, state.heap))
+        } else {
+            Result.Err("graph function input needs a prepared heap snapshot")
+        }
+        Value.Graph(_, _) => Result.Ok(value)
+        _ => Result.Err("graph function input needs a tracked root")
+    }
 }

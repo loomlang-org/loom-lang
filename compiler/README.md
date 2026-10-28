@@ -3699,6 +3699,14 @@ the same rule, including List-backed recursive data. Observed List/Bytes payload
 use their content versions; unobserved descendants remain shared. Inactive
 concrete alternatives need no snapshot, and hypothetical alternatives supply
 no result facts before their argument keys exist.
+When a closed read-only function follows mutable descendants, tracked roots use
+one logical heap version instead. Shared edges and cycles require no deep copy;
+different root names imply no separation. Possible writes, unknown calls, hot
+Task creation and suspension invalidate the coarse version, while closed read-only
+calls and loops retain it. Current graph snapshots reject in shared-worker
+verification; this is congruence of normal results, not general graph induction or
+permission to weaken an invariant. Staged contracts over mutable capture bindings
+remain unsupported. See the [graph example](examples/function_contracts/graphs.loom).
 Finite forwarding retains the requested result's function abstraction rather
 than replacing it with unrelated body inference. The verifier checks the current
 function's frame writes before materializing argument values; capture keys use

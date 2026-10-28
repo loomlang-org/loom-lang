@@ -1,6 +1,7 @@
 test fn affine_observations_follow_current_inline_values_not_initial_headers() {
     let entry = with_extent(42, constant(integer(3)), true,
         with_extent(43, constant(integer(5)), true, State {
+                heap = -1
                 locals = [Value.Record([Value.List(42), Value.Number(constant(integer(2)))])]
                 facts = []
                 extents = []
@@ -34,6 +35,7 @@ test fn affine_observations_follow_current_inline_values_not_initial_headers() {
 test fn unpublished_loop_headers_retain_alias_overlap_and_require_every_backedge() {
     let entry = with_extent(10, constant(integer(1)), true,
         list_bounds(Value.List(20), State {
+                heap = -1
                 locals = [Value.Record([Value.List(20)])]
                 facts = []
                 extents = []

@@ -1,0 +1,123 @@
+import std.list.new
+
+record GraphNode {
+    value Int
+    children List[GraphNode]
+}
+
+fn graph_total(values List[List[Int]]) Int {
+    var total = 0
+    var index = 0
+    while index < std.list.length(values) {
+        total = total + sequence_total(values[index])
+        index = index + 1
+    }
+    total
+}
+
+fn observed_graph_total(values List[List[Int]]) Int
+ensures result == graph_total(values) {
+    graph_total(values)
+}
+
+fn retained_graph_total(values List[List[Int]], rounds Int) Int
+ensures result == graph_total(values) {
+    let saved = graph_total(values)
+    var index = 0
+    while index < rounds {
+        discard graph_total(values)
+        index = index + 1
+    }
+    saved
+}
+
+fn tree_total(node GraphNode) Int {
+    var total = node.value
+    var index = 0
+    while index < std.list.length(node.children) {
+        total = total + tree_total(node.children[index])
+        index = index + 1
+    }
+    total
+}
+
+fn observed_tree(node GraphNode) Int
+ensures result == tree_total(node) {
+    tree_total(node)
+}
+
+// A bounded traversal can follow shared edges and cycles. Congruence grants
+// no termination claim to the recursive tree traversal above.
+fn walk_graph(root GraphNode, steps Int) Int {
+    var node = root
+    var total = 0
+    var index = 0
+    while index < steps {
+        total = total + node.value
+        if std.list.length(node.children) == 0 {
+            return total
+        }
+        node = node.children[0]
+        index = index + 1
+    }
+    total
+}
+
+fn observed_walk(root GraphNode, steps Int) Int
+ensures result == walk_graph(root, steps) {
+    walk_graph(root, steps)
+}
+
+fn replace_graph_child(children List[GraphNode]) Int
+requires std.list.length(children) > 0 {
+    children[0] = GraphNode {
+        value = 9
+        children = []
+    }
+    2
+}
+
+fn graph_after_argument_effects(root GraphNode) Int
+requires std.list.length(root.children) > 0
+ensures result == walk_graph(root, 2) {
+    walk_graph(root, replace_graph_child(root.children))
+}
+
+fn graph_reader(root GraphNode, steps Int) fn() Int {
+    fn() Int {
+        walk_graph(root, steps)
+    }
+}
+
+fn observed_graph_reader(root GraphNode, steps Int) Int
+ensures result == graph_reader(root, steps)() {
+    graph_reader(root, steps)()
+}
+
+fn graph_contracts() {
+    assert observed_graph_total([[3, 4], [5]]) == 12
+    assert retained_graph_total([[3, 4], [5]], 2) == 12
+    let leaf = GraphNode {
+        value = 3
+        children = []
+    }
+    let tree = GraphNode {
+        value = 7
+        children = [leaf]
+    }
+    assert observed_tree(tree) == 10
+    assert observed_walk(tree, 3) == 10
+    assert graph_after_argument_effects(tree) == 16
+    let children = std.list.new[GraphNode]()
+    let cycle = GraphNode {
+        value = 2
+        children = children
+    }
+    std.list.push(children, cycle)
+    assert observed_walk(cycle, 4) == 8
+    assert observed_graph_reader(cycle, 4) == 8
+}
+
+test fn readonly_graph_results_preserve_sharing_and_cycles() {
+    graph_contracts()
+}

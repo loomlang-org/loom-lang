@@ -19,9 +19,7 @@ fn invariant_predicate(predicate Expr, value Value, state State) State {
     push(locals, value)
     match pure(predicate, State {
             locals = locals
-            facts = state.facts
-            extents = state.extents
-            observations = state.observations
+            ..state
         }) {
         Result.Ok(known) => match known {
             Value.Boolean(fact) => assume(state, fact)
