@@ -5,6 +5,10 @@ implementation, not a compatibility ledger for previous prototypes.
 
 ## Unreleased
 
+- Pass large native value arguments through one private invocation snapshot,
+  preserving eager evaluation, shared children and moving-GC roots across direct,
+  captured and dynamic calls.
+
 - Inspect known callbacks with `std.reflect.functions.comptime_callable`, sharing
   bounded closed execution checks with contracts without invoking or retaining
   callbacks. Eligibility grants no domain, termination or isolation guarantee.

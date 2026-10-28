@@ -6,11 +6,12 @@ use inkwell::types::{FunctionType, StructType};
 pub(super) fn method_type<'ctx>(
     context: &'ctx Context,
     program: &checked::Program,
+    target: &TargetData,
     method: &checked::Signature,
 ) -> NativeResult<FunctionType<'ctx>> {
     let mut params = vec![context.ptr_type(AddressSpace::default()).into()];
     for ty in &method.params {
-        params.push(native_type(context, program, *ty)?.into());
+        params.push(abi::parameter(context, program, target, *ty)?.into());
     }
     Ok(if method.result == Type::Unit {
         context.void_type().fn_type(&params, false)
@@ -92,6 +93,7 @@ pub(super) fn emit_witnesses<'ctx>(
     context: &'ctx Context,
     module: &Module<'ctx>,
     program: &checked::Program,
+    target_data: &TargetData,
     functions: &[Option<FunctionValue<'ctx>>],
     live: &BTreeSet<usize>,
     used: &BTreeSet<(Type, usize)>,
@@ -118,7 +120,7 @@ pub(super) fn emit_witnesses<'ctx>(
             let signature = &interface.methods[slot];
             let thunk = module.add_function(
                 &format!("loom.witness.{id}.method.{slot}"),
-                method_type(context, program, signature)?,
+                method_type(context, program, target_data, signature)?,
                 Some(Linkage::Internal),
             );
             builder.position_at_end(context.append_basic_block(thunk, "entry"));
@@ -126,11 +128,17 @@ pub(super) fn emit_witnesses<'ctx>(
                 .get_first_param()
                 .ok_or("missing dyn receiver")?
                 .into_pointer_value();
-            let concrete = builder.build_load(
-                native_type(context, program, witness.concrete)?,
-                data,
-                "dyn.self",
-            )?;
+            let native = native_type(context, program, witness.concrete)?;
+            let concrete: BasicValueEnum<'ctx> = if abi::indirect(native, target_data) {
+                // Root a stack snapshot in the impl function, never an interior
+                // address in the moving source box. No safe point intervenes.
+                let slot = builder.build_alloca(native, "dyn.receiver")?;
+                let value = builder.build_load(native, data, "dyn.self")?;
+                builder.build_store(slot, value)?;
+                slot.into()
+            } else {
+                builder.build_load(native, data, "dyn.self")?
+            };
             let mut arguments = vec![concrete.into()];
             for argument in thunk.get_param_iter().skip(1) {
                 arguments.push(argument.into());
@@ -270,11 +278,10 @@ impl<'ctx> FunctionEmitter<'_, 'ctx> {
             .builder
             .build_extract_value(receiver, 1, "dyn.witness")?
             .into_pointer_value();
-        let mut values = vec![data.into()];
-        for argument in arguments {
-            values.push(argument.into());
-        }
         let interface = &self.program.interfaces[interface];
+        let signature = &interface.methods[slot];
+        let mut values = vec![data.into()];
+        values.extend(self.abi_arguments(&signature.params, &arguments)?);
         let address = self.builder.build_struct_gep(
             table_type(self.context, interface.methods.len()),
             witness,
@@ -289,21 +296,17 @@ impl<'ctx> FunctionEmitter<'_, 'ctx> {
                 "dyn.method",
             )?
             .into_pointer_value();
-        let signature = &interface.methods[slot];
-        let value = self
-            .builder
-            .build_indirect_call(
-                method_type(self.context, self.program, signature)?,
-                method,
-                &values,
-                if signature.result == Type::Unit {
-                    ""
-                } else {
-                    "dyn.call"
-                },
-            )?
-            .try_as_basic_value()
-            .basic();
+        let call = self.builder.build_indirect_call(
+            method_type(self.context, self.program, self.target_data, signature)?,
+            method,
+            &values,
+            if signature.result == Type::Unit {
+                ""
+            } else {
+                "dyn.call"
+            },
+        )?;
+        let value = call.try_as_basic_value().basic();
         self.restore_locals()?;
         Ok(value)
     }

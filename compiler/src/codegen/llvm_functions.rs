@@ -18,7 +18,7 @@ impl<'ctx> FunctionEmitter<'_, 'ctx> {
         } else {
             let adapter = self.module.add_function(
                 &name,
-                dynamic::method_type(self.context, self.program, signature)?,
+                dynamic::method_type(self.context, self.program, self.target_data, signature)?,
                 Some(Linkage::Internal),
             );
             let builder = self.context.create_builder();
