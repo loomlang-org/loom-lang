@@ -179,6 +179,11 @@ fn projected_function_shape(program Program, source Expr, ty Int, budget List[In
         (shape.kind == TypeKind.List || shape.kind == TypeKind.Bytes || capture_cell_shape(shape)) {
             return Result.Ok(proof_expr(source, ExprKind.Intrinsic, ty, "proof_graph", -1, []))
         }
+        if mode == FunctionInputs.Sequence && capture_cell_shape(shape) &&
+        predicate_immutable_type(program, get(shape.arguments, 0), 0) {
+            return Result.Ok(proof_expr(source, ExprKind.Intrinsic, ty, "proof_cell_value", -1,
+                    [function_shape(program, source, get(shape.arguments, 0), 0)]))
+        }
         if shape.kind == TypeKind.Record || shape.kind == TypeKind.Tuple ||
         (shape.kind == TypeKind.Frame && frame_input_program(program, ty)) {
             let fields = new[Expr]()

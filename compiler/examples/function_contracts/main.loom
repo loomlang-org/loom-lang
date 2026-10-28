@@ -157,6 +157,7 @@ fn main() {
     sequence_contracts()
     context_contracts()
     capture_contracts()
+    cell_capture_contracts()
     assert observed_count("(a(b)") == 2
     assert checked_count("(checked)") == 1
     assert observed_text("a") == "a.."

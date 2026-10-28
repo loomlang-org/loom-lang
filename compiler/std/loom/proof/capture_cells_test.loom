@@ -20,6 +20,81 @@ fn capture_cell_program() Program {
     proof_program_with_types(types)
 }
 
+test fn capture_value_snapshots_require_coherence_and_keep_past_values() {
+    let proof = verification(contract_fixture([], 1, literal("0"), [], []), capture_cell_program())
+    let shape = expression(ExprKind.Intrinsic, 6, "proof_cell_value", -1, [local(0)])
+    let state = match remember_element(10, constant(integer(0)), Value.Number(constant(integer(7))),
+        fixed_capture_cell(10, State {
+                heap = -1
+                locals = [Value.List(10)]
+                facts = []
+                extents = []
+                observations = []
+            })) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            assert false
+            return
+        }
+    }
+    let snapshot = match cell_function_argument(shape, Value.List(10), state) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            assert false
+            return
+        }
+    }
+    let shared = Verification {
+        shared = true
+        ..proof
+    }
+    assert match function_argument_state(shared, shape, Value.List(10), state) {
+        Result.Err(_) => true
+        _ => false
+    }
+    let cell = expression(ExprKind.Local, 6, "", 0, [])
+    let write = expression(ExprKind.FrameStore, 0, "", 0, [cell, literal("0")])
+    let changed = match execute_cell_store(proof, write, state, 32) {
+        Result.Ok(values) => get(values, 0).state
+        Result.Err(_) => {
+            assert false
+            return
+        }
+    }
+    let current = match cell_function_argument(shape, Value.List(10), changed) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            assert false
+            return
+        }
+    }
+    assert match predicate_key(snapshot, [256]) {
+        Result.Ok(left) => match predicate_key(current, [256]) {
+            Result.Ok(right) => !same_predicate_key(left, right)
+            _ => false
+        }
+        _ => false
+    }
+    assert match function_argument_state(shared, shape, snapshot, changed) {
+        Result.Ok(_) => true
+        _ => false
+    }
+    assert match cell_function_argument(shape, snapshot, changed) {
+        Result.Ok(value) => match predicate_key(snapshot, [256]) {
+            Result.Ok(left) => match predicate_key(value, [256]) {
+                Result.Ok(right) => same_predicate_key(left, right)
+                _ => false
+            }
+            _ => false
+        }
+        _ => false
+    }
+    assert match function_argument_state(proof, shape, Value.Opaque(10, []), state) {
+        Result.Err(_) => true
+        _ => false
+    }
+}
+
 test fn capture_cell_stores_and_reads_share_versions_without_freezing_contents() {
     let program = capture_cell_program()
     let cell = expression(ExprKind.Local, 6, "", 0, [])

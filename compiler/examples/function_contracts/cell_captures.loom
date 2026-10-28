@@ -1,0 +1,100 @@
+fn cell_sum_pair(offset Int) (fn(Int) Int, fn(Int)) {
+    var stored = offset
+    let read = fn(value Int) Int {
+        var index = 0
+        var total = value
+        while index < 2 {
+            total = total + stored
+            index = index + 1
+        }
+        total
+    }
+    let write = fn(next Int) {
+        stored = next
+    }
+    (read, write)
+}
+
+fn observed_cell_sum(value Int, offset Int) Int
+ensures result == cell_sum_pair(offset).0(value) {
+    let read, write = cell_sum_pair(offset)
+    discard write
+    read(value)
+}
+
+fn updated_cell_sum(value Int, offset Int) Int
+ensures result == cell_sum_pair(0).0(value) {
+    let read, write = cell_sum_pair(offset)
+    write(0)
+    read(value)
+}
+
+fn retained_cell_sum(value Int, offset Int) Int
+ensures result == cell_sum_pair(offset).0(value) {
+    let read, write = cell_sum_pair(offset)
+    let saved = read(value)
+    write(0)
+    saved
+}
+
+async fn cell_sum_after_pause(value Int, offset Int) Int
+ensures result == cell_sum_pair(offset).0(value) {
+    let read, write = cell_sum_pair(offset)
+    discard write
+    sleep_ms(1).await
+    read(value)
+}
+
+fn cell_summary(summary Summary) fn(Int) Int {
+    var stored = summary
+    fn(value Int) Int {
+        var total = value
+        var index = 0
+        while index < 2 {
+            total = total + stored.count
+            index = index + 1
+        }
+        total
+    }
+}
+
+fn observed_cell_summary(value Int, summary Summary) Int
+ensures result == cell_summary(summary)(value) {
+    cell_summary(summary)(value)
+}
+
+fn cell_sign(zero Float) fn() Bool {
+    var stored = zero
+    fn() Bool {
+        var index = 0
+        var answer = false
+        while index < 2 {
+            answer = 1.0 / stored > 0.0
+            index = index + 1
+        }
+        answer
+    }
+}
+
+fn observed_cell_sign(zero Float) Bool
+ensures result == cell_sign(zero)() {
+    cell_sign(zero)()
+}
+
+fn cell_capture_contracts() {
+    assert observed_cell_sum(3, 2) == 7
+    assert updated_cell_sum(3, 2) == 3
+    assert retained_cell_sum(3, 2) == 7
+    assert observed_cell_summary(3, Summary {
+            count = 2
+            text = "shared binding"
+        }) == 7
+    assert observed_cell_sign(0.0)
+    assert !observed_cell_sign(-0.0)
+    assert !observed_cell_sign(0.0 / 0.0)
+}
+
+test async fn mutable_capture_values_compose_without_freezing_their_cells() {
+    cell_capture_contracts()
+    assert cell_sum_after_pause(3, 2).await == 7
+}

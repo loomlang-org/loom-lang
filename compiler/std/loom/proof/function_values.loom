@@ -55,10 +55,11 @@ fn function_expression(context Expansion, source Expr, inputs List[Expr]) Result
     var index = 0
     while index < length(inputs) {
         let input = get(inputs, index)
+        let shape = projected_function_shape(context.program, input, get(function.params, index), [256], 0, mode)?
         let layout = proof_expr(input, ExprKind.Intrinsic, input.ty, "proof_layout", -1,
-            [projected_function_shape(context.program, input, get(function.params, index), [256], 0, mode)?])
+            [shape])
         push(arguments, proof_expr(input, ExprKind.Intrinsic, input.ty, "proof_argument", -1,
-                [input, layout]))
+                [function_argument_expression(context, shape, input, 0)?, layout]))
         index = index + 1
     }
     let packed = proof_expr(source, ExprKind.Intrinsic, 0, "proof_pack", -1, arguments)
@@ -136,6 +137,9 @@ fn function_payload_selected(tag IntegerTerm, variant Int) Bool {
 fn function_argument(shape Expr, value Value, state State) Result[Value, Text] {
     if omitted_function_input(shape) {
         return Result.Ok(Value.Record([]))
+    }
+    if function_cell_shape(shape) {
+        return cell_function_argument(shape, value, state)
     }
     if function_sequence_shape(shape) {
         return sequence_function_argument(value, state)

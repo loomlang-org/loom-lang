@@ -9,6 +9,7 @@ const INPUTS: &str = include_str!("../examples/function_contracts/inputs.loom");
 const SEQUENCES: &str = include_str!("../examples/function_contracts/sequences.loom");
 const SUM_INPUTS: &str = include_str!("../examples/function_contracts/sum_inputs.loom");
 const GRAPHS: &str = include_str!("../examples/function_contracts/graphs.loom");
+const CELL_CAPTURES: &str = include_str!("../examples/function_contracts/cell_captures.loom");
 
 const SCOPED_FUNCTIONS: &str = r#"
 fn negative(value Int) Bool {
@@ -148,6 +149,7 @@ fn immutable_function_results_compose_and_reject_unestablished_evidence() {
     fs::write(package.path().join("sequences.loom"), SEQUENCES).unwrap();
     fs::write(package.path().join("sum_inputs.loom"), SUM_INPUTS).unwrap();
     fs::write(package.path().join("graphs.loom"), GRAPHS).unwrap();
+    fs::write(package.path().join("cell_captures.loom"), CELL_CAPTURES).unwrap();
     let cache = package.path().join("cache");
     let check = || common::loom(&["check", path, "--frontend-cache", cache.to_str().unwrap()]);
     success(&check());
@@ -478,6 +480,33 @@ ensures result == fresh_graph_reader(root, 2)() {
 fn bad(value Int) Bool
 ensures fresh_reader(10 / value)() == fresh_reader(10 / value)() {
     true
+}
+"#,
+        r#"
+fn bad(value Int, offset Int) Int
+ensures result == cell_sum_pair(offset).0(value) {
+    let read, write = cell_sum_pair(offset)
+    write(0)
+    read(value)
+}
+"#,
+        r#"
+fn bad(value Int, offset Int) Bool
+ensures cell_sum_pair(offset).0(value) == cell_sum_pair(offset).0(value) {
+    true
+}
+"#,
+        r#"
+fn bad(value Int) Bool
+ensures cell_sum_pair(10 / value).0(0) == cell_sum_pair(10 / value).0(0) {
+    true
+}
+"#,
+        r#"
+fn bad(left Float, right Float) Bool
+requires left == right
+ensures result == cell_sign(left)() {
+    cell_sign(right)()
 }
 "#,
         // Contract results retain the actual function target's identity.

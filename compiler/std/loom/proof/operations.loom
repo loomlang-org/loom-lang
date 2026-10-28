@@ -33,7 +33,8 @@ fn intrinsic_operation(primitive Text, ty Int, arity Int) ProofOperation {
     if name == "proof_layout" {
         return operation_shape(0, OperandFlow.Eager, false, true)
     }
-    if name == "proof_pack" || (name == "proof_argument" && arity == 2) {
+    if name == "proof_pack" || (name == "proof_argument" && arity == 2) ||
+    (name == "proof_cell_snapshot" && arity == 1) {
         return operation_shape(arity, OperandFlow.Eager, false, true)
     }
     if arity == 1 && (name == "proof_logical" || (name == "proof_defined" && ty == 2)) {

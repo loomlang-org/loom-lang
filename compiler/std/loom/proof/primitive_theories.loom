@@ -5,7 +5,7 @@ fn intrinsic_value(primitive Text, ty Int, inputs List[Value], state State) Resu
     if name == "proof_layout" {
         return Result.Ok(Value.Empty)
     }
-    if name == "proof_pack" {
+    if name == "proof_pack" || name == "proof_cell_snapshot" {
         return Result.Ok(Value.Record(inputs))
     }
     if name == "proof_add" || name == "proof_sub" || name == "proof_mod" {
