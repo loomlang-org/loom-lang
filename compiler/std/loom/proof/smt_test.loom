@@ -292,6 +292,7 @@ test fn scalar_columns_keep_their_sorts_and_float_storage_is_not_ieee_equality()
         ArrayScalar.Integer(IntegerTerm.Linear(constant(integer(1)))))
     assert !same_array_scalar(negative_zero, ArrayScalar.Float(FloatValue.Literal("0")))
     assert text_size_defined(text_length(label), State {
+            heap = -1
             locals = []
             facts = []
             extents = []

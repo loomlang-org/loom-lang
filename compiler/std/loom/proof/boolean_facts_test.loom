@@ -1,5 +1,6 @@
 test fn established_boolean_equivalence_transfers_only_proved_truth() {
     let state = State {
+        heap = -1
         locals = new[Value]()
         facts = new[Predicate]()
         extents = new[ListExtent]()

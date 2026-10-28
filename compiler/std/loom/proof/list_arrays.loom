@@ -20,10 +20,8 @@ fn with_contents(identity Int, contents Int, state State) State {
         index = index + 1
     }
     State {
-        locals = state.locals
-        facts = state.facts
         extents = extents
-        observations = state.observations
+        ..state
     }
 }
 

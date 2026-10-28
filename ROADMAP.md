@@ -119,7 +119,10 @@ scans, direct tail-recursive folds and known callbacks now compose through the
 same bounded sequence rules, including generic elements and read-only captures.
 Read-only content helpers also retain deterministic partial results at an outer
 sequence version and extent, without treating a shared handle as a value or
-assuming that mutable child graphs are frozen.
+assuming that mutable child graphs are frozen. Closed read-only functions can
+also bind tracked roots and mutable descendants at one logical heap version,
+with conservative invalidation across effects. This supports result congruence
+over shared/cyclic data, not general graph induction or invariant preservation.
 General content
 induction and constrained shared-alias preservation remain open.
 

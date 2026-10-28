@@ -5,6 +5,10 @@ implementation, not a compatibility ledger for previous prototypes.
 
 ## Unreleased
 
+- Compose closed read-only function results over tracked shared/cyclic graphs
+  using logical heap snapshots. Writes, unknown calls, hot Tasks and suspension
+  invalidate current graph facts without copying or freezing source data.
+
 - Compose pure function contracts over enum input projections and versioned
   sequence payloads, preserving copied tags and shared recursive descendants.
   Hypothetical inactive alternatives supply no premature result facts.

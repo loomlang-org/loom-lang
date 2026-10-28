@@ -3,6 +3,7 @@ import std.loom.typed.Field
 fn sequence_domain_facts(primitive Text, ty Int, types List[Type]) Result[State, Text] {
     let proof = verification(fixture(literal("0"), [], literal("true")), proof_program_with_types(types))
     quantified_type_invariants(proof, primitive, ty, 10, variable(1), State {
+            heap = -1
             locals = []
             facts = []
             extents = []

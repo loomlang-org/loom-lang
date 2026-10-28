@@ -3,6 +3,7 @@ test fn private_summary_fields_do_not_imply_distinct_allocations() {
     assert mutable_value(Value.Task(0, [Value.Function(0, [Value.List(10)])], []))
     assert !mutable_value(Value.Function(0, [Value.Number(constant(integer(1)))]))
     let entry = State {
+        heap = -1
         locals = new[Value]()
         facts = new[Predicate]()
         extents = new[ListExtent]()
@@ -29,6 +30,7 @@ test fn direct_stores_use_checked_storage_types_without_separating_shared_graphs
     push(program.types, publication_shape(TypeKind.Parameter, []))
     push(program.types, publication_shape(TypeKind.List, [10]))
     let empty = State {
+        heap = -1
         locals = []
         facts = []
         extents = []
@@ -80,6 +82,7 @@ test fn factory_provenance_cannot_trust_an_unverified_callee_postcondition() {
 
 test fn selective_content_havoc_uses_allocation_time_not_different_ids() {
     let entry = State {
+        heap = -1
         locals = []
         facts = []
         extents = []
@@ -106,6 +109,7 @@ test fn selective_content_havoc_uses_allocation_time_not_different_ids() {
 
 test fn protected_storage_is_stable_without_inventing_private_or_disjoint_origins() {
     let entry = State {
+        heap = -1
         locals = []
         facts = []
         extents = []
@@ -138,6 +142,7 @@ test fn protected_storage_is_stable_without_inventing_private_or_disjoint_origin
 
 test fn projected_reads_inherit_only_the_current_source_graph_frame() {
     let entry = State {
+        heap = -1
         locals = []
         facts = []
         extents = []

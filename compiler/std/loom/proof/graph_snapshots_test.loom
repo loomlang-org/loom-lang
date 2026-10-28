@@ -1,0 +1,82 @@
+test fn graph_keys_need_a_heap_observation_and_never_invent_root_separation() {
+    let proof = verification(contract_fixture([], 1, literal("0"), [], []), empty_proof_program())
+    let state = State {
+        heap = -1
+        locals = [Value.List(10)]
+        facts = []
+        extents = []
+        observations = []
+    }
+    let shape = expression(ExprKind.Intrinsic, 6, "proof_graph", -1, [])
+    assert match function_argument(shape, Value.List(10), state) {
+        Result.Err(_) => true
+        _ => false
+    }
+    let prepared = match function_argument_state(proof, shape, Value.List(10), state) {
+        Result.Ok(value) => value
+        _ => {
+            assert false
+            return
+        }
+    }
+    assert prepared.heap >= 0
+    let captured = Value.Graph(10, prepared.heap)
+    assert match function_argument(shape, Value.List(10), prepared) {
+        Result.Ok(Value.Graph(root, version)) => root == 10 && version == prepared.heap
+        _ => false
+    }
+    let changed = changed_heap(proof, prepared)
+    assert changed.heap != prepared.heap
+    assert entry_scope(prepared, changed).heap == prepared.heap
+    assert assume(assigned(prepared, 0, Value.Empty), Predicate.Constant(true)).heap == prepared.heap
+    // Already captured arguments retain their past logical world.
+    assert match function_argument(shape, captured, changed) {
+        Result.Ok(Value.Graph(root, version)) => root == 10 && version == prepared.heap
+        _ => false
+    }
+    assert interference(proof, prepared, true).heap != prepared.heap
+    assert forget_extents(proof, prepared).heap != prepared.heap
+    let task_program = atomic_pair_program()
+    push(task_program.functions, Function {
+            is_async = true
+            ..contract_fixture([6], 0, expression(ExprKind.Block, 0, "", -1, []), [], [])
+        })
+    let task_proof = verification(contract_fixture([], 0, literal("0"), [], []), task_program)
+    assert created_task(task_proof, 0, [Value.List(10)], prepared).state.heap != prepared.heap
+    let cell_proof = verification(contract_fixture([6], 1, literal("0"), [], []), capture_cell_program())
+    let cell = expression(ExprKind.Local, 6, "", 0, [])
+    let write = expression(ExprKind.FrameStore, 0, "", 0, [cell, literal("2")])
+    assert match execute_cell_store(cell_proof, write, fixed_capture_cell(10, prepared), 32) {
+        Result.Ok(values) => length(values) == 1 && get(values, 0).state.heap != prepared.heap
+        _ => false
+    }
+    let shared = Verification {
+        shared = true
+        ..proof
+    }
+    assert match function_argument_state(shared, shape, Value.List(10), prepared) {
+        Result.Err(_) => true
+        _ => false
+    }
+    assert match function_argument_state(shared, shape, captured, changed) {
+        Result.Ok(_) => true
+        _ => false
+    }
+    assert match function_argument(shape, Value.Opaque(20, []), prepared) {
+        Result.Err(_) => true
+        _ => false
+    }
+    assert match function_argument_state(proof, shape, Value.Projected(20, [], variable(1)), prepared) {
+        Result.Err(_) => true
+        _ => false
+    }
+    let query = encoding([Obligation {
+                facts = [Predicate.ValueEqual([PredicateKey.Graph(10, prepared.heap),
+                            PredicateKey.Graph(11, changed.heap)])]
+                conclusion = Predicate.Constant(false)
+            }])
+    assert std.text.contains(query, "(declare-sort loom_graph_root 0)")
+    assert std.text.contains(query, "graph_root10 loom_graph_root)")
+    assert std.text.contains(query, "graph_root11 loom_graph_root)")
+    assert !std.text.contains(query, "distinct")
+}

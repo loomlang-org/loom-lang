@@ -173,6 +173,7 @@ fn loop_affine_candidates(proof Verification, guard Expr, body Expr, candidates 
     let hints = new[Int]()
     push(hints, 256)
     discard loop_affine_rates(proof, body, State {
+            heap = -1
             locals = locals
             facts = new[Predicate]()
             extents = new[ListExtent]()

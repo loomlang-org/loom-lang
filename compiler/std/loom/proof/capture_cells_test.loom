@@ -37,6 +37,7 @@ test fn capture_cell_stores_and_reads_share_versions_without_freezing_contents()
     let proof = verification(function, program)
     let value = record_parameter_value(proof, 6, 0)
     let state = typed_value_state(proof, 6, value, State {
+            heap = -1
             locals = [value]
             facts = []
             extents = []
@@ -64,6 +65,7 @@ test fn capture_cell_loops_and_call_frames_use_the_actual_write_footprint() {
     }
     let setter = contract_fixture([6], 0, write, [], [])
     let state = fixed_capture_cell(10, list_bounds(Value.List(10), State {
+                heap = -1
                 locals = [Value.List(10)]
                 facts = []
                 extents = []

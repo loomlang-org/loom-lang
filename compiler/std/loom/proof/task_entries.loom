@@ -91,10 +91,8 @@ fn task_private_value(proof Verification, ty Int, value Value, state State) Stat
         index = index + 1
     }
     State {
-        locals = current.locals
-        facts = current.facts
         extents = extents
-        observations = current.observations
+        ..current
     }
 }
 
@@ -105,7 +103,7 @@ fn created_task(proof Verification, target Int, values List[Value], state State)
     let function = get(proof.program.functions, target)
     let identities = new[Int]()
     var index = 0
-    var current = state
+    var current = changed_heap(proof, state)
     while index < length(function.params) && index < length(values) {
         let ty = get(function.params, index)
         let value = get(values, index)
@@ -158,9 +156,7 @@ fn restored_task_entry(entries List[ListExtent], state State) State {
         index = index + 1
     }
     State {
-        locals = state.locals
-        facts = state.facts
         extents = extents
-        observations = state.observations
+        ..state
     }
 }

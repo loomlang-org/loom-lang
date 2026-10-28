@@ -109,6 +109,7 @@ test fn boolean_choice_identities_stay_compact_without_hiding_scalar_choices() {
         var right = 0
         while right < 2 {
             let state = State {
+                heap = -1
                 locals = [Value.Boolean(Predicate.Constant(left == 1)),
                     Value.Boolean(Predicate.Constant(right == 1))]
                 facts = []

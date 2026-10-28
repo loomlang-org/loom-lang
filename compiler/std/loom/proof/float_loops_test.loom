@@ -3,6 +3,7 @@ test fn float_loop_solver_failures_do_not_establish_inductive_facts() {
     let zero = FloatValue.Literal("0")
     let positive = Predicate.FloatCompare("<=", zero, value)
     let state = State {
+        heap = -1
         locals = [Value.Float(value)]
         facts = [positive]
         extents = []

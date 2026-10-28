@@ -50,13 +50,13 @@ fn function_metadata(program Program, source Expr, ty Int) Expr {
 
 fn function_expression(context Expansion, source Expr, inputs List[Expr]) Result[Expr, Text] {
     let function = get(context.program.functions, source.index)
-    let sequences = !projected_function_inputs(context.program, source.index, [], [4096], 0)
+    let mode = function_input_mode(context.program, source.index)?
     let arguments = new[Expr]()
     var index = 0
     while index < length(inputs) {
         let input = get(inputs, index)
         let layout = proof_expr(input, ExprKind.Intrinsic, input.ty, "proof_layout", -1,
-            [projected_function_shape(context.program, input, get(function.params, index), [256], 0, sequences)?])
+            [projected_function_shape(context.program, input, get(function.params, index), [256], 0, mode)?])
         push(arguments, proof_expr(input, ExprKind.Intrinsic, input.ty, "proof_argument", -1,
                 [input, layout]))
         index = index + 1
@@ -139,6 +139,9 @@ fn function_argument(shape Expr, value Value, state State) Result[Value, Text] {
     }
     if function_sequence_shape(shape) {
         return sequence_function_argument(value, state)
+    }
+    if function_graph_shape(shape) {
+        return graph_function_argument(value, state)
     }
     if shape.kind == ExprKind.Coerce {
         return function_argument(get(shape.children, 0), value, state)

@@ -152,6 +152,7 @@ ensures all(result, reading_nonempty)
 }
 
 fn main() {
+    graph_contracts()
     sum_input_contracts()
     sequence_contracts()
     context_contracts()

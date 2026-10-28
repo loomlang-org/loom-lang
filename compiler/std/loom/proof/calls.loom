@@ -150,9 +150,7 @@ fn call_scope(state State, values List[Value]) State {
     }
     State {
         locals = locals
-        facts = state.facts
-        extents = state.extents
-        observations = state.observations
+        ..state
     }
 }
 
@@ -165,9 +163,7 @@ fn caller_state(state State, boundary Int) State {
     }
     State {
         locals = locals
-        facts = state.facts
-        extents = state.extents
-        observations = state.observations
+        ..state
     }
 }
 
@@ -363,6 +359,7 @@ fn applied_summary(proof Verification, call Expr, function Function, state State
     let kept_extent = length(state.extents) == 0 || extent_preserving(proof.program, function.body)
     let stable = closed || (local_storage && kept_extent)
     let concurrent = proof.shared || (closed && (function.is_async || !kept_extent))
+    var heap_frame Option[Bool] = Option.None
     let output = new[Outcome]()
     var index = 0
     while index < length(paths) {
@@ -378,6 +375,19 @@ fn applied_summary(proof Verification, call Expr, function Function, state State
         }
         if stable && length(before.extents) != 0 && !stable_contents {
             after = forget_elements(after)
+        }
+        if after.heap >= 0 {
+            let framed = match heap_frame {
+                Option.Some(value) => value
+                Option.None => {
+                    let value = graph_readonly_function(proof.program, call.index)
+                    heap_frame = Option.Some(value)
+                    value
+                }
+            }
+            if !framed {
+                after = changed_heap(proof, after)
+            }
         }
         // Returned graphs cannot reach an unexposed private allocation. Even a
         // read-only callee may return an input alias: qualify result frames
@@ -479,12 +489,12 @@ fn applied_summary(proof Verification, call Expr, function Function, state State
 }
 
 fn applied_call_inputs(proof Verification, call Expr, function Function, arguments CallArguments) Result[(State, List[PredicateKey]), Text] {
-    let sequences = !projected_function_inputs(proof.program, call.index, [], [4096], 0)
+    let mode = function_input_mode(proof.program, call.index)?
     let values = new[Value]()
     var current = arguments.state
     var argument = 0
     while argument < length(arguments.values) {
-        let shape = projected_function_shape(proof.program, call, get(function.params, argument), [256], 0, sequences)?
+        let shape = projected_function_shape(proof.program, call, get(function.params, argument), [256], 0, mode)?
         let value = get(arguments.values, argument)
         current = function_argument_state(proof, shape, value, current)?
         push(values, function_argument(shape, value, current)?)

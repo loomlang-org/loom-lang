@@ -1,11 +1,13 @@
 test fn entry_scopes_keep_results_unavailable_across_snapshots() {
     let entry = State {
+        heap = -1
         locals = [Value.Number(constant(integer(3)))]
         facts = new[Predicate]()
         extents = new[ListExtent]()
         observations = new[Observation]()
     }
     let current = State {
+        heap = -1
         locals = [Value.Number(constant(integer(99))), Value.Number(constant(integer(7)))]
         facts = new[Predicate]()
         extents = new[ListExtent]()
@@ -55,6 +57,7 @@ test fn entry_lists_do_not_reuse_a_locals_index_as_an_observation_identity() {
 
 test fn entry_lists_keep_their_length_and_content_version_without_a_current_header() {
     let state = State {
+        heap = -1
         locals = [Value.EntryList(constant(integer(2)), 7), Value.Number(constant(integer(1)))]
         facts = new[Predicate]()
         extents = new[ListExtent]()
@@ -132,6 +135,7 @@ test fn entry_receivers_keep_handles_without_rewinding_the_post_call_heap() {
     let function = contract_fixture([8], 1, literal("0"), [], [])
     let proof = verification(function, program)
     let initial = with_extent(20, constant(integer(2)), false, fixed_capture_cell(10, State {
+                heap = -1
                 locals = [Value.List(10)]
                 facts = []
                 extents = []

@@ -47,6 +47,7 @@ fn scan_summary(body Expr) Result[ScanExit, Text] {
 
 fn scan_stop(summary ScanExit, value Int) Bool {
     let state = State {
+        heap = -1
         locals = [Value.Number(constant(integer(value)))]
         facts = []
         extents = []

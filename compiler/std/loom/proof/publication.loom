@@ -263,10 +263,8 @@ fn published_graph(state State, graph Publication) State {
         index = index + 1
     }
     State {
-        locals = state.locals
-        facts = state.facts
         extents = extents
-        observations = state.observations
+        ..state
     }
 }
 
@@ -292,9 +290,7 @@ fn local_summary_privacy(entry State, state State) State {
         index = index + 1
     }
     State {
-        locals = state.locals
-        facts = state.facts
         extents = extents
-        observations = state.observations
+        ..state
     }
 }

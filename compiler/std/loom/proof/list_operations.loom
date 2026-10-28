@@ -114,6 +114,9 @@ fn list_operation_outcomes(proof Verification, primitive Text, ty Int, receiver_
         return Result.Err("identity preservation does not permit retained-view registration")
     }
     var state = inputs.state
+    if list_mutation(name) {
+        state = changed_heap(proof, state)
+    }
     if primitive == "bytes_push" || primitive == "bytes_set" {
         // Native validation faults before mutation. These are continuation
         // facts, never permissions for a hypothetical write or argument replay.

@@ -89,8 +89,8 @@ enum Predicate {
     ArrayPrefix(Int, Int, Linear)
 }
 
-// Immutable, evaluated arguments of a deterministic partial predicate. Opaque
-// graph frontiers and mutable handles are deliberately not value identities.
+// Evaluated arguments of a deterministic partial predicate. Mutable roots need
+// a logical heap version; opaque graph frontiers never supply value identities.
 enum PredicateKey {
     Integer(IntegerTerm)
     Boolean(List[Predicate])
@@ -98,6 +98,9 @@ enum PredicateKey {
     Float(FloatValue)
     // A logical outer content version and its observed extent, never a handle.
     Sequence(Int, Linear)
+    // A logical root at one heap observation version. Neither ID proves
+    // separation or exposes a runtime address.
+    Graph(Int, Int)
     Record(List[PredicateKey])
     Sum(Int, IntegerTerm, List[List[PredicateKey]])
 }
@@ -119,6 +122,7 @@ enum Value {
     Float(FloatValue)
     List(Int)
     EntryList(Linear, Int)
+    Graph(Int, Int)
     Projected(Int, List[Int], Linear)
     // Checked targets and evaluated inputs, not executable coroutine frames.
     // Guarantees become available only on successful completion.
@@ -154,6 +158,9 @@ record ListExtent {
 }
 
 record State {
+    // One logical heap observation version; -1 means no graph was observed.
+    // This is never a runtime address or clock.
+    heap Int
     locals List[Value]
     facts List[Predicate]
     extents List[ListExtent]
@@ -311,10 +318,8 @@ fn assume(state State, fact Predicate) State {
     }
     append_facts(facts, fact)
     State {
-        locals = state.locals
         facts = facts
-        extents = state.extents
-        observations = state.observations
+        ..state
     }
 }
 
@@ -331,9 +336,7 @@ fn assigned(state State, id Int, value Value) State {
     }
     State {
         locals = locals
-        facts = state.facts
-        extents = state.extents
-        observations = state.observations
+        ..state
     }
 }
 

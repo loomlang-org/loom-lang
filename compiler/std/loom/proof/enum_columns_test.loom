@@ -3,6 +3,7 @@ test fn enum_columns_separate_tags_variants_and_inline_fields_without_freezing_c
     let tag = IntegerTerm.Linear(variable(2))
     let value = Value.Sum(6, tag, [[Value.Number(variable(3))], [Value.Text(TextValue.Variable(4))]])
     let state = array_observation(10, index, value, Predicate.Variable(5), State {
+            heap = -1
             locals = []
             facts = []
             extents = []
@@ -36,6 +37,7 @@ test fn enum_columns_separate_tags_variants_and_inline_fields_without_freezing_c
         [receiver, literal("1"), literal("0")])
     let obligations = proof_query(no_proof_backend())
     assert match solver_defined(obligations, selected, State {
+            heap = -1
             locals = [projected]
             facts = []
             extents = []

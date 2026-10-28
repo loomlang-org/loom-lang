@@ -1,5 +1,6 @@
 test fn sequence_application_keys_are_content_versions_not_handles_or_lengths() {
     let state = State {
+        heap = -1
         locals = []
         facts = []
         extents = []
@@ -86,6 +87,7 @@ test fn enum_sequence_inputs_prepare_only_present_payloads_and_keep_content_vers
             expression(ExprKind.Record, 0, "", 0, []),
             expression(ExprKind.Record, 0, "", 1, [sequence])])
     let state = with_contents(10, 50, with_extent(10, constant(integer(2)), false, State {
+                heap = -1
                 locals = []
                 facts = []
                 extents = []

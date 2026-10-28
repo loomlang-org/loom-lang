@@ -222,9 +222,12 @@ fn predicate_function(program Program, target Int) Bool {
     }
     // Mutable siblings can travel as handles only when the complete operation
     // closure cannot observe or mutate them, including in entry conditions.
-    if !projected_function_inputs(program, target, [], [4096], 0) &&
-    !projected_function_inputs(program, target, [], [4096], 0, true) {
-        return false
+    match function_input_mode(program, target) {
+        Result.Err(_) => {
+            return false
+        }
+        Result.Ok(_) => {
+        }
     }
     // The validator supplies operation purity; the projection check supplies
     // isolation for every mutable part omitted from an application key.
@@ -244,7 +247,6 @@ fn function_identity(program Program, target Int) Int {
     }
     get(program.function_identities, target)
 }
-
 
 fn predicate_keys(values List[Value], budget List[Int]) Result[List[PredicateKey], Text] {
     let output = new[PredicateKey]()
@@ -277,6 +279,7 @@ fn predicate_key(value Value, budget List[Int]) Result[PredicateKey, Text] {
         } else {
             Result.Err("function input needs a known content version")
         }
+        Value.Graph(root, heap) => Result.Ok(PredicateKey.Graph(root, heap))
         Value.Record(fields) => Result.Ok(PredicateKey.Record(predicate_keys(fields, budget)?))
         Value.Sum(ty, tag, payloads) => {
             if !integer_key_size(tag, budget) {
@@ -362,6 +365,7 @@ fn predicate_key_sizes(keys List[PredicateKey], budget List[Int]) Bool {
             PredicateKey.Text(value) => text_key_size(value, budget)
             PredicateKey.Float(value) => float_key_size(value, budget)
             PredicateKey.Sequence(_, _) => true
+            PredicateKey.Graph(_, _) => true
             PredicateKey.Boolean(values) => predicate_boolean_sizes(values, budget)
             PredicateKey.Record(fields) => predicate_key_sizes(fields, budget)
             PredicateKey.Sum(_, tag, variants) => {
@@ -424,6 +428,10 @@ fn same_predicate_key(left PredicateKey, right PredicateKey) Bool {
         }
         PredicateKey.Sequence(contents, size) => match right {
             PredicateKey.Sequence(other, extent) => contents == other && compare(size.constant, extent.constant) == 0 && same_terms(size.terms, extent.terms)
+            _ => false
+        }
+        PredicateKey.Graph(root, heap) => match right {
+            PredicateKey.Graph(other, version) => root == other && heap == version
             _ => false
         }
         PredicateKey.Sum(ty, tag, fields) => match right {

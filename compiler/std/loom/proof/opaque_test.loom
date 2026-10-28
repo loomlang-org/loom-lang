@@ -1,5 +1,6 @@
 test fn opaque_frames_require_real_unpublished_allocations() {
     let initial = State {
+        heap = -1
         locals = []
         facts = []
         extents = []
@@ -60,6 +61,7 @@ test fn opaque_frames_require_real_unpublished_allocations() {
 
 test fn allocation_epochs_do_not_turn_sampled_headers_into_distinct_allocations() {
     var state = with_extent(10, constant(integer(1)), true, State {
+            heap = -1
             locals = [Value.List(20)]
             facts = []
             extents = []

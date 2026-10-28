@@ -3,6 +3,7 @@ test fn quantified_loop_cuts_follow_actual_affine_expressions_without_sampling_o
     let offset = local(1)
     let shifted = operation("+", cursor, offset)
     let state = State {
+        heap = -1
         locals = [Value.Number(scale(variable(22), integer(-1))), Value.Number(variable(22)), Value.Empty]
         facts = []
         extents = []

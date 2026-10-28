@@ -8,6 +8,7 @@ const CAPTURES: &str = include_str!("../examples/function_contracts/captures.loo
 const INPUTS: &str = include_str!("../examples/function_contracts/inputs.loom");
 const SEQUENCES: &str = include_str!("../examples/function_contracts/sequences.loom");
 const SUM_INPUTS: &str = include_str!("../examples/function_contracts/sum_inputs.loom");
+const GRAPHS: &str = include_str!("../examples/function_contracts/graphs.loom");
 
 const SCOPED_FUNCTIONS: &str = r#"
 fn negative(value Int) Bool {
@@ -146,6 +147,7 @@ fn immutable_function_results_compose_and_reject_unestablished_evidence() {
     fs::write(package.path().join("inputs.loom"), INPUTS).unwrap();
     fs::write(package.path().join("sequences.loom"), SEQUENCES).unwrap();
     fs::write(package.path().join("sum_inputs.loom"), SUM_INPUTS).unwrap();
+    fs::write(package.path().join("graphs.loom"), GRAPHS).unwrap();
     let cache = package.path().join("cache");
     let check = || common::loom(&["check", path, "--frontend-cache", cache.to_str().unwrap()]);
     success(&check());
@@ -365,6 +367,92 @@ ensures batch_total(value) == batch_total(value) {
     true
 }
 "#,
+        // Descendant writes change a graph even when the outer header is stable.
+        r#"
+fn bad(values List[List[Int]], child List[Int]) Int
+ensures result == graph_total(values) {
+    let total = graph_total(values)
+    push(child, 99)
+    total
+}
+"#,
+        r#"
+fn change_child(child List[Int])
+ensures true {
+    push(child, 99)
+}
+fn bad(values List[List[Int]], child List[Int]) Int
+ensures result == graph_total(values) {
+    let total = graph_total(values)
+    change_child(child)
+    total
+}
+"#,
+        r#"
+fn bad(values List[List[Int]], child List[Int], rounds Int) Int
+ensures result == graph_total(values) {
+    let total = graph_total(values)
+    var index = 0
+    while index < rounds {
+        push(child, 99)
+        index = index + 1
+    }
+    total
+}
+"#,
+        r#"
+async fn bad(values List[List[Int]]) Int
+ensures result == graph_total(values) {
+    let total = graph_total(values)
+    sleep_ms(0).await
+    total
+}
+"#,
+        r#"
+fn bad(left List[List[Int]], right List[List[Int]]) Int
+ensures result == graph_total(left) {
+    graph_total(right)
+}
+"#,
+        r#"
+fn bad(values List[List[Int]]) Bool
+ensures graph_total(values) == graph_total(values) {
+    true
+}
+"#,
+        r#"
+fn bad(values List[List[Int]], action fn() Int) Int
+ensures result == graph_total(values) {
+    let total = graph_total(values)
+    discard action()
+    total
+}
+"#,
+        r#"
+type UnstableGraph = List[List[Int]] where graph_total(self) > 0
+fn bad(child List[Int]) Int {
+    let value = match UnstableGraph([child]) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            return 0
+        }
+    }
+    push(child, -99)
+    graph_total(value)
+}
+"#,
+        r#"
+fn deferred_graph(values List[List[Int]]) Int {
+    defer {
+        push(values[0], 99)
+    }
+    graph_total(values)
+}
+fn bad(values List[List[Int]]) Int
+ensures result == deferred_graph(values) {
+    deferred_graph(values)
+}
+"#,
         // Contract results retain the actual function target's identity.
         "fn different(value Text) Int {\n    count_open(value) + 1\n}\nfn bad(value Text) Int\nensures result == different(value)\n{\n    count_open(value)\n}\n",
     ] {
@@ -375,7 +463,9 @@ ensures batch_total(value) == batch_total(value) {
         assert!(
             error.contains("proof")
                 || error.contains("proved")
-                || error.contains("pure Boolean scan"),
+                || error.contains("pure Boolean scan")
+                || error.contains("helper control flow is unsupported")
+                || error.contains("type constraints may observe immutable fields"),
             "{error}\n{extra}"
         );
         assert!(!error.contains("RuntimeFault"), "{error}");

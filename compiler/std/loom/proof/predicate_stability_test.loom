@@ -64,6 +64,7 @@ test fn continuing_guarantees_require_the_selected_enum_payload() {
         })
     let value = Value.Sum(8, IntegerTerm.Linear(variable(10)), [[Value.List(20)], []])
     let state = list_bounds(value, State {
+            heap = -1
             locals = [value]
             facts = []
             extents = []
@@ -101,6 +102,7 @@ test fn controlled_root_stability_does_not_protect_other_headers_or_supply_polic
                 writes = 0
             }])
     let empty = State {
+        heap = -1
         locals = []
         facts = []
         extents = []
