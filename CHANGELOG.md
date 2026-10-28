@@ -5,6 +5,11 @@ implementation, not a compatibility ledger for previous prototypes.
 
 ## Unreleased
 
+- Keep opaque contract applications bound to exact source specializations across
+  private proof queues and expanded type invariants. Recheck normalized
+  applications after source edits; unrelated functions and static arguments
+  cannot inherit another function's proof identity.
+
 - Compose constrained shared collections across nested values, preserving child
   predicates through checked outer replacements, ordinary helpers and the full
   async lifecycle.

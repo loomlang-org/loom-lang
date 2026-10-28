@@ -68,6 +68,7 @@ fn private_factory_body(program Program, target Int) Bool {
         index = index + 1
     }
     let isolated = Program {
+        function_identities = program.function_identities
         types = program.types
         functions = functions
         entry = -1

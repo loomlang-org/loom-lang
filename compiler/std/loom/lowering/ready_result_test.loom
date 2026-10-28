@@ -22,6 +22,7 @@ test fn terminal_extraction_lowers_without_a_coroutine_or_additional_task() {
     let functions = new[Function]()
     push(functions, source)
     let lowered = lower(Program {
+        function_identities = []
             types = types
             functions = functions
             entry = -1

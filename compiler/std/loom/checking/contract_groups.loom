@@ -91,6 +91,7 @@ fn prepared_contract_group(stage Context, root Function, body_calls Bool) Result
         index = index + 1
     }
     let program = std.loom.typed.Program {
+        function_identities = function_identities(stage.env, length(functions))
         types = stage.env.types
         functions = functions
         entry = -1

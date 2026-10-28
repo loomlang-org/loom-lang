@@ -319,8 +319,9 @@ fn checked_contracts(context Context, id Int, source Function) Result[Function, 
         }
         match checked {
             Result.Ok(conditions) => {
-                // Ensures are already proved; retain call-free checked clauses
-                // for reflection/CTFE, not private helper indices or runtime roots.
+                // Ensures are already proved. Normalized clauses retain
+                // check-local instance identities, never private queue indices
+                // or new runtime roots.
                 certified_contract(context, id, with_contracts(function, function.preconditions, conditions))
             }
             Result.Err(message) => {

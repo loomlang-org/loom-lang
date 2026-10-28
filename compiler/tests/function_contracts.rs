@@ -5,6 +5,132 @@ use common::success;
 const FUNCTIONS: &str = include_str!("../examples/function_contracts/main.loom");
 const FLOATS: &str = include_str!("../examples/function_contracts/floats.loom");
 
+const SCOPED_FUNCTIONS: &str = r#"
+fn negative(value Int) Bool {
+    var index = 0
+    var answer = false
+    while index < 2 {
+        answer = value < 0
+        index = index + 1
+    }
+    answer
+}
+
+fn positive(value Int) Bool {
+    var index = 0
+    var answer = false
+    while index < 2 {
+        answer = value >= 0
+        index = index + 1
+    }
+    answer
+}
+
+fn observed(value Int) Bool
+ensures result == negative(value) {
+    negative(value)
+}
+
+fn warm(value Int) Bool
+ensures result == negative(value) {
+    observed(value)
+}
+
+type Negative = Int where negative(self)
+
+fn selected(comptime positive Bool, value Int) Bool {
+    var index = 0
+    var answer = false
+    while index < 2 {
+        answer = comptime if positive {
+            value >= 0
+        } else {
+            value < 0
+        }
+        index = index + 1
+    }
+    answer
+}
+
+fn preserved(value Negative) Bool
+ensures negative(value) {
+    true
+}
+
+fn specialization(value Int) Bool
+ensures result == selected(false, value) {
+    selected(false, value)
+}
+
+fn main() {
+    assert !warm(1)
+    assert preserved(Negative(-1))
+    assert !specialization(1)
+}
+"#;
+
+#[test]
+fn proof_identities_survive_private_queues_without_equating_distinct_instances() {
+    let package = tempfile::tempdir().unwrap();
+    let path = package.path().to_str().unwrap();
+    let source = package.path().join("main.loom");
+    let cache = package.path().join("cache");
+    let check = || common::loom(&["check", path, "--frontend-cache", cache.to_str().unwrap()]);
+    fs::write(&source, SCOPED_FUNCTIONS).unwrap();
+    success(&check());
+    success(&check());
+    success(&common::loom(&["run", path]));
+    for (basis, extra) in [
+        // warm has already certified observed in another private queue.
+        (
+            SCOPED_FUNCTIONS.split("type Negative").next().unwrap(),
+            r#"
+fn wrong(value Int) Bool
+requires negative(value) == negative(value) && positive(value)
+ensures result == positive(value) {
+    observed(value)
+}
+"#,
+        ),
+        // The invariant's queue starts at negative; this one starts at positive.
+        (
+            SCOPED_FUNCTIONS,
+            r#"
+fn wrong(value Negative) Bool
+ensures positive(value) {
+    false
+}
+"#,
+        ),
+        // One source declaration still denotes distinct static specializations.
+        (
+            SCOPED_FUNCTIONS,
+            r#"
+fn wrong(value Int) Bool
+requires selected(false, value) == selected(false, value) && selected(true, value)
+ensures result == selected(true, value) {
+    selected(false, value)
+}
+"#,
+        ),
+    ] {
+        fs::write(&source, format!("{basis}\n{extra}")).unwrap();
+        let output = check();
+        assert!(
+            !output.status.success(),
+            "conflated proof identities: {extra}"
+        );
+        let error = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            error.contains("required postcondition is not proved"),
+            "{error}"
+        );
+        assert!(!error.contains("RuntimeFault"), "{error}");
+        fs::write(&source, SCOPED_FUNCTIONS).unwrap();
+        success(&check());
+    }
+}
+
 #[test]
 fn immutable_function_results_compose_and_reject_unestablished_evidence() {
     let package = tempfile::tempdir().unwrap();

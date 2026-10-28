@@ -87,6 +87,7 @@ test fn helper_result_paths_reuse_bounded_suggestions_not_undeclared_guarantees(
     }
     let function = fixture(call, [], goal)
     let program = Program {
+        function_identities = []
         functions = [helper]
         ..empty_proof_program()
     }
@@ -94,6 +95,7 @@ test fn helper_result_paths_reuse_bounded_suggestions_not_undeclared_guarantees(
     assert exact_expression(get(clauses, 0), operation("==", local(0), local(0)))
     assert exact_expression(get(function.postconditions, 0), goal)
     let exact = Program {
+        function_identities = []
         functions = [Function {
                 postconditions = [goal]
                 ..helper
@@ -102,6 +104,7 @@ test fn helper_result_paths_reuse_bounded_suggestions_not_undeclared_guarantees(
     }
     assert exact_expression(get(loop_postconditions(verification(function, exact)), 0), get(clauses, 0))
     let weak = Program {
+        function_identities = []
         functions = [Function {
                 postconditions = [operation(">=", local(1), local(0))]
                 ..helper
@@ -110,6 +113,7 @@ test fn helper_result_paths_reuse_bounded_suggestions_not_undeclared_guarantees(
     }
     assert exact_expression(get(loop_postconditions(verification(function, weak)), 0), goal)
     let recursive = Program {
+        function_identities = []
         functions = [Function {
                 body = expression(ExprKind.Block, 1, "", -1, [call])
                 ..helper

@@ -1,0 +1,51 @@
+// An application denotes a source specialization, not its position in a
+// temporary helper queue. Exact, known constants may share identity across
+// queues in this binding snapshot. Stored or unresolved constants cannot.
+fn source_function_identity(env Environment, instance Instance) Int {
+    let inputs = get(env.inputs, 0)
+    var share = true
+    var index = 0
+    while index < length(instance.constants) {
+        let value = get(instance.constants, index)
+        share = share && value.known && value.storage == -1
+        index = index + 1
+    }
+    let candidates = match std.map.get(inputs.proof_instances_by_signature, instance.signature) {
+        Option.Some(values) => values
+        Option.None => {
+            let values = new[Int]()
+            discard std.map.insert(inputs.proof_instances_by_signature, instance.signature, values)
+            values
+        }
+    }
+    index = 0
+    while share && index < length(candidates) {
+        let identity = get(candidates, index)
+        let prior = get(inputs.proof_instances, identity)
+        if same(prior.arguments, instance.arguments) && same_constants(prior.constants, instance.constants) {
+            return identity
+        }
+        index = index + 1
+    }
+    let identity = length(inputs.proof_instances)
+    push(inputs.proof_instances, instance)
+    if share {
+        push(candidates, identity)
+    }
+    identity
+}
+
+fn function_identities(env Environment, count Int) List[Int] {
+    let identities = new[Int]()
+    var index = 0
+    while index < count {
+        // Erased/dynamic summaries have no closed source implementation.
+        push(identities, if index < length(env.pending) {
+                source_function_identity(env, get(env.pending, index))
+            } else {
+                -1
+            })
+        index = index + 1
+    }
+    identities
+}

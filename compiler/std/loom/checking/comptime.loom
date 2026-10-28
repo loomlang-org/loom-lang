@@ -155,8 +155,17 @@ fn prepared(stage Context) Result[std.loom.typed.Program, Failure] {
 }
 fn prepared_in(stage Context, proof Bool) Result[std.loom.typed.Program, Failure] {
     let functions = emit_functions_in(stage.env, false, no_body_reuse(), proof)?
-    Result.Ok(std.loom.typed.Program { types = stage.env.types functions = functions entry = -1 tests = new[Int]() test_names = new[Text]() exports = new[Int]()
-        interfaces = stage.env.interfaces witnesses = stage.env.witnesses })
+    Result.Ok(std.loom.typed.Program {
+            function_identities = function_identities(stage.env, length(functions))
+            types = stage.env.types
+            functions = functions
+            entry = -1
+            tests = new[Int]()
+            test_names = new[Text]()
+            exports = new[Int]()
+            interfaces = stage.env.interfaces
+            witnesses = stage.env.witnesses
+        })
 }
 fn computed(context Context, node Node, input Node, expected Int) Result[Value, Failure] {
     let index = computed_index(context, node, input, expected)?

@@ -114,6 +114,7 @@ fn constraint_factory_fresh(env Environment, functions List[Function], factory E
     // Prove an unpublished outer header, not global purity. Effects on an
     // unrelated input do not publish the factory's later private allocation.
     let program = std.loom.typed.Program {
+        function_identities = function_identities(env, length(functions))
         types = env.types
         functions = functions
         entry = -1

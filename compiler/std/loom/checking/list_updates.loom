@@ -76,6 +76,7 @@ fn update_expression_proof(env Environment, functions List[Function], locals Lis
     }
     let types = expanded_invariant_types(env, probe)?
     let program = std.loom.typed.Program {
+        function_identities = function_identities(env, length(functions))
         types = types
         functions = functions
         entry = -1

@@ -1,0 +1,76 @@
+test fn proof_instances_share_only_exact_known_specializations_within_one_check() {
+    let env = match certificate_environment("") {
+        Result.Ok(value) => value
+        _ => {
+            assert false
+            return
+        }
+    }
+    let first = Instance {
+        signature = 0
+        arguments = []
+        constants = []
+    }
+    let second = Instance {
+        signature = 1
+        ..first
+    }
+    let identity = source_function_identity(env, first)
+    let other = source_function_identity(env, second)
+    assert identity != other
+    assert source_function_identity(env, first) == identity
+    let reordered = Environment {
+        pending = [second, first]
+        ..env
+    }
+    assert same(function_identities(reordered, 3), [other, identity, -1])
+    assert source_function_identity(env, Instance {
+            arguments = [1]
+            ..first
+        }) != identity
+    let constant = StaticValue {
+        ty = 2
+        known = true
+        number = 0
+        text = ""
+        arguments = []
+        storage = -1
+    }
+    let configured = Instance {
+        constants = [constant]
+        ..first
+    }
+    let selected = source_function_identity(env, configured)
+    assert source_function_identity(env, configured) == selected
+    assert source_function_identity(env, Instance {
+            constants = [StaticValue {
+                    number = 1
+                    ..constant
+                }]
+            ..first
+        }) != selected
+    let stored = Instance {
+        constants = [StaticValue {
+                storage = 0
+                ..constant
+            }]
+        ..first
+    }
+    assert source_function_identity(env, stored) != source_function_identity(env, stored)
+    let unresolved = Instance {
+        constants = [StaticValue {
+                known = false
+                ..constant
+            }]
+        ..first
+    }
+    assert source_function_identity(env, unresolved) != source_function_identity(env, unresolved)
+    let fresh = match certificate_environment("") {
+        Result.Ok(value) => value
+        _ => {
+            assert false
+            return
+        }
+    }
+    assert length(get(fresh.inputs, 0).proof_instances) == 0
+}

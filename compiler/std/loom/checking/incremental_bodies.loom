@@ -300,9 +300,12 @@ fn body_instance_supported(reuse BodyReuse, instance BodyTarget) Bool {
 
 fn body_expression_supported(reuse BodyReuse, value Expr, span Span) Bool {
     let kind = value.kind
+    // Opaque applications carry identities owned by the previous check. Rebuild
+    // these functions from source rather than importing a foreign proof scope.
     if kind == ExprKind.Deferred ||
     kind == ExprKind.FrameNew || kind == ExprKind.FrameStore ||
-    kind == ExprKind.TypeValue {
+    kind == ExprKind.TypeValue || (kind == ExprKind.Intrinsic &&
+        (value.text == "proof_function" || value.text == "proof_function_defined")) {
         return false
     }
     if !body_type_supported(reuse, value.ty) || value.span.start < span.start || value.span.end > span.end {
