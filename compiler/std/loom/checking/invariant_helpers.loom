@@ -170,8 +170,9 @@ fn expanded_invariant_parts(program std.loom.typed.Program, locals List[Local], 
     }
 }
 
-// Only a failed required proof pays for this private helper closure. Never put
-// its call indices in shared type metadata or the runtime reachability queue.
+// Only a failed required proof pays for this private helper closure. Expanded
+// applications use shared check-local instance identities, not this queue's
+// indices. Keep the resulting type snapshot private to the proof.
 fn expanded_invariant_types(context Context, function Function) Result[List[Type], Failure] {
     expanded_invariant_types(context.env, function)
 }
@@ -257,6 +258,7 @@ fn expanded_selected_invariants(env Environment, selected List[Int]) Result[List
 
 fn proof_types(program std.loom.typed.Program, types List[Type]) std.loom.typed.Program {
     std.loom.typed.Program {
+        function_identities = program.function_identities
         types = types
         functions = program.functions
         entry = program.entry

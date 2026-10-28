@@ -3668,6 +3668,10 @@ execution without an extra return check or a runtime implementation of proof ope
 Completed sequential contract proofs are reused only within one binding/input
 snapshot and exact function instance; pending promises and captured/stored
 compile-time state are excluded, and shared-state proofs run independently.
+Opaque applications use exact source-specialization identities shared by that
+snapshot's private helper queues. Imported invariant facts use the same identity
+space; normalized applications are rebuilt after source edits rather than
+reusing a previous check's identities.
 
 Self-recursive and mutually recursive body calls can compose declared
 normal-return contracts. The private typed helper closure checks every source

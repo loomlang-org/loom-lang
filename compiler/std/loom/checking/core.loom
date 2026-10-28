@@ -511,6 +511,8 @@ fn prepare_with_inputs(source std.loom.binding.Program, inputs BuildInputs, decl
             result_shapes = new[ResultShape]()
             constraint_errors = new[Int]()
             contracts = new[List[ContractCertificate]]()
+            proof_instances = new[Instance]()
+            proof_instances_by_signature = std.map.new[Int, List[Int]]()
             fact_calls = new[Instance]()
             sealing_factories = new[Int]()
         })
@@ -677,6 +679,7 @@ fn checked_program_reusing(env Environment, reuse List[Bool], reusable List[Bool
     discard check_unreached(env, deferred_roots)?
     discard layouts(env)?
     let program = std.loom.typed.Program {
+        function_identities = function_identities(env, length(functions))
         types = env.types
         functions = functions
         entry = entry

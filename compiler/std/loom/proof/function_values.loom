@@ -59,7 +59,7 @@ fn function_expression(context Expansion, source Expr, inputs List[Expr]) Expr {
         index = index + 1
     }
     let packed = proof_expr(source, ExprKind.Intrinsic, 0, "proof_pack", -1, arguments)
-    proof_expr(source, ExprKind.Intrinsic, function.result, "proof_function", source.index,
+    proof_expr(source, ExprKind.Intrinsic, function.result, "proof_function", function_identity(context.program, source.index),
         [packed, function_metadata(context.program, source, function.result)])
 }
 

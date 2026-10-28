@@ -19,6 +19,7 @@ fn select_tests(program std.loom.typed.Program, filter Text) std.loom.typed.Prog
         index = index + 1
     }
     std.loom.typed.Program {
+        function_identities = program.function_identities
         types = program.types
         functions = program.functions
         entry = program.entry

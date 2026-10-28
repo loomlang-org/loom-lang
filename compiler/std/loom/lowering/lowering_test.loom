@@ -153,6 +153,7 @@ test fn lowers_hot_constructors_and_spills_only_values_crossing_await() {
     push(values, node(ExprKind.Assert, 0, span, -1, one(equals)))
     push(functions, test_function(new[Int](), 0, locals, block(values, 0, span, true)))
     let source = Program {
+        function_identities = []
         types = types
         functions = functions
         entry = 1
@@ -211,6 +212,7 @@ test fn lowers_hot_constructors_and_spills_only_values_crossing_await() {
     push(transferred_functions, generated(transfer, ints(task), task, identity_locals,
             block(one(node(ExprKind.Local, task, span, 0, new[Expr]())), task, span, true)))
     let transferred = lower(Program {
+        function_identities = []
             types = types
             functions = transferred_functions
             entry = -1

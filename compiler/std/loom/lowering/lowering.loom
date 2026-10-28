@@ -402,6 +402,7 @@ pub fn lower(original Program) Program {
         return source
     }
     let program = Program {
+        function_identities = []
         types = clone(source.types)
         functions = clone(source.functions)
         entry = source.entry
@@ -456,6 +457,7 @@ pub fn lower(original Program) Program {
         index = index + 1
     }
     Program {
+        function_identities = []
         types = program.types
         functions = program.functions
         entry = entry

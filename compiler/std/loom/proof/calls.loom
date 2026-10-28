@@ -22,6 +22,7 @@ record CallArguments {
 
 fn empty_proof_program() Program {
     Program {
+        function_identities = []
         types = new[Type]()
         functions = new[Function]()
         entry = -1
@@ -35,6 +36,7 @@ fn empty_proof_program() Program {
 
 fn proof_program_with_types(types List[Type]) Program {
     Program {
+        function_identities = []
         types = types
         functions = new[Function]()
         entry = -1
@@ -500,7 +502,7 @@ fn applied_call(proof Verification, call Expr, function Function, arguments Call
     while index < length(completed) {
         let current = get(completed, index)
         let application = FunctionApplication {
-            target = call.index
+            target = function_identity(proof.program, call.index)
             arguments = keys
             path = []
         }

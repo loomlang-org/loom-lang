@@ -210,6 +210,10 @@ pub record Witness {
 pub record Program {
     types List[Type]
     functions List[Function]
+    // Proof-only source instance identities within one check. An empty table
+    // uses this program's indices; such clauses cannot cross program scopes.
+    // -1 excludes generated summaries from opaque function applications.
+    function_identities List[Int]
     entry Int
     tests List[Int]
     test_names List[Text]

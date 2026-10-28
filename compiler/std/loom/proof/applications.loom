@@ -102,13 +102,14 @@ fn contains_application(value Expr) Bool {
 }
 
 fn application_needed(proof Verification, target Int) Bool {
+    let identity = function_identity(proof.program, target)
     let groups = [proof.function.preconditions, proof.function.postconditions, proof.preservation]
     var group = 0
     while group < length(groups) {
         let clauses = get(groups, group)
         var index = 0
         while index < length(clauses) {
-            if mentions_application(get(clauses, index), target) {
+            if mentions_application(get(clauses, index), identity) {
                 return true
             }
             index = index + 1
@@ -162,7 +163,7 @@ fn immutable_function_type(program Program, ty Int, depth Int, budget List[Int])
 }
 
 fn predicate_function(program Program, target Int) Bool {
-    if target < 0 || target >= length(program.functions) {
+    if target < 0 || target >= length(program.functions) || function_identity(program, target) < 0 {
         return false
     }
     let function = get(program.functions, target)
@@ -190,6 +191,16 @@ fn predicate_function(program Program, target Int) Bool {
         Result.Ok(_) => true
         Result.Err(_) => false
     }
+}
+
+fn function_identity(program Program, target Int) Int {
+    if length(program.function_identities) == 0 {
+        return target
+    }
+    if target < 0 || target >= length(program.function_identities) {
+        return -1
+    }
+    get(program.function_identities, target)
 }
 
 // Opaque applications need a statically closed execution target. Resource

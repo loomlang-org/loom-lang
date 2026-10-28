@@ -15,6 +15,7 @@ record Linear {
 }
 
 record FunctionApplication {
+    // Source instance identity from the program, not a helper queue position.
     target Int
     arguments List[PredicateKey]
     path List[Int]

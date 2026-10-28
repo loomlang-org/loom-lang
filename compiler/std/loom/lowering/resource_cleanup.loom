@@ -137,6 +137,7 @@ fn resource_cleanup_expression(program Program, source Function, value Expr, cal
 
 fn resource_cleanup_program(source Program) Program {
     let program = Program {
+        function_identities = source.function_identities
         types = clone(source.types)
         functions = clone(source.functions)
         entry = source.entry

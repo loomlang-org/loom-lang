@@ -17,8 +17,17 @@ fn contract_fixture(params List[Int], result_type Int, body Expr, preconditions 
         runtime_name = "" span = body.span }
 }
 fn proof_helpers(functions List[Function]) Program {
-    Program { types = new[Type]() functions = functions entry = -1 tests = new[Int]() test_names = new[Text]()
-        exports = new[Int]() interfaces = new[Interface]() witnesses = new[Witness]() }
+    Program {
+        function_identities = []
+        types = new[Type]()
+        functions = functions
+        entry = -1
+        tests = new[Int]()
+        test_names = new[Text]()
+        exports = new[Int]()
+        interfaces = new[Interface]()
+        witnesses = new[Witness]()
+    }
 }
 fn helper_call(index Int, result_type Int, arguments List[Expr]) Expr { expression(ExprKind.Call, result_type, "", index, arguments) }
 fn helpers_verified(program Program, function Function) Bool {

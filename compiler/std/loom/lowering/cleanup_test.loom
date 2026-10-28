@@ -46,6 +46,7 @@ fn cleanup_program(types List[Type], function Function) Program {
     let functions = new[Function]()
     push(functions, function)
     Program {
+        function_identities = []
         types = types
         functions = functions
         entry = -1

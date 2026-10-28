@@ -14,9 +14,17 @@ test fn task_callback_adapters_are_shared_without_mutating_checked_signatures() 
     let body = one(node(ExprKind.Discard, 0, span, -1, one(reference)))
     push(body, reference)
     push(functions, generated(pass, new[Int](), callback, new[Local](), block(body, callback, span, true)))
-    let source = Program { types = types functions = functions entry = -1
-        tests = new[Int]() test_names = new[Text]() exports = ints(1)
-        interfaces = new[Interface]() witnesses = new[Witness]() }
+    let source = Program {
+        function_identities = []
+        types = types
+        functions = functions
+        entry = -1
+        tests = new[Int]()
+        test_names = new[Text]()
+        exports = ints(1)
+        interfaces = new[Interface]()
+        witnesses = new[Witness]()
+    }
     let native = lower(source)
     assert length(source.functions) == 2 && length(native.functions) == 3
     assert length(get(source.types, callback).arguments) == 2
@@ -35,9 +43,17 @@ test fn task_callback_adapters_are_shared_without_mutating_checked_signatures() 
     let source_callback = function_type(types, new[Int](), no_result)
     let entries = new[Function]()
     push(entries, test_function(new[Int](), 0, new[Local](), empty(span)))
-    let executable = lower(Program { types = types functions = entries entry = 0
-        tests = new[Int]() test_names = new[Text]() exports = new[Int]()
-        interfaces = new[Interface]() witnesses = new[Witness]() })
+    let executable = lower(Program {
+            function_identities = []
+            types = types
+            functions = entries
+            entry = 0
+            tests = new[Int]()
+            test_names = new[Text]()
+            exports = new[Int]()
+            interfaces = new[Interface]()
+            witnesses = new[Witness]()
+        })
     assert length(get(executable.types, source_callback).arguments) == 2
     let run = get(get(executable.functions, executable.entry).body.children, 0)
     let thunk = get(run.children, 0)

@@ -152,7 +152,10 @@ compose through construction, loops, suspension and known List scans without
 assuming termination or granting mutable arguments a stable value identity.
 Scalar, record, tuple and enum results keep distinct components; immutable
 elements in logical List columns can supply argument values without confusing
-storage identity with content. Float result binding preserves representation,
+storage identity with content. Source-specialization identities remain coherent
+across cached contracts and separately expanded type invariants; private queue
+positions cannot identify functions across those scopes. Float result binding
+preserves representation,
 while IEEE numerical equality remains weaker. The
 [function example](../../compiler/examples/function_contracts) and
 [predicate example](../../compiler/examples/predicate_contracts) exercise these

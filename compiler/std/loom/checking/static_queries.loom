@@ -22,6 +22,9 @@ record CheckInputs {
     result_shapes List[ResultShape]
     constraint_errors List[Int]
     contracts List[List[ContractCertificate]]
+    // Shared by private helper queues, never by a later check or edit.
+    proof_instances List[Instance]
+    proof_instances_by_signature Map[Int, List[Int]]
     // Check-only scalar call identities. Negative references never become
     // executable targets or add roots to the runtime reachability queue.
     fact_calls List[Instance]
