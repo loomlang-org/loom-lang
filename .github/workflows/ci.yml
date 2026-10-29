@@ -184,7 +184,8 @@ jobs:
   windows-llvm22:
     name: Windows native compiler (LLVM 22)
     runs-on: windows-2022
-    timeout-minutes: 60
+    # Cold LLVM setup plus the full gate can exceed an hour before packaging.
+    timeout-minutes: 90
     defaults:
       run:
         shell: bash
