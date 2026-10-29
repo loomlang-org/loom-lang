@@ -381,6 +381,11 @@ supported theories and boundaries. The central rules are:
   reuse a stale allocation frontier, and sampled sibling fields imply no separation.
   Bounded synchronous recursive groups retain checked storage frames
   only after all reachable bodies and actual arguments pass the same effect rules.
+  Checked synchronous Text/Bytes stream writes can occur in normal-return proofs,
+  including cleanup. Eager arguments and external effects remain executable;
+  independent unknown counts supply no success or determinism guarantee.
+  Shared storage still follows interference rules. Other unmodeled native
+  operations remain unsupported.
 - Loop candidates need entry and every-backedge proof; losing a candidate
   rechecks dependents. Leading ordinary assertions can propose scalar and
   versioned List/Bytes invariants, including nonlinear integer relations, inline

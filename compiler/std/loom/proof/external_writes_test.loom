@@ -1,0 +1,51 @@
+fn write_fixture(name Text, params List[Int]) Function {
+    let source = contract_fixture(params, 1, literal("0"), [], [])
+    Function {
+        runtime_name = name
+        ..source
+    }
+}
+
+fn text_write() Expr {
+    helper_call(0, 1, [literal("1"),
+            expression(ExprKind.Text, 3, "message", -1, []), literal("0")])
+}
+
+test fn external_writes_preserve_eager_effects_without_result_facts() {
+    let program = proof_helpers([write_fixture("write", [1, 3, 1])])
+    let source = text_write()
+    let effect = expression(ExprKind.Block, 1, "", -1, [
+            expression(ExprKind.Assign, 0, "", 0, [literal("2")]), literal("1")
+        ])
+    let call = Expr {
+        children = [effect, get(source.children, 1), literal("0")]
+        ..source
+    }
+    let body = expression(ExprKind.Block, 1, "", -1, [
+            expression(ExprKind.Let, 0, "", 0, [literal("1")]),
+            expression(ExprKind.Discard, 0, "", -1, [call]), local(0)
+        ])
+    assert helpers_verified(program, mutable_caller(body, operation("==", local(1), literal("2"))))
+    assert !helpers_verified(program, mutable_caller(body, operation("==", local(1), literal("1"))))
+    assert !helpers_verified(program, fixture(source, [], operation("==", local(1), literal("0"))))
+    let equal = operation("==", source, source)
+    assert !helpers_verified(program, contract_fixture([], 2, equal, [],
+            [expression(ExprKind.Local, 2, "", 0, [])]))
+}
+
+test fn external_writes_require_the_checked_primitive_abi() {
+    let source = text_write()
+    let body = expression(ExprKind.Block, 1, "", -1, [
+            expression(ExprKind.Discard, 0, "", -1, [source]), literal("0")
+        ])
+    let root = fixture(body, [], operation("==", local(1), literal("0")))
+    assert helpers_verified(proof_helpers([write_fixture("write", [1, 3, 1])]), root)
+    assert !helpers_verified(proof_helpers([write_fixture("unknown_write", [1, 3, 1])]), root)
+    assert !helpers_verified(proof_helpers([write_fixture("write", [1, 1, 1])]), root)
+    assert !helpers_verified(proof_helpers([write_fixture("write", [1, 3])]), root)
+    let malformed = Function {
+        result = 2
+        ..write_fixture("write", [1, 3, 1])
+    }
+    assert !helpers_verified(proof_helpers([malformed]), root)
+}
