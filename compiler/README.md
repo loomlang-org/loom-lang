@@ -890,10 +890,31 @@ for two or more elements. `let (value,) = single` binds a singleton's element.
 All names enter scope after the initializer; `var` makes every bound name mutable.
 `_` explicitly discards an element, never its initializer's effects; it cannot
 discard Tasks or MustScope resources. Use `discard expression` for a whole value,
-not `let _ = expression`. Enum binding patterns, scoped destructuring and
-parallel reassignment are not implemented. Copying a tuple shares its managed
+not `let _ = expression`. Enum binding patterns and scoped destructuring are
+not implemented. Copying a tuple shares its managed
 fields just as copying a record does; compile-time results construct fresh graphs
 while preserving internal sharing.
+
+Parallel assignment reuses existing mutable locals:
+
+```loom
+var left, right = (1, 2)
+left, right = (right, left)
+(left, (right, _)) = (right, (left, "ignored"))
+```
+
+Names and nested tuple targets require the same arity as the right-hand value;
+outer parentheses are optional, and `(item,)` selects a singleton. Every named
+target must already be a `var`. The right side evaluates exactly once, followed
+by ordinary per-target conversions, before any target is rebound. Writes then
+occur in source order, so repeated targets retain the last assigned value.
+Right-side effects are not rolled back if evaluation faults. `_` discards its
+selected value using the ordinary rules; it cannot drop a Task or MustScope
+resource. Task swaps transfer existing obligations, and overwriting an unconsumed
+Task still rejects. Index/field store targets are not part of parallel rebinding.
+These statements use ordinary projections and assignments in CTFE, proofs,
+closures and async code; they add no runtime container or scheduler mechanism.
+See the [parallel assignment example](examples/tuples/assignment.loom).
 
 `values...` expands a statically known tuple in a call, enum payload, tuple or
 List literal. Each operand evaluates once, left to right; a callable receiver

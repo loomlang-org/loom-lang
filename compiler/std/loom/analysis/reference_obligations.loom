@@ -162,7 +162,7 @@ fn reference_nodes(node Node, parent NodeKind, tokens List[Token], inherited Lis
     let field_use = kind == NodeKind.Field && (parent == NodeKind.Construct || parent == NodeKind.RecordPattern)
     let pattern_use = kind == NodeKind.Pattern || kind == NodeKind.RecordPattern
     if named_type || associated_use || field_use || pattern_use || kind == NodeKind.Name || kind == NodeKind.Call ||
-    kind == NodeKind.Construct || kind == NodeKind.Assign || kind == NodeKind.Select || kind == NodeKind.MethodCall {
+    kind == NodeKind.Construct || (kind == NodeKind.Assign && node.value != "") || kind == NodeKind.Select || kind == NodeKind.MethodCall {
         let from = if (kind == NodeKind.Select || kind == NodeKind.MethodCall) && length(node.children) > 0 {
             get(node.children, 0).span.end
         } else {
@@ -214,7 +214,7 @@ fn reference_nodes(node Node, parent NodeKind, tokens List[Token], inherited Lis
     kind != NodeKind.Scoped && kind != NodeKind.Async && kind != NodeKind.Try &&
     kind != NodeKind.Old && kind != NodeKind.Spread && kind != NodeKind.Break &&
     kind != NodeKind.Continue && kind != NodeKind.Comptime && kind != NodeKind.Match &&
-    kind != NodeKind.Arm && kind != NodeKind.Destructure && kind != NodeKind.Bindings &&
+    kind != NodeKind.Arm && kind != NodeKind.Destructure && kind != NodeKind.Assign && kind != NodeKind.Bindings &&
     kind != NodeKind.Wildcard && kind != NodeKind.RestPattern {
         push(output.unknown, node.span)
         return

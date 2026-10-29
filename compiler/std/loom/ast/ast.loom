@@ -39,6 +39,8 @@ pub enum NodeKind {
 // Apply has [Name, Arguments]; Index has [receiver, Arguments]. Apply preserves
 // the named receiver's span, including in explicit applications like identity[Int].
 // IndexAssign has [Apply/Index target, value]; rebinding retains named Assign.
+// Parallel Assign has empty value and [Bindings or Tuple targets, initializer];
+// targets are Names, Wildcards and recursive Tuples, not declarations.
 // Defer is a statement with one Block child; its span includes the keyword.
 // Scoped has the same name/optional type/initializer shape as Let.
 // Within match arms, Tuple contains patterns and Pattern contains Bindings of

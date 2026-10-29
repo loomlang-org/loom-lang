@@ -1,0 +1,113 @@
+// Finish RHS evaluation and conversions before rebinding. Ordinary private
+// snapshots, projections and assignments retain capture/Task/resource rules.
+fn parallel_assignment(context Context, node Node) Result[Expr, Failure] {
+    let pattern = child(node, 0)
+    let value = assignment_value(context, pattern, child(node, 1))?
+    let saved = length(context.locals)
+    push(context.locals, Local {
+            name = ""
+            ty = value.ty
+            mutable = false
+            is_scoped = false
+        })
+    let prefix = expressions(expression(ExprKind.Let, 0, node, "", saved, expressions(value), value.falls))
+    let stores = new[Expr]()
+    discard assignment_fields(context, pattern, atom(ExprKind.Local, value.ty, node, saved), prefix, stores, 0)?
+    var index = 0
+    while index < length(stores) {
+        push(prefix, get(stores, index))
+        index = index + 1
+    }
+    Result.Ok(expression(ExprKind.Block, 0, node, "", -1, prefix, value.falls))
+}
+
+fn assignment_value(context Context, target Node, source Node) Result[Expr, Failure] {
+    let hint = assignment_type(context, target, 0)?
+    if (target.kind == NodeKind.Tuple || target.kind == NodeKind.Bindings) && source.kind == NodeKind.Tuple {
+        let inputs = call_inputs(context, source.children)?
+        if length(target.children) != length(inputs.nodes) {
+            return Result.Err(error(context, target, "assignment element count must match the tuple"))
+        }
+        return tuple_literal(context, source, inputs, new[Int](), target.children)
+    }
+    expr_mode(context, source, hint, false)
+}
+
+fn assignment_type(context Context, node Node, depth Int) Result[Int, Failure] {
+    if depth >= 64 {
+        return Result.Err(error(context, node, "assignment nesting limit exceeded"))
+    }
+    if node.kind == NodeKind.Wildcard {
+        return Result.Ok(-1)
+    }
+    if node.kind == NodeKind.Name {
+        return Result.Ok(get(context.locals, assignment_local(context, node)?).ty)
+    }
+    if node.kind != NodeKind.Tuple && node.kind != NodeKind.Bindings {
+        return Result.Err(error(context, node, "parallel assignment targets must be names or nested tuples"))
+    }
+    let types = new[Int]()
+    var complete = true
+    var index = 0
+    while index < length(node.children) {
+        let ty = assignment_type(context, child(node, index), depth + 1)?
+        complete = complete && ty >= 0
+        push(types, ty)
+        index = index + 1
+    }
+    if complete {
+        tuple_type(context.env, context.signature.symbol, node, types)
+    } else {
+        Result.Ok(-1)
+    }
+}
+
+fn assignment_fields(context Context, node Node, value Expr,
+    prefix List[Expr], stores List[Expr], depth Int) Result[Bool, Failure] {
+    if depth >= 64 {
+        return Result.Err(error(context, node, "assignment nesting limit exceeded"))
+    }
+    if node.kind == NodeKind.Wildcard {
+        discard resource_binding(context, node, value)?
+        push(prefix, expression(ExprKind.Discard, 0, node, "", -1, expressions(value), true))
+        return Result.Ok(true)
+    }
+    if node.kind == NodeKind.Name {
+        let local = assignment_local(context, node)?
+        let prepared = typed(context, node, value, get(context.locals, local).ty)?
+        discard resource_binding(context, node, prepared)?
+        let saved = length(context.locals)
+        push(context.locals, Local {
+                name = ""
+                ty = prepared.ty
+                mutable = false
+                is_scoped = false
+            })
+        push(prefix, expression(ExprKind.Let, 0, node, "", saved, expressions(prepared), prepared.falls))
+        push(stores, expression(ExprKind.Assign, 0, node, "", local,
+                expressions(atom(ExprKind.Local, prepared.ty, node, saved)), true))
+        return Result.Ok(true)
+    }
+    let shape = get(context.env.types, value.ty)
+    if shape.kind == TypeKind.Refined {
+        let base = base_type(context.env, value.ty)
+        return assignment_fields(context, node,
+            expression(ExprKind.Coerce, base, node, "", -1, expressions(value), true),
+            prefix, stores, depth + 1)
+    }
+    if shape.kind != TypeKind.Tuple {
+        return Result.Err(error(context, node, "parallel assignment requires a tuple"))
+    }
+    if length(node.children) != length(shape.arguments) {
+        return Result.Err(error(context, node, "assignment element count must match the tuple"))
+    }
+    var index = 0
+    while index < length(node.children) {
+        let target = child(node, index)
+        let projection = expression(ExprKind.Field, get(shape.arguments, index), target,
+            "", index, expressions(value), true)
+        discard assignment_fields(context, target, projection, prefix, stores, depth + 1)?
+        index = index + 1
+    }
+    Result.Ok(true)
+}

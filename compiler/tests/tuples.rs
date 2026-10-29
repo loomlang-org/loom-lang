@@ -34,6 +34,19 @@ fn tuple_values_run_natively_and_keep_managed_fields_alive() {
 #[test]
 fn tuple_errors_are_source_diagnostics_not_native_failures() {
     let source = tempfile::tempdir().unwrap();
+    let cache = source.path().join("cache");
+    let check = || {
+        loom(&[
+            "check",
+            source.path().to_str().unwrap(),
+            "--frontend-cache",
+            cache.to_str().unwrap(),
+        ])
+    };
+    let valid = "fn main() { var a, b = (1, 2)\na, b = (b, a)\nassert a == 2 && b == 1 }";
+    fs::write(source.path().join("main.loom"), valid).unwrap();
+    success(&check());
+    success(&check());
     for text in [
         "fn main() { let a, b = (1,) }",
         "fn main() { let a, b = 1 }",
@@ -43,12 +56,19 @@ fn tuple_errors_are_source_diagnostics_not_native_failures() {
         "fn main() { let value (Int, Bool) = (true, 1) }",
         "record Cycle { next (Int, Cycle) }",
         "fn main() { discard () }",
+        "fn main() { let a = 1\nvar b = 2\na, b = (b, a) }",
+        "fn main() { var a = 1\na, missing = (2, 3) }",
+        "fn main() { var a, b = (1, true)\na, b = (false, 2) }",
+        "fn main() { var a, b = (1, 2)\na, b = (1, 2, 3) }",
+        "fn wrong(a Int, b Int) (Int, Int) ensures result.0 == a { var left, right = (a, b)\nleft, right = (right, left)\n(left, right) }",
     ] {
         fs::write(source.path().join("main.loom"), text).unwrap();
-        let output = loom(&["check", source.path().to_str().unwrap()]);
+        let output = check();
         assert_eq!(output.status.code(), Some(1), "{text}: {output:?}");
         assert!(!output.stderr.is_empty());
     }
+    fs::write(source.path().join("main.loom"), valid).unwrap();
+    success(&check());
 }
 
 #[test]
@@ -65,6 +85,9 @@ fn expanded(values (Int, Int)) Int {
 }
 fn main() {
     assert expanded((20, 22)) == 42
+    var left, right = (20, 22)
+    left, right = (right, left)
+    assert left == 22 && right == 20
     assert (20, (true, 22)) == (20, (true, 22))
 }
 "#,
@@ -103,6 +126,8 @@ fn main() {
         (1, true)
     }
 }
+
+
 "#,
     )
     .unwrap();
@@ -118,6 +143,49 @@ fn main() {
         );
         let output = Command::new(&executable).output().unwrap();
         assert!(!output.status.success(), "{output:?}");
+        assert!(String::from_utf8_lossy(&output.stderr).contains("assertion failed"));
+    }
+}
+
+#[test]
+fn parallel_assignment_finishes_rhs_before_writing_any_target() {
+    let source = tempfile::tempdir().unwrap();
+    fs::write(
+        source.path().join("main.loom"),
+        r#"
+import std.io.write_text
+import std.int.to_text
+
+fn main() {
+    var left, right = (1, 2)
+    defer {
+        discard write_text(to_text(left))
+        discard write_text(to_text(right))
+    }
+    left, right = (99, {
+        assert false
+        100
+    })
+}
+"#,
+    )
+    .unwrap();
+    let executable = common::executable(source.path(), "parallel-fault");
+    for level in ["0", "2"] {
+        success(
+            &common::command(&["build", source.path().to_str().unwrap()])
+                .arg("--output")
+                .arg(&executable)
+                .env("LOOM_OPT_LEVEL", level)
+                .output()
+                .unwrap(),
+        );
+        let output = Command::new(&executable)
+            .env("LOOM_GC_STRESS", "1")
+            .output()
+            .unwrap();
+        assert!(!output.status.success());
+        assert_eq!(output.stdout, b"12");
         assert!(String::from_utf8_lossy(&output.stderr).contains("assertion failed"));
     }
 }
