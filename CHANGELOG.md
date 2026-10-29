@@ -5,6 +5,11 @@ implementation, not a compatibility ledger for previous prototypes.
 
 ## Unreleased
 
+- Remove proven assertion operands during native lowering after checking their
+  complete evaluation, effects and fault conditions. Keep source conditions in
+  analysis and caches; revalidate reused bodies and shared-worker programs.
+  Cleanup assertions retain their checks on fault and cancellation paths.
+
 - Propose versioned List/Bytes loop invariants from ordinary leading assertions,
   including pure helpers and inline scalar fields beside shared children.
   Recheck observation coherence at entry, each abstract head and every backedge;

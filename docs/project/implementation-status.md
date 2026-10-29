@@ -385,8 +385,13 @@ supported theories and boundaries. The central rules are:
   rechecks dependents. Leading ordinary assertions can propose scalar and
   versioned List/Bytes invariants, including nonlinear integer relations, inline
   fields and finite pure helpers,
-  under an immutable scalar loop condition. They retain their runtime checks;
-  entry, cleanup/backedges and every exit still need proof. Current observations
+  under an immutable scalar loop condition. Entry, cleanup/backedges and every
+  exit still need proof. Native lowering can omit an assertion only after the
+  required body proof also establishes its complete operand is pure, defined
+  and true on every visited path and induction pass. Conditions remain in
+  checked analysis and caches; reused bodies and shared-worker programs
+  revalidate the evidence. Cleanup checks remain on fault/cancellation paths.
+  Current observations
   require coherent storage views at each induction step; unavailable or published
   shared storage supplies no invariant. Private views survive suspension.
   Nonlinear invariants

@@ -26,47 +26,98 @@ fn observe_assertion(proof Verification, expression Expr, state State) {
 // Check the incoming state, before evaluating the source operand. A successful
 // call/read may otherwise have already supplied the very safety facts at issue.
 fn assertion_proved(proof Verification, source Expr, state State) Bool {
-    let expression = loop_candidate_guard(proof, source)
-    if !bounded_contract(expression) || !observation_guard_expression(expression, true) {
+    // Candidate expansion may use a callee's exact return summary. Such a
+    // summary grants no permission to remove the call's effects or mutations
+    // in an eagerly evaluated caller argument.
+    if assertion_local_write(source) || !graph_readonly_expression(proof.program, source) {
         return false
     }
-    let current = match loop_guard_views(proof, expression, state) {
-        Result.Ok(value) => value
+    // Use the ordinary contract expander's complete evaluation obligations,
+    // including discarded arguments, partial calls and helper assertions.
+    // An invariant suggestion alone does not certify removing source execution.
+    let clauses = match contract_predicates(proof.program, proof.function.locals,
+        [source], false, [256], new[Int](), new[ObservationOrigin](), proof.fresh) {
+        Result.Ok(values) => values
         Result.Err(_) => {
             return false
         }
     }
-    let fact = match pure(expression, current) {
-        Result.Ok(Value.Boolean(value)) => value
-        _ => {
-            return false
-        }
-    }
-    match defined(expression, current) {
-        Result.Ok(valid) => {
-            if valid && loop_holds(fact, current) {
-                return true
-            }
-        }
-        Result.Err(_) => {
-        }
-    }
-    if !proof.query.backend.enabled {
-        return false
-    }
-    // Optional evidence owns its query. It cannot weaken or consume a required
-    // proof's obligations, and failed/unknown evidence retains the source check.
+    var current = state
     let query = proof_query(proof.query.backend)
-    match solver_defined(query, expression, current, 256) {
-        Result.Ok(_) => {
-            solver_fact(query, fact, current)
-            match discharge(query) {
-                Result.Ok(proved) => proved
-                Result.Err(_) => false
+    var queued = false
+    var index = 0
+    while index < length(clauses) {
+        let expression = get(clauses, index)
+        if !bounded_contract(expression) || !observation_guard_expression(expression, true) {
+            return false
+        }
+        current = match loop_guard_views(proof, expression, current) {
+            Result.Ok(value) => value
+            Result.Err(_) => {
+                return false
             }
         }
+        let fact = match pure(expression, current) {
+            Result.Ok(Value.Boolean(value)) => value
+            _ => {
+                return false
+            }
+        }
+        let cheap = match defined(expression, current) {
+            Result.Ok(valid) => valid && loop_holds(fact, current)
+            Result.Err(_) => false
+        }
+        if !cheap {
+            if !proof.query.backend.enabled {
+                return false
+            }
+            // Optional evidence owns its query; no conclusion is assumed while
+            // proving later obligations or added to the required proof's state.
+            match solver_defined(query, expression, current, 256) {
+                Result.Ok(_) => {
+                    solver_fact(query, fact, current)
+                    queued = true
+                }
+                Result.Err(_) => {
+                    return false
+                }
+            }
+        }
+        index = index + 1
+    }
+    if !queued {
+        return true
+    }
+    match discharge(query) {
+        Result.Ok(proved) => proved
         Result.Err(_) => false
     }
+}
+
+fn assertion_local_write(value Expr) Bool {
+    if value.kind == ExprKind.Assign {
+        return true
+    }
+    var index = 0
+    while index < length(value.children) {
+        if assertion_local_write(get(value.children, index)) {
+            return true
+        }
+        index = index + 1
+    }
+    index = 0
+    while index < length(value.arms) {
+        let body = get(value.arms, index).body
+        var item = 0
+        while item < length(body) {
+            if assertion_local_write(get(body, item)) {
+                return true
+            }
+            item = item + 1
+        }
+        index = index + 1
+    }
+    false
 }
 
 // Compiler-host entry point. Callee guarantees must already be checked, as for
@@ -84,7 +135,17 @@ fn proved_contract(ordinary Verification, protected List[InputGuarantee]) Result
         ..ordinary
     }
     if length(proof.function.postconditions) != 0 {
-        discard verify_body(proof, protected)?
+        match verify_body(proof, protected) {
+            Result.Ok(_) => {
+            }
+            Result.Err(message) => {
+                return Result.Err(if proof.shared {
+                        concat("required shared-state proof is not interference-safe: ", message)
+                    } else {
+                        message
+                    })
+            }
+        }
     }
     Result.Ok(ContractProof {
             postconditions = proof.function.postconditions

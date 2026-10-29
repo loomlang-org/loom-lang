@@ -32,8 +32,10 @@ Leading ordinary `assert` statements can also propose scalar and versioned-stora
 The [assertion example](assertions.loom) proves square and triangular sums,
 including a finite pure helper, `continue` and lexical cleanup. These predicates
 use the same entry/all-backedge checks and the existing integer SMT theory;
-failed or unknown proposals supply no facts. The assertions still execute at
-runtime. This proposal path stops before other statements and requires an
+failed or unknown proposals supply no facts. Proven assertions can leave native
+code only when their complete evaluation is also pure and defined; otherwise
+they execute normally. Cleanup assertions retain their checks on fault paths.
+This proposal path stops before other statements and requires an
 immutable scalar loop condition; effectful conditions do not move from body entry
 to the loop head. The [storage example](storage_assertions.loom) applies the same
 rules to List/Bytes cells, pure helpers and immutable record fields beside mutable

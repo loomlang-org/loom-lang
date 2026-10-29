@@ -3,13 +3,13 @@ import std.loom.proof.prove_contract
 
 // Assert.index: 1 is proved for this check; 2 requires revalidation after body
 // reuse. The condition stays intact for analysis, worker checks and snapshots.
-fn has_assertion(value Expr, pending Bool) Bool {
-    if value.kind == ExprKind.Assert && (!pending || value.index == 2) {
+fn has_assertion(value Expr, status Int) Bool {
+    if value.kind == ExprKind.Assert && (status < 0 || value.index >= status) {
         return true
     }
     var index = 0
     while index < length(value.children) {
-        if has_assertion(get(value.children, index), pending) {
+        if has_assertion(get(value.children, index), status) {
             return true
         }
         index = index + 1
@@ -19,7 +19,7 @@ fn has_assertion(value Expr, pending Bool) Bool {
         let arm = get(value.arms, index)
         var item = 0
         while item < length(arm.body) {
-            if has_assertion(get(arm.body, item), pending) {
+            if has_assertion(get(arm.body, item), status) {
                 return true
             }
             item = item + 1
@@ -161,11 +161,19 @@ fn assertion_keys(identities List[Int], checks List[AssertionCheck]) List[Expr] 
     proved
 }
 
-fn assertion_markers(value Expr, identities List[Int], keys List[Expr], clear Bool) Expr {
+fn assertion_markers(value Expr, identities List[Int], keys List[Expr], reset Int, inherited_cleanup Bool) Expr {
+    // Normal-return proofs omit fault/cancellation entries into cleanup.
+    // Registration and normal-exit copies must retain the same source checks.
+    let cleanup = inherited_cleanup || value.kind == ExprKind.Defer ||
+    value.kind == ExprKind.Cleanup || value.kind == ExprKind.ResourceDrain
     var marker = value.index
     if value.kind == ExprKind.Assert {
-        marker = -1
-        if !clear && length(keys) != 0 {
+        marker = if cleanup {
+            -1
+        } else {
+            reset
+        }
+        if !cleanup && reset == -1 && length(keys) != 0 {
             match assertion_expression(value, identities, [2048]) {
                 Result.Ok(key) => {
                     var index = 0
@@ -184,7 +192,7 @@ fn assertion_markers(value Expr, identities List[Int], keys List[Expr], clear Bo
     let children = new[Expr]()
     var index = 0
     while index < length(value.children) {
-        push(children, assertion_markers(get(value.children, index), identities, keys, clear))
+        push(children, assertion_markers(get(value.children, index), identities, keys, reset, cleanup))
         index = index + 1
     }
     let arms = new[Arm]()
@@ -194,7 +202,7 @@ fn assertion_markers(value Expr, identities List[Int], keys List[Expr], clear Bo
         let body = new[Expr]()
         var item = 0
         while item < length(arm.body) {
-            push(body, assertion_markers(get(arm.body, item), identities, keys, clear))
+            push(body, assertion_markers(get(arm.body, item), identities, keys, reset, cleanup))
             item = item + 1
         }
         push(arms, Arm {
@@ -211,13 +219,114 @@ fn assertion_markers(value Expr, identities List[Int], keys List[Expr], clear Bo
     }
 }
 
+fn with_assertion_keys(function Function, identities List[Int], keys List[Expr]) Function {
+    if length(keys) == 0 && !has_assertion(function.body, 1) {
+        return function
+    }
+    with_body(function, assertion_markers(function.body, identities, keys, -1, false))
+}
+
 fn with_assertion_proofs(function Function, identities List[Int], proof_ids List[Int], checks List[AssertionCheck]) Function {
-    with_body(function, assertion_markers(function.body, identities, assertion_keys(proof_ids, checks), false))
+    with_assertion_keys(function, identities, assertion_keys(proof_ids, checks))
 }
 
 fn without_assertion_proofs(function Function) Function {
-    if !has_assertion(function.body, false) {
+    if !has_assertion(function.body, 1) {
         return function
     }
-    with_body(function, assertion_markers(function.body, [], [], true))
+    with_body(function, assertion_markers(function.body, [], [], -1, false))
+}
+
+fn pending_assertion_proofs(function Function) Function {
+    if !has_assertion(function.body, -1) {
+        return function
+    }
+    with_body(function, assertion_markers(function.body, [], [], 2, false))
+}
+
+fn collect_assertion_proofs(value Expr, checks List[AssertionCheck]) {
+    if value.kind == ExprKind.Assert && value.index == 1 {
+        push(checks, AssertionCheck {
+                expression = value
+                proved = true
+            })
+    }
+    var index = 0
+    while index < length(value.children) {
+        collect_assertion_proofs(get(value.children, index), checks)
+        index = index + 1
+    }
+    index = 0
+    while index < length(value.arms) {
+        let body = get(value.arms, index).body
+        var item = 0
+        while item < length(body) {
+            collect_assertion_proofs(get(body, item), checks)
+            item = item + 1
+        }
+        index = index + 1
+    }
+}
+
+fn retained_assertion_keys(env Environment, function Function) List[Expr] {
+    if !has_assertion(function.body, 1) {
+        return []
+    }
+    let checks = new[AssertionCheck]()
+    collect_assertion_proofs(function.body, checks)
+    assertion_keys(function_identities(env, length(env.pending)), checks)
+}
+
+fn proved_scalar_contract(context Context, types List[Type], function Function,
+    backend ProofBackend, protected List[InputGuarantee]) Result[Function, Text] {
+    if !has_assertion(function.body, -1) {
+        discard verify_with_types(types, function, backend, protected)?
+        return Result.Ok(function)
+    }
+    let evidence = prove_contract(types, function, backend, false, protected)?
+    Result.Ok(with_assertion_proofs(function, [], [], evidence.assertions))
+}
+
+fn proved_helper_contract(context Context, program std.loom.typed.Program, proof Function,
+    function Function, backend ProofBackend, protected List[InputGuarantee]) Result[Function, Text] {
+    if !has_assertion(function.body, -1) {
+        let conditions = verify_with_helpers(program, proof, backend, protected)?
+        return Result.Ok(with_contracts(function, function.preconditions, conditions))
+    }
+    let evidence = prove_contract(program, proof, backend, false, protected)?
+    Result.Ok(with_assertion_proofs(
+            with_contracts(function, function.preconditions, evidence.postconditions),
+            function_identities(context.env, length(context.env.pending)),
+            program.function_identities, evidence.assertions))
+}
+
+// Fresh declarations already supplied their evidence during required checking.
+// Only replayed or erased-family bodies need a new concrete observation pass.
+fn revalidate_assertion_proofs(env Environment, program std.loom.typed.Program) {
+    var index = 0
+    while index < length(program.functions) {
+        let function = get(program.functions, index)
+        if has_assertion(function.body, 2) {
+            var checked = without_assertion_proofs(function)
+            if length(function.postconditions) != 0 {
+                let types = match expanded_invariant_types(env, function) {
+                    Result.Ok(types) => types
+                    Result.Err(_) => env.types
+                }
+                match prove_contract(proof_types(program, types), checked,
+                    get(env.inputs, 0).build.proof_backend, false, continuing_sequence_guarantees(env)) {
+                    Result.Ok(evidence) => {
+                        checked = with_assertion_proofs(checked,
+                            program.function_identities, program.function_identities, evidence.assertions)
+                    }
+                    Result.Err(_) => {
+                        // Required checking already succeeded with the source
+                        // assertion intact. Unknown optional evidence keeps it.
+                    }
+                }
+            }
+            set(program.functions, index, checked)
+        }
+        index = index + 1
+    }
 }

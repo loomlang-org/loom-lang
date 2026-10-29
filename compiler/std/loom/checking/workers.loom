@@ -117,7 +117,15 @@ fn worker_contracts(env Environment, program std.loom.typed.Program) Result[Bool
         index = index + 1
     }
     if !shared {
+        revalidate_assertion_proofs(env, program)
         return Result.Ok(true)
+    }
+    // Sequential evidence cannot remove observations that may now interfere.
+    // Keep the conditions while checking this complete worker program again.
+    index = 0
+    while index < length(program.functions) {
+        set(program.functions, index, without_assertion_proofs(get(program.functions, index)))
+        index = index + 1
     }
     // A preserving store need not preserve old cells or an append's old extent.
     // Keep those facts only without corresponding writes, or after proving the
@@ -176,8 +184,22 @@ fn worker_contracts(env Environment, program std.loom.typed.Program) Result[Bool
                 Result.Ok(types) => types
                 Result.Err(_) => env.types
             }
-            match verify_shared(proof_types(program, types), function, get(env.inputs, 0).build.proof_backend, protected) {
-                Result.Ok(_) => {
+            let backend = get(env.inputs, 0).build.proof_backend
+            let checked Result[Function, Text] = if has_assertion(function.body, -1) {
+                match prove_contract(proof_types(program, types), function, backend, true, protected) {
+                    Result.Ok(evidence) => Result.Ok(with_assertion_proofs(function,
+                            program.function_identities, program.function_identities, evidence.assertions))
+                    Result.Err(message) => Result.Err(message)
+                }
+            } else {
+                match verify_shared(proof_types(program, types), function, backend, protected) {
+                    Result.Ok(_) => Result.Ok(function)
+                    Result.Err(message) => Result.Err(message)
+                }
+            }
+            match checked {
+                Result.Ok(proved) => {
+                    set(program.functions, index, proved)
                 }
                 Result.Err(message) => {
                     return Result.Err(failure(env, function.symbol, symbol(env, function.symbol).node, message))
