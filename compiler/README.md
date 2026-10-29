@@ -792,6 +792,8 @@ the budget on future LLVM upgrades; these tuning options are not a stable API.
   proofs assume neither success nor equal counts from repeated writes. Blocking
   writes do not freeze unprotected shared storage. This does not make I/O pure
   or provide proof models for every native operation.
+  Run or test the [contracted logging example](examples/io_contracts/main.loom)
+  with `loom run compiler/examples/io_contracts` or `loom test compiler/examples/io_contracts`.
 - Source [`std.hash.sha256`](std/hash/sha256/README.md) provides
   `digest(Bytes) Bytes`, a fresh 32-byte digest;
   `hex(Bytes) Text` hashes input and returns its 64 lowercase hexadecimal digits.
