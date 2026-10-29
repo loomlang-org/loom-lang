@@ -77,3 +77,23 @@ test fn tuple_syntax_rejects_empty_and_refutable_binding_patterns() {
     // Duplicate-name diagnostics belong to binding/type checking, not parsing.
     assert child(body(child(parsed("fn f() { let a, a = pair }"), 0)), 0).kind == NodeKind.Destructure
 }
+
+test fn tuple_assignment_keeps_targets_distinct_from_declarations() {
+    let tree = parsed("""
+        fn swap() {
+            left, (right, _) = (right, (left, 0))
+            (left,) = one
+        }
+        """)
+    let assignment = child(body(child(tree, 0)), 0)
+    assert assignment.kind == NodeKind.Assign && assignment.value == ""
+    let targets = child(assignment, 0)
+    assert targets.kind == NodeKind.Bindings
+    assert child(targets, 0).value == "left"
+    assert child(child(targets, 1), 1).kind == NodeKind.Wildcard
+    assert child(assignment, 1).kind == NodeKind.Tuple
+    let single = child(body(child(tree, 0)), 1)
+    assert child(single, 0).kind == NodeKind.Tuple
+    discard rejected("fn wrong() { a, values[0] = (1, 2) }")
+    discard rejected("fn wrong() { a, 1 = (1, 2) }")
+}

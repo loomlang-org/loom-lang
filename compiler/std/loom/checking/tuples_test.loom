@@ -65,3 +65,51 @@ test fn nested_tuple_bindings_keep_types_scopes_and_mutability() {
     rejects("fn main() { let a, (b, _) = (a, (2, 3)) }")
     rejects("fn main() { if true { let a, (b, _) = (1, (2, 3)) }\ndiscard b }")
 }
+
+test fn parallel_assignment_snapshots_tuples_before_rebinding() {
+    discard accepted("""
+        fn swapped(a Int, b Int) (Int, Int)
+        ensures result.0 == b && result.1 == a {
+            var left, right = (a, b)
+            left, right = (right, left)
+            (left, right)
+        }
+        fn main() {
+            var left, right = (1, 2)
+            left, (right, _) = (right, (left, true))
+            (left,) = (3,)
+            assert comptime {
+                var a, b = (1, 2)
+                a, b = (b, a)
+                (a, b)
+            } == (2, 1)
+        }
+        """)
+    rejects("fn main() { let a = 1\nvar b = 2\na, b = (2, 1) }")
+    rejects("fn main() { var a = 1\na, missing = (2, 3) }")
+    rejects("fn main() { var a, b = (1, true)\na, b = (false, 2) }")
+    rejects("fn main() { var a, b = (1, 2)\na, b = (1, 2, 3) }")
+    rejects("fn main() { var a, b = (1, 2)\na, (b,) = (1, 2) }")
+}
+
+test fn parallel_assignment_preserves_task_transfer_obligations() {
+    discard accepted("""
+        async fn item(value Int) Int {
+            value
+        }
+        async fn main() {
+            var first, second = (item(1), item(2))
+            first, second = (second, first)
+            assert first.await == 2
+            assert second.await == 1
+        }
+        """)
+    let header = "async fn item(value Int) Int { value }\n"
+    task_rejected(concat(header, "async fn main() { var a = item(1)\na, _ = (a, item(2))\ndiscard a.await }"),
+        "a task must be awaited or transferred; it cannot be copied or discarded")
+    task_rejected(concat(header, "async fn main() { var a, b = (item(1), item(2))\na, b = (item(3), item(4))\ndiscard a.await\ndiscard b.await }"),
+        "cannot overwrite a live task; await or transfer it first")
+    task_rejected(concat(header, "async fn main() { var a, b = (item(1), item(2))\na, b = (a, a)\ndiscard a.await\ndiscard b.await }"),
+        "this task was already awaited or transferred")
+    resource_reject(concat(resource_header(), "fn main() { scoped held = make([0])\nvar a = 1\na, _ = (2, held) }"))
+}

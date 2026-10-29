@@ -1,0 +1,96 @@
+fn assignment_swap[T](left T, right T) (T, T) {
+    var first, second = (left, right)
+    first, second = (second, first)
+    (first, second)
+}
+
+fn assignment_counted(counter List[Int]) (Int, Int) {
+    counter[0] = counter[0] + 1
+    (counter[0], counter[0] + 10)
+}
+
+type AssignmentPositive = Int where self > 0
+
+fn assignment_reorder(left Int, right Int) (Int, Int)
+ensures result.0 == right && result.1 == left {
+    var first, second = (left, right)
+    first, second = (second, first)
+    (first, second)
+}
+
+fn assignment_fibonacci(count Int) Int
+requires count >= 0 && count <= 30 {
+    var first, second = (0, 1)
+    var index = 0
+    while index < count {
+        first, second = (second, first + second)
+        index = index + 1
+    }
+    first
+}
+
+fn assignments() {
+    var first, second = (1, 2)
+    first, second = (second, first)
+    assert first == 2 && second == 1
+    (first, (second, _)) = (second, (first, 0))
+    assert first == 1 && second == 2
+    (first,) = (42,)
+    assert first == 42
+    // Repeated targets receive the already evaluated values in source order.
+    first, first = (3, 4)
+    assert first == 4
+    let counter = [0]
+    first, second = assignment_counted(counter)
+    assert counter[0] == 1 && first == 1 && second == 11
+
+    let observed = fn() (Int, Int) {
+        (first, second)
+    }
+    first, second = (second, first)
+    assert observed() == (11, 1)
+    first, second = (first, {
+            first = 99
+            second
+        })
+    assert first == 11 && second == 1
+    let positive_pair = (AssignmentPositive(3), AssignmentPositive(4))
+    first, second = positive_pair
+    assert first == 3 && second == 4
+    var empty List[Int] = [1]
+    (empty, _), first = (([], false), 7)
+    assert length(empty) == 0 && first == 7
+    assert assignment_reorder(3, 4) == (4, 3)
+
+    var left, right = ([1], [2])
+    let original = left
+    left, right = assignment_swap(left, right)
+    right[0] = 9
+    assert original[0] == 9 && left[0] == 2
+    assert assignment_fibonacci(20) == 6765
+    assert comptime {
+        assignment_fibonacci(10)
+    } == 55
+}
+
+async fn assignment_item[T](value T) T {
+    value
+}
+
+async fn assignments_after_suspend() {
+    var left, right = (assignment_item("first"), assignment_item("second"))
+    left, right = (right, left)
+    assert left.await == "second"
+    assert right.await == "first"
+    var number, label = (0, "")
+    number, label = (assignment_item(42), assignment_item("ready")).await
+    assert number == 42 && label == "ready"
+}
+
+test fn tuple_parallel_assignment_preserves_snapshots_and_shared_elements() {
+    assignments()
+}
+
+test async fn tuple_parallel_assignment_transfers_tasks_and_await_results() {
+    assignments_after_suspend().await
+}

@@ -421,6 +421,24 @@ fn statement(cursor Cursor) Result[Step, Diagnostic] {
         return Result.Ok(done(cursor, value.rest, NodeKind.Assign, named.node.value, one(value.node)))
     }
     let target = expr(cursor, 0, false, true)?
+    if at(target.rest, Kind.Comma) || (at(target.rest, Kind.Assign) && target.node.kind == NodeKind.Tuple) {
+        let targets = one(target.node)
+        rest = target.rest
+        while at(rest, Kind.Comma) {
+            let item = expr(newlines(next(rest)), 0, false, true)?
+            push(targets, item.node)
+            rest = item.rest
+        }
+        let pattern = if length(targets) == 1 {
+            target.node
+        } else {
+            done(cursor, rest, NodeKind.Bindings, "", targets).node
+        }
+        let checked = assignment_pattern(pattern, 0)?
+        rest = expect(rest, Kind.Assign, "'=' after assignment targets")?
+        let value = expr(rest, 0, false, true)?
+        return Result.Ok(done(cursor, value.rest, NodeKind.Assign, "", two(checked, value.node)))
+    }
     if at(target.rest, Kind.Assign) {
         if target.node.kind != NodeKind.Apply && target.node.kind != NodeKind.Index {
             return Result.Err(error(target.rest, "assignment requires a variable or container index"))
@@ -429,4 +447,39 @@ fn statement(cursor Cursor) Result[Step, Diagnostic] {
         return Result.Ok(done(cursor, value.rest, NodeKind.IndexAssign, "", two(target.node, value.node)))
     }
     Result.Ok(target)
+}
+
+fn assignment_pattern(node Node, depth Int) Result[Node, Diagnostic] {
+    if depth >= 64 {
+        return Result.Err(Diagnostic {
+                span = node.span
+                message = "assignment nesting limit exceeded"
+            })
+    }
+    if node.kind == NodeKind.Name {
+        return Result.Ok(if node.value == "_" {
+                Node {
+                    kind = NodeKind.Wildcard
+                    ..node
+                }
+            } else {
+                node
+            })
+    }
+    if node.kind != NodeKind.Tuple && node.kind != NodeKind.Bindings {
+        return Result.Err(Diagnostic {
+                span = node.span
+                message = "parallel assignment targets must be names or nested tuples"
+            })
+    }
+    let children = new[Node]()
+    var index = 0
+    while index < length(node.children) {
+        push(children, assignment_pattern(get(node.children, index), depth + 1)?)
+        index = index + 1
+    }
+    Result.Ok(Node {
+            children = children
+            ..node
+        })
 }

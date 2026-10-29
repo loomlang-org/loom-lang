@@ -8,6 +8,30 @@ fn reference_answer(evidence ReferenceEvidence) Inspection {
     }
 }
 
+test fn parallel_assignment_targets_resolve_existing_local_definitions() {
+    let text = """
+        fn main() {
+            var left, right = (1, 2)
+            left, (right, _) = (right, (left, true))
+        }
+        """
+    let analysis = accepted(input(text))
+    let references = match inspect_references(analysis, 0, "left") {
+        Result.Ok(found) => found
+        Result.Err(_) => {
+            assert false
+            return
+        }
+    }
+    assert length(references) == 3
+    let declaration = query_offset(text, "left, right")
+    only_definition(reference_answer(get(references, 1)), declaration, declaration + 4)
+    only_type(reference_answer(get(references, 1)), "Int")
+    let obligations = source_obligations(text)
+    assert length(obligations.unknown) == 0
+    assert length(obligations.offsets) == 4
+}
+
 test fn reference_scans_preserve_shadowed_bindings_and_unaccounted_candidates() {
     let text = """
         fn main() {

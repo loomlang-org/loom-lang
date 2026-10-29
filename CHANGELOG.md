@@ -5,6 +5,11 @@ implementation, not a compatibility ledger for previous prototypes.
 
 ## Unreleased
 
+- Add tuple parallel assignment with nested local targets, exactly-once RHS
+  evaluation and checked conversions before source-ordered rebinding. Reuse
+  native assignments for closure cells, CTFE, contracts and Task transfers;
+  retain discard/resource rules and editor references to the original locals.
+
 - Propose scalar loop invariants from leading ordinary assertions, with checked
   entry and every-backedge induction through the existing integer SMT theory.
   Prove square/triangular relations without new syntax or trusted annotations;

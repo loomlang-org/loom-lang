@@ -58,4 +58,6 @@ comparisons and patterns. Closing indentation is removed without interpreting
 backslash escapes; longer quote delimiters can embed triple quotes.
 
 Literal and enum patterns remain `match`-only. Field shorthand, scoped
-destructuring and parallel reassignment are not implemented.
+destructuring are not implemented. Existing mutable locals support
+[tuple parallel assignment](../tuples/assignment.loom), including nested targets
+and explicit discards.

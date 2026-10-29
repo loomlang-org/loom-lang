@@ -77,6 +77,12 @@ fn statement(context Context, node Node, boundary Int) Result[Step, Failure] {
     if kind == NodeKind.Destructure {
         return destructure(context, node, boundary)
     }
+    if kind == NodeKind.Assign && node.value == "" {
+        return Result.Ok(Step {
+                context = context
+                expression = parallel_assignment(context, node)?
+            })
+    }
     if kind == NodeKind.Let || kind == NodeKind.Var {
         if length(node.children) == 2 && child(node, 1).kind == NodeKind.Comptime && length(child(node, 1).children) == 0 {
             return bind_static_pack(context, node, boundary)
@@ -109,18 +115,8 @@ fn statement(context Context, node Node, boundary Int) Result[Step, Failure] {
             })
     }
     let value = if kind == NodeKind.Assign {
-        let found = lookup(context, node.value)
-        if found < 0 {
-            return Result.Err(error(context, node, "unknown assignment local"))
-        }
-        let local = get(context.bindings, found).local
-        if local < 0 {
-            return Result.Err(error(context, node, "comptime parameters cannot be assigned"))
-        }
+        let local = assignment_local(context, node)?
         let target = get(context.locals, local)
-        if !target.mutable {
-            return Result.Err(error(context, node, "assignment requires a var binding"))
-        }
         let value = expr(context, child(node, 0), target.ty)?
         expression(ExprKind.Assign, 0, node, "", local, expressions(value), value.falls)
     } else {
@@ -164,6 +160,21 @@ fn statement(context Context, node Node, boundary Int) Result[Step, Failure] {
             context = context
             expression = value
         })
+}
+
+fn assignment_local(context Context, node Node) Result[Int, Failure] {
+    let found = lookup(context, node.value)
+    if found < 0 {
+        return Result.Err(error(context, node, "unknown assignment local"))
+    }
+    let local = get(context.bindings, found).local
+    if local < 0 {
+        return Result.Err(error(context, node, "comptime parameters cannot be assigned"))
+    }
+    if !get(context.locals, local).mutable {
+        return Result.Err(error(context, node, "assignment requires a var binding"))
+    }
+    Result.Ok(local)
 }
 
 fn block(context Context, node Node, expected Int, enforce Bool) Result[Expr, Failure] {
