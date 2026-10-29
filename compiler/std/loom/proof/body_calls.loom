@@ -74,19 +74,11 @@ fn call_body_at(value Expr, offset Int, mapping Option[List[Int]], depth Int) Re
 
 fn inference_frame(proof Verification, query ProofQuery) Verification {
     Verification {
-        function = proof.function
-        program = proof.program
-        fresh = proof.fresh
-        budget = proof.budget
         loop_control = Option.None
         query = query
-        shared = proof.shared
-        preservation = proof.preservation
-        identity_stores = proof.identity_stores
-        protected = proof.protected
-        body_calls = proof.body_calls
         capture_returns = false
         returns = new[Outcome]()
+        ..proof
     }
 }
 
@@ -177,18 +169,11 @@ fn source_body_call(proof Verification, target Int, function Function, input Cal
         }, proof.fresh)?
     let frame = Verification {
         function = scope
-        program = proof.program
-        fresh = proof.fresh
-        budget = proof.budget
         loop_control = Option.None
-        query = proof.query
-        shared = proof.shared
-        preservation = proof.preservation
-        identity_stores = proof.identity_stores
-        protected = proof.protected
         body_calls = calls
         capture_returns = true
         returns = new[Outcome]()
+        ..proof
     }
     var state = call_scope(input.state, values)
     index = 0
