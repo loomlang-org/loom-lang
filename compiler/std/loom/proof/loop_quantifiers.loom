@@ -1,4 +1,4 @@
-// Local scalar rules stay cheap. Admitted quantified and IEEE obligations
+// Local scalar rules stay cheap. Admitted integer, quantified and IEEE obligations
 // share the existing solver; theory combinations still need exact encoding.
 fn loop_solver_fact(value Predicate) Bool {
     match value {
@@ -7,6 +7,7 @@ fn loop_solver_fact(value Predicate) Bool {
         Predicate.BagEqual(_, _, _, _) => true
         Predicate.ArrayPrefix(_, _, _) => true
         Predicate.FloatCompare(_, _, _) => true
+        Predicate.IntegerCompare(_, _, _) => true
         Predicate.And(values) => loop_solver_fact(get(values, 0)) || loop_solver_fact(get(values, 1))
         Predicate.Or(values) => loop_solver_fact(get(values, 0)) || loop_solver_fact(get(values, 1))
         Predicate.Not(values) => loop_solver_fact(get(values, 0))
@@ -63,6 +64,47 @@ fn propose_quantified(proof Verification, candidates List[LoopCandidate], value 
         Result.Err(_) => {
         }
     }
+}
+
+// Leading source assertions can suggest relations beyond the automatic affine
+// rules. They remain runtime assertions, never assumptions supplied by the user.
+// Reuse entry and backedge validation, and keep proposals at the same scalar
+// boundary as immutable entry guards. A heap read or an effectful loop condition
+// cannot move a body-entry observation to the head before that condition runs.
+fn loop_assertion_candidates(proof Verification, guard Expr, body Expr,
+    candidates List[LoopCandidate], entry State) {
+    if !entry_guard_expression(guard) {
+        return
+    }
+    discard loop_assertion_prefix(proof, body, candidates, entry, 64)
+}
+
+fn loop_assertion_prefix(proof Verification, body Expr,
+    candidates List[LoopCandidate], entry State, depth Int) Bool {
+    if depth <= 0 || length(candidates) >= 64 {
+        return false
+    }
+    if body.kind == ExprKind.Assert {
+        let value = loop_candidate_guard(proof, get(body.children, 0))
+        if !entry_guard_expression(value) {
+            return false
+        }
+        propose_quantified(proof, candidates, value, entry)
+        return true
+    }
+    if body.kind != ExprKind.Block {
+        return false
+    }
+    // Cleanup lowering can wrap the original body in another lexical block.
+    // Traverse that prefix only; never cross an assignment or a cleanup.
+    var index = 0
+    while index < length(body.children) && length(candidates) < 64 {
+        if !loop_assertion_prefix(proof, get(body.children, index), candidates, entry, depth - 1) {
+            return false
+        }
+        index = index + 1
+    }
+    true
 }
 
 fn loop_replace_bound(value Expr, identity Int, replacement Expr) Expr {

@@ -5,6 +5,13 @@ implementation, not a compatibility ledger for previous prototypes.
 
 ## Unreleased
 
+- Propose scalar loop invariants from leading ordinary assertions, with checked
+  entry and every-backedge induction through the existing integer SMT theory.
+  Prove square/triangular relations without new syntax or trusted annotations;
+  retain runtime assertions, cleanup ordering and conservative effect boundaries.
+  Fix effectful condition induction to start before the first condition's writes,
+  preventing a repeated condition from hiding the first actual iteration.
+
 - Compose read-only callback contracts over sampled capture-cell input projections,
   including loops, versioned List/graph children and private suspension. Preserve
   actual getter/setter sharing, invalidate later reads on writes, and retain past

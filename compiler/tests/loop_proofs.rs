@@ -43,13 +43,14 @@ fn loop_induction_rechecks_edits_and_rejects_counterexamples() {
     let package = tempfile::tempdir().unwrap();
     let source = package.path().join("main.loom");
     let program = format!(
-        "{}\n{}\n{}\n{}\n{}\n{}\nfn main() {{\n    float_loop_exercise()\n    transfer_exercise()\n    transfer_content_exercise()\n    enum_transfer_exercise()\n    nested_enum_transfer_exercise()\n    opaque_exercise()\n}}\n",
+        "{}\n{}\n{}\n{}\n{}\n{}\n{}\nfn main() {{\n    assertion_exercise()\n    float_loop_exercise()\n    transfer_exercise()\n    transfer_content_exercise()\n    enum_transfer_exercise()\n    nested_enum_transfer_exercise()\n    opaque_exercise()\n}}\n",
         include_str!("../examples/loop_contracts/floats.loom"),
         include_str!("../examples/loop_contracts/transfers.loom"),
         include_str!("../examples/loop_contracts/contents.loom"),
         include_str!("../examples/loop_contracts/opaque.loom"),
         include_str!("../examples/loop_contracts/enums.loom"),
-        include_str!("../examples/loop_contracts/nested_enums.loom")
+        include_str!("../examples/loop_contracts/nested_enums.loom"),
+        include_str!("../examples/loop_contracts/assertions.loom")
     );
     let cache = package.path().join("cache");
     let check = || {
@@ -64,6 +65,32 @@ fn loop_induction_rechecks_edits_and_rejects_counterexamples() {
     success(&check());
     success(&check());
     for changed in [
+        program.replace("total = total + 2 * index + 1", "total = total + 2 * index + 2"),
+        program.replace("var total = 0", "var total = 1"),
+        program.replace("total = total + 2 * index + 1", "break"),
+        program.replace("total = total + 2 * index + 1", "return total"),
+        program.replace("total = total + 2 * index + 1", "index = index + 1\n        continue"),
+        program.replace(
+            "defer {\n            index = index + 1",
+            "defer {\n            index = index + 2",
+        ),
+        r#"
+fn next(counter List[Int]) Bool {
+    counter[0] = counter[0] + 1
+    counter[0] < 2
+}
+fn wrong() Int
+ensures result == 0 {
+    let counter = [0]
+    var total = 0
+    while next(counter) {
+        assert counter[0] >= 1
+        total = 7
+    }
+    total
+}
+"#
+        .to_owned(),
         program.replace("processed = processed + 1", "processed = processed + 2"),
         program.replacen("output = append(output, item)", "output = append(output, 0)", 1),
         format!(

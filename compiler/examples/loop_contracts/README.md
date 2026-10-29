@@ -26,7 +26,17 @@ Constant affine assignments also suggest weighted pair relations. The
 counters, including lexical cleanup and compile-time calls. These suggestions
 reuse the same mathematical arithmetic and induction checks, not a second
 executor or trusted update-pattern rule. General multi-local affine synthesis
-and nonlinear invariants remain outside this candidate generator.
+remains outside this candidate generator.
+
+Leading ordinary `assert` statements can also propose immutable scalar relations.
+The [assertion example](assertions.loom) proves square and triangular sums,
+including a finite pure helper, `continue` and lexical cleanup. These predicates
+use the same entry/all-backedge checks and the existing integer SMT theory;
+failed or unknown proposals supply no facts. The assertions still execute at
+runtime. This proposal path stops before other statements and requires an
+immutable scalar loop condition; heap observations and effectful conditions do
+not move from body entry to the loop head. Nonlinear invariants are not synthesized
+automatically, and arbitrary nonlinear arithmetic need not be decidable.
 
 The [helper example](helper_affine.loom) derives coefficients from finite pure
 helpers and exact checked scalar/inline-field summaries, including generic/dyn
@@ -72,6 +82,8 @@ during each inference recheck. Scalar lexical cleanup executes in its checked
 order before the jump; return values retain their pre-cleanup snapshots.
 Direct body and guard calls reuse verified summaries or finite pure expansion.
 Guard results are reevaluated at each tested head, not assumed stable by spelling.
+Effectful conditions start induction from the state before their first evaluation;
+their writes cannot run twice before the first body in the proof model.
 Pure expansion can propose bounds for guards such as `below(value, limit)`;
 those proposals pass the same entry/backedge checks as direct comparisons.
 Unmodeled effects and resource cleanup reject in a required proof;

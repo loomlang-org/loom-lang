@@ -1,0 +1,67 @@
+fn rejected_loop_assertion(source Text, diagnostic Text) {
+    assert match list_constraint_checked(source) {
+        Result.Err(failed) => std.text.contains(failed.diagnostic.message, diagnostic)
+        Result.Ok(_) => false
+    }
+}
+
+test fn unproved_polynomial_induction_still_requires_a_solver() {
+    // Public checker fixtures have no solver; the native example proves this
+    // relation with the CLI backend, including cleanup and continue backedges.
+    rejected_loop_assertion("""
+        fn square_relation(total Int, cursor Int) Bool {
+            total == cursor * cursor
+        }
+        fn squares(limit Int) Int
+        requires limit >= 0 && limit <= 1000000
+        ensures result == limit * limit {
+            var cursor = 0
+            var total = 0
+            while cursor < limit {
+                assert square_relation(total, cursor)
+                defer {
+                    cursor = cursor + 1
+                }
+                total = total + 2 * cursor + 1
+                continue
+            }
+            total
+        }
+        """, "postcondition")
+}
+
+test fn body_assertions_do_not_hide_effectful_guards_or_early_exits() {
+    rejected_loop_assertion("""
+        fn next(counter List[Int]) Bool {
+            counter[0] = counter[0] + 1
+            counter[0] < 2
+        }
+        fn wrong() Int
+        ensures result == 0 {
+            let counter = [0]
+            var total = 0
+            while next(counter) {
+                assert counter[0] >= 1
+                total = 7
+            }
+            total
+        }
+        """, "postcondition")
+    rejected_loop_assertion("""
+        fn positive(value Int) Bool {
+            value > 0
+        }
+        fn wrong() Int
+        ensures result == 0 {
+            var value = 0
+            while positive({
+                value = value + 1
+                value
+            }) {
+                assert value > 0
+                break
+            }
+            value
+        }
+        """, "unsupported effect or control flow")
+}

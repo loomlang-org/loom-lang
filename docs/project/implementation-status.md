@@ -379,7 +379,11 @@ supported theories and boundaries. The central rules are:
   Bounded synchronous recursive groups retain checked storage frames
   only after all reachable bodies and actual arguments pass the same effect rules.
 - Loop candidates need entry and every-backedge proof; losing a candidate
-  rechecks dependents. Quantified prefix/suffix cuts follow actual integer expressions, including
+  rechecks dependents. Leading ordinary assertions can propose immutable scalar
+  invariants, including nonlinear integer relations and finite pure helpers,
+  under an immutable scalar loop condition. They retain their runtime checks;
+  entry, cleanup/backedges and every exit still need proof. Nonlinear invariants
+  are not automatically synthesized. Quantified prefix/suffix cuts follow actual integer expressions, including
   symbolic offsets and finite pure-helper composition, not enumerated offsets.
   These suggestions supply no facts before induction succeeds.
   Conditional result tails contribute terminal access paths through nested
