@@ -546,11 +546,13 @@ fn entered_loop(proof Verification, expr Expr, entry State, writes List[Bool], d
     // Reserve identity proposals before optional affine pairs. Length relations
     // cannot displace the headers needed to retain checked storage provenance.
     var headers = loop_header_candidates(proof, candidates, writes, observed)?
+    // Explicit source relations take priority over speculative affine pairs.
+    // Their entry and every-backedge obligations remain unchanged.
+    loop_assertion_candidates(proof, guard, body, candidates, observed)
     loop_prefix_candidates(proof, expr, candidates, writes, resized, observed)
     discard loop_affine_candidates(proof, guard, body, candidates, writes, observed)?
     discard loop_observation_candidates(proof, expr, candidates, writes, resized, observed)?
     discard loop_affine_bounds(proof, candidates, observed)?
-    loop_assertion_candidates(proof, guard, body, candidates, observed)
     var head = loop_head(proof, writes, storage, candidates, headers)?
     head = loop_query_views(proof, clauses, head)
     while true {
