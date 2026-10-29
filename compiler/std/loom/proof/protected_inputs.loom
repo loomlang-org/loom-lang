@@ -9,19 +9,8 @@ pub record InputGuarantee {
 
 fn protected_verification(proof Verification, protected List[InputGuarantee]) Verification {
     Verification {
-        function = proof.function
-        program = proof.program
-        fresh = proof.fresh
-        budget = proof.budget
-        loop_control = proof.loop_control
-        query = proof.query
-        shared = proof.shared
-        preservation = proof.preservation
-        identity_stores = proof.identity_stores
         protected = protected
-        body_calls = proof.body_calls
-        capture_returns = proof.capture_returns
-        returns = proof.returns
+        ..proof
     }
 }
 

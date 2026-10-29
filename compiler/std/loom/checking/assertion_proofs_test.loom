@@ -1,0 +1,88 @@
+import std.loom.lowering.lower
+
+test fn proved_assertion_operands_stay_in_analysis_and_leave_native_lowering() {
+    let program = accepted("""
+        fn yes() Bool {
+            true
+        }
+        pub fn checked() Int
+        ensures result == 0 {
+            assert yes()
+            0
+        }
+        """)
+    let target = get(program.exports, 0)
+    let source = get(program.functions, target)
+    assert has_assertion(source.body, 1)
+    assert dynamic_count(source.body, ExprKind.Call) == 1
+    let lowered = lower(program)
+    assert dynamic_count(get(lowered.functions, target).body, ExprKind.Assert) == 0
+    assert dynamic_count(get(lowered.functions, target).body, ExprKind.Call) == 0
+    assert dynamic_count(get(program.functions, target).body, ExprKind.Assert) == 1
+    assert dynamic_count(get(program.functions, target).body, ExprKind.Call) == 1
+}
+
+test fn assertion_elision_needs_effect_and_complete_evaluation_proofs() {
+    let programs = ["""
+            fn yes(state List[Int]) Bool
+            ensures result {
+                state[0] = 7
+                true
+            }
+            pub fn checked(state List[Int]) Int
+            ensures result == 0 {
+                assert yes(state)
+                0
+            }
+            """, """
+            fn yes(value Int) Bool {
+                true
+            }
+            pub fn checked(value Int) Int
+            ensures result == 0 {
+                assert yes(1 / value)
+                0
+            }
+            """, """
+            fn yes(value Int) Bool {
+                let ignored = 1 / value
+                true
+            }
+            pub fn checked(value Int) Int
+            ensures result == 0 {
+                assert yes(value)
+                0
+            }
+            """, """
+            fn yes() Bool {
+                assert false
+                true
+            }
+            pub fn checked() Int
+            ensures result == 0 {
+                assert yes()
+                0
+            }
+            """, """
+            fn yes() Bool
+            ensures result {
+                while true {
+                }
+                true
+            }
+            pub fn checked() Int
+            ensures result == 0 {
+                assert yes()
+                0
+            }
+            """]
+    var index = 0
+    while index < length(programs) {
+        let program = accepted(get(programs, index))
+        let function = get(program.functions, get(program.exports, 0))
+        assert !has_assertion(function.body, 1)
+        let lowered = lower(program)
+        assert dynamic_count(get(lowered.functions, get(program.exports, 0)).body, ExprKind.Assert) == 1
+        index = index + 1
+    }
+}

@@ -26,42 +26,23 @@ fn verify_preservation(program Program, function Function, backend ProofBackend,
         index = index + 1
     }
     let persistent = Verification {
-        function = proof.function
-        program = proof.program
-        fresh = proof.fresh
-        budget = proof.budget
-        loop_control = proof.loop_control
-        query = proof.query
-        shared = proof.shared
         preservation = conditions
         identity_stores = identity
-        protected = proof.protected
-        body_calls = proof.body_calls
         capture_returns = true
         returns = new[Outcome]()
+        ..proof
     }
     verify_body(persistent, protected, allocations, entries)
 }
 
 fn with_loop_returns(proof Verification) Verification {
     Verification {
-        function = proof.function
-        program = proof.program
-        fresh = proof.fresh
-        budget = proof.budget
-        loop_control = proof.loop_control
-        query = proof.query
-        shared = proof.shared
-        preservation = proof.preservation
-        identity_stores = proof.identity_stores
-        protected = proof.protected
-        body_calls = proof.body_calls
-        capture_returns = proof.capture_returns
         returns = if proof.capture_returns {
             new[Outcome]()
         } else {
             proof.returns
         }
+        ..proof
     }
 }
 
@@ -70,19 +51,8 @@ fn with_loop_returns(proof Verification) Verification {
 // access; only a primitive store's already-guarded transition uses this view.
 fn preservation_snapshot(proof Verification) Verification {
     Verification {
-        function = proof.function
-        program = proof.program
-        fresh = proof.fresh
-        budget = proof.budget
-        loop_control = proof.loop_control
-        query = proof.query
         shared = false
-        preservation = proof.preservation
-        identity_stores = proof.identity_stores
-        protected = proof.protected
-        body_calls = proof.body_calls
-        capture_returns = proof.capture_returns
-        returns = proof.returns
+        ..proof
     }
 }
 

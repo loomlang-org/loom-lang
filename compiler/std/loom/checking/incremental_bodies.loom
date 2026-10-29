@@ -522,7 +522,11 @@ fn body_expression(env Environment, reuse BodyReuse, value Expr, owner Int, offs
             } else {
                 value.text
             }
-            index = if value.kind == ExprKind.Call || value.kind == ExprKind.TaskCall || value.kind == ExprKind.FunctionRef ||
+            // Replayed source retains its condition. A callee body may change
+            // without changing the ordinary body-cache typing dependencies.
+            index = if value.kind == ExprKind.Assert && value.index > 0 {
+                2
+            } else if value.kind == ExprKind.Call || value.kind == ExprKind.TaskCall || value.kind == ExprKind.FunctionRef ||
             value.kind == ExprKind.ClosureEnvironment {
                 body_target(env, reuse, value.index)?
             } else {

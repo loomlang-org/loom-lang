@@ -236,9 +236,17 @@ fn checked_contracts(context Context, id Int, source Function) Result[Function, 
         source
     }
     if has_ensures {
-        let completed = completed_contract(context, id, function)
-        if length(completed) != 0 {
-            return Result.Ok(with_contracts(function, function.preconditions, completed))
+        match completed_contract(context, id, function) {
+            Option.Some(completed) => {
+                let checked = with_contracts(function, function.preconditions, completed.postconditions)
+                return Result.Ok(if completed.assertions_checked {
+                        with_assertion_keys(checked, function_identities(context.env, length(context.env.pending)), completed.assertions)
+                    } else {
+                        pending_assertion_proofs(checked)
+                    })
+            }
+            Option.None => {
+            }
         }
     }
     let family_proved = has_ensures && completed_pack_contract(context.env, id)
@@ -259,15 +267,15 @@ fn checked_contracts(context Context, id Int, source Function) Result[Function, 
         }
         let checked = with_source_contracts(context, function, function.preconditions, conditions)
         if family_proved {
-            return certified_contract(context, id, checked)
+            return certified_contract(context, id, pending_assertion_proofs(checked), false)
         }
-        match verify_with_types(context.env.types, checked, backend) {
-            Result.Ok(_) => certified_contract(context, id, checked)
+        match proved_scalar_contract(context, context.env.types, checked, backend, new[InputGuarantee]()) {
+            Result.Ok(proved) => certified_contract(context, id, proved, true)
             Result.Err(message) => {
                 match expanded_invariant_types(context, checked) {
-                    Result.Ok(types) => match verify_with_types(types, checked, backend, continuing_sequence_guarantees(context.env)) {
-                        Result.Ok(_) => {
-                            return certified_contract(context, id, checked)
+                    Result.Ok(types) => match proved_scalar_contract(context, types, checked, backend, continuing_sequence_guarantees(context.env)) {
+                        Result.Ok(proved) => {
+                            return certified_contract(context, id, proved, true)
                         }
                         Result.Err(_) => {
                         }
@@ -309,26 +317,29 @@ fn checked_contracts(context Context, id Int, source Function) Result[Function, 
             push(position, 0)
             proof = with_body(proof, proof_dynamic_calls(proof.body, first, position, summaries))
         }
-        let checked = if family_proved {
+        let checked Result[Function, Text] = if family_proved {
             // Rebind/normalize the selected clauses; never copy erased locals
             // or replay the already proved family body. Helper, resource and
             // Task checks above remain authoritative for this specialization.
-            normalized_postconditions(program, proof)
+            match normalized_postconditions(program, proof) {
+                Result.Ok(conditions) => Result.Ok(pending_assertion_proofs(with_contracts(function, function.preconditions, conditions)))
+                Result.Err(message) => Result.Err(message)
+            }
         } else {
-            verify_with_helpers(program, proof, backend)
+            proved_helper_contract(context, program, proof, function, backend, new[InputGuarantee]())
         }
         match checked {
-            Result.Ok(conditions) => {
+            Result.Ok(proved) => {
                 // Ensures are already proved. Normalized clauses retain
                 // check-local instance identities, never private queue indices
                 // or new runtime roots.
-                certified_contract(context, id, with_contracts(function, function.preconditions, conditions))
+                certified_contract(context, id, proved, !family_proved)
             }
             Result.Err(message) => {
                 match expanded_invariant_types(stage, proof) {
-                    Result.Ok(types) => match verify_with_helpers(proof_types(program, types), proof, backend, continuing_sequence_guarantees(stage.env)) {
-                        Result.Ok(conditions) => {
-                            return certified_contract(context, id, with_contracts(function, function.preconditions, conditions))
+                    Result.Ok(types) => match proved_helper_contract(context, proof_types(program, types), proof, function, backend, continuing_sequence_guarantees(stage.env)) {
+                        Result.Ok(proved) => {
+                            return certified_contract(context, id, proved, true)
                         }
                         Result.Err(remaining) => {
                             return Result.Err(error(context, node, remaining))

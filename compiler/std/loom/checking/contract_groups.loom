@@ -9,7 +9,7 @@ fn retain_group_contracts(stage Context, functions List[Function], contexts List
         let clauses = get(conditions, index)
         if length(clauses) != 0 {
             retain_contract(get(contexts, index), instance.signature,
-                with_contracts(function, function.preconditions, clauses))
+                with_contracts(function, function.preconditions, clauses), false)
         }
         index = index + 1
     }
@@ -39,21 +39,24 @@ fn prepared_contract_group(stage Context, root Function, body_calls Bool) Result
                 let node = symbol(stage.env, built.context.signature.symbol).node
                 let completed = completed_contract(built.context, instance.signature, built.function)
                 let family_proved = completed_pack_contract(stage.env, instance.signature)
-                let clauses = if length(completed) != 0 {
-                    completed
-                } else {
-                    add_contracts(contracts(built.context, node, NodeKind.Ensures)?,
+                var already_proved = false
+                let clauses = match completed {
+                    Option.Some(saved) => {
+                        already_proved = true
+                        saved.postconditions
+                    }
+                    Option.None => add_contracts(contracts(built.context, node, NodeKind.Ensures)?,
                         inherited_contracts(built.context, NodeKind.Ensures)?)
                 }
                 let function = with_contracts(built.function, built.function.preconditions, clauses)
                 let summaries = new[Function]()
-                if length(completed) == 0 && !family_proved && length(clauses) != 0 {
+                if !already_proved && !family_proved && length(clauses) != 0 {
                     // Contract helpers may schedule more source instances;
                     // collect them before closing the source worklist.
                     discard collect_dynamic_contracts(built.context, function.body, summaries)?
                 }
                 push(functions, function)
-                push(members, length(completed) == 0 && !family_proved)
+                push(members, !already_proved && !family_proved)
                 push(contexts, built.context)
                 push(dynamic, summaries)
             }

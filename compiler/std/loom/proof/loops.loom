@@ -27,19 +27,8 @@ record LoopControl {
 
 fn with_loop_control(proof Verification, control Option[LoopControl]) Verification {
     Verification {
-        function = proof.function
-        program = proof.program
-        fresh = proof.fresh
-        budget = proof.budget
         loop_control = control
-        query = proof.query
-        shared = proof.shared
-        preservation = proof.preservation
-        identity_stores = proof.identity_stores
-        protected = proof.protected
-        body_calls = proof.body_calls
-        capture_returns = proof.capture_returns
-        returns = proof.returns
+        ..proof
     }
 }
 

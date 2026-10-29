@@ -71,6 +71,7 @@ fn verification(function Function, program Program, backend ProofBackend) Verifi
         body_calls = new[Int]()
         capture_returns = false
         returns = new[Outcome]()
+        assertions = Option.None
     }
 }
 

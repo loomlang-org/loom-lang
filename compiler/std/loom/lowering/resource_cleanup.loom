@@ -76,13 +76,16 @@ fn resource_drain(program Program, source Function, value Expr, children List[Ex
     resource_drain_call(program, value, receiver, target, length(children) - 1)
 }
 
-fn resource_cleanup_expression(program Program, source Function, value Expr, callbacks List[Int], counts List[Int]) Expr {
+fn native_source_expression(program Program, source Function, value Expr, callbacks List[Int], counts List[Int]) Expr {
+    if value.kind == ExprKind.Assert && value.index == 1 {
+        return empty(value.span)
+    }
     // Defer and every normal exit share the same typed traversal. Its anonymous
     // element binding is unique within the source function.
     if value.kind == ExprKind.ResourceDrain {
         if get(callbacks, value.index) >= 0 {
             return resource_drain_call(program, value,
-                resource_cleanup_expression(program, source, get(value.children, 0), callbacks, counts),
+                native_source_expression(program, source, get(value.children, 0), callbacks, counts),
                 get(callbacks, value.index), get(counts, value.index))
         }
         // Publish the callback signature before walking descendants. Recursive
@@ -99,7 +102,7 @@ fn resource_cleanup_expression(program Program, source Function, value Expr, cal
     let children = new[Expr]()
     var index = 0
     while index < length(value.children) {
-        push(children, resource_cleanup_expression(program, source, get(value.children, index), callbacks, counts))
+        push(children, native_source_expression(program, source, get(value.children, index), callbacks, counts))
         index = index + 1
     }
     if value.kind == ExprKind.ResourceDrain {
@@ -112,7 +115,7 @@ fn resource_cleanup_expression(program Program, source Function, value Expr, cal
         let body = new[Expr]()
         var member = 0
         while member < length(arm.body) {
-            push(body, resource_cleanup_expression(program, source, get(arm.body, member), callbacks, counts))
+            push(body, native_source_expression(program, source, get(arm.body, member), callbacks, counts))
             member = member + 1
         }
         push(arms, Arm {
@@ -135,7 +138,8 @@ fn resource_cleanup_expression(program Program, source Function, value Expr, cal
     }
 }
 
-fn resource_cleanup_program(source Program) Program {
+fn native_source_program(source Program) Program {
+    var proved_assertions = false
     let program = Program {
         function_identities = source.function_identities
         types = clone(source.types)
@@ -156,7 +160,9 @@ fn resource_cleanup_program(source Program) Program {
             has_scope = get(function.locals, local).is_scoped
             local = local + 1
         }
-        if has_scope {
+        let proved = has_assertion_proof(function.body)
+        proved_assertions = proved_assertions || proved
+        if has_scope || proved {
             let callbacks = new[Int]()
             let counts = new[Int]()
             local = 0
@@ -165,11 +171,11 @@ fn resource_cleanup_program(source Program) Program {
                 push(counts, 0)
                 local = local + 1
             }
-            let body = resource_cleanup_expression(program, function, function.body, callbacks, counts)
+            let body = native_source_expression(program, function, function.body, callbacks, counts)
             let result_cleanup = new[Expr]()
             local = 0
             while local < length(function.result_cleanup) {
-                push(result_cleanup, resource_cleanup_expression(program, function,
+                push(result_cleanup, native_source_expression(program, function,
                         get(function.result_cleanup, local), callbacks, counts))
                 local = local + 1
             }
@@ -191,9 +197,35 @@ fn resource_cleanup_program(source Program) Program {
         }
         index = index + 1
     }
-    if length(program.functions) == length(source.functions) {
+    if !proved_assertions && length(program.functions) == length(source.functions) {
         source
     } else {
         program
     }
+}
+
+fn has_assertion_proof(value Expr) Bool {
+    if value.kind == ExprKind.Assert && value.index == 1 {
+        return true
+    }
+    var index = 0
+    while index < length(value.children) {
+        if has_assertion_proof(get(value.children, index)) {
+            return true
+        }
+        index = index + 1
+    }
+    index = 0
+    while index < length(value.arms) {
+        let body = get(value.arms, index).body
+        var item = 0
+        while item < length(body) {
+            if has_assertion_proof(get(body, item)) {
+                return true
+            }
+            item = item + 1
+        }
+        index = index + 1
+    }
+    false
 }

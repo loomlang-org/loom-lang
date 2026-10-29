@@ -26,6 +26,7 @@ record Verification {
     body_calls List[Int]
     capture_returns Bool
     returns List[Outcome]
+    assertions Option[List[AssertionCheck]]
 }
 
 record RecordPath {
@@ -718,6 +719,9 @@ fn execute_expression(proof Verification, expr Expr, state State, depth Int) Res
         return Result.Ok(new[Outcome]())
     }
     if expr.kind == ExprKind.Let || expr.kind == ExprKind.Assign || expr.kind == ExprKind.Return || expr.kind == ExprKind.Assert || expr.kind == ExprKind.Discard {
+        if expr.kind == ExprKind.Assert {
+            observe_assertion(proof, expr, state)
+        }
         let values = execute(proof, get(expr.children, 0), state, depth - 1)?
         let output = new[Outcome]()
         var index = 0
@@ -925,22 +929,13 @@ fn verify_entered(proof Verification, state State, continuation Bool) Result[Boo
     let observed_function = snapshot_function(function, captured.conditions)
     let prepared = Verification {
         function = observed_function
-        program = proof.program
-        fresh = proof.fresh
-        budget = proof.budget
-        loop_control = proof.loop_control
-        query = proof.query
-        shared = proof.shared
-        preservation = proof.preservation
-        identity_stores = proof.identity_stores
-        protected = proof.protected
-        body_calls = proof.body_calls
         capture_returns = proof.capture_returns || continuation
         returns = if continuation {
             new[Outcome]()
         } else {
             proof.returns
         }
+        ..proof
     }
     let exits = execute(prepared, function.body, captured.state, 256)?
     var index = 0
@@ -1058,17 +1053,7 @@ fn contract_verification(program Program, function Function, backend ProofBacken
     let expanded = expanded_contracts(program, function, ordinary.fresh)?
     Result.Ok(Verification {
             function = expanded
-            program = ordinary.program
-            fresh = ordinary.fresh
-            budget = ordinary.budget
-            loop_control = ordinary.loop_control
-            query = ordinary.query
             shared = shared
-            preservation = ordinary.preservation
-            identity_stores = ordinary.identity_stores
-            protected = ordinary.protected
-            body_calls = ordinary.body_calls
-            capture_returns = ordinary.capture_returns
-            returns = ordinary.returns
+            ..ordinary
         })
 }

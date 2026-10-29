@@ -3854,9 +3854,15 @@ non-assertion statement, including cleanup registration; it follows lexical
 wrappers introduced by cleanup lowering.
 Each proposal must hold on entry and every normal/`continue` backedge, after
 lexical cleanup. The existing integer SMT theory handles unresolved nonlinear
-steps; unknown, timeout or a disabled backend grants no invariant. Runtime
-assertions remain in place, and no additional checks are generated to establish
-the declared postcondition. See the [scalar](examples/loop_contracts/assertions.loom)
+steps; unknown, timeout or a disabled backend grants no invariant. Native lowering
+can remove an assertion when the required body proof also establishes that its
+complete operand is pure, defined and true on every visited path and induction
+pass. A helper's normal-return guarantee alone cannot justify dropping argument
+effects, faults or divergence. Checked source and editor views retain the
+condition; body-cache reuse and shared-worker programs revalidate this evidence.
+Assertions in cleanup retain their runtime checks because normal-return proofs
+do not cover fault/cancellation entry. No additional checks are generated to
+establish the declared postcondition. See the [scalar](examples/loop_contracts/assertions.loom)
 and [storage](examples/loop_contracts/storage_assertions.loom) examples.
 This does not automatically synthesize nonlinear invariants or prove termination.
 
