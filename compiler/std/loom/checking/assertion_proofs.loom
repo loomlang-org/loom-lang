@@ -1,0 +1,223 @@
+import std.loom.proof.AssertionCheck
+import std.loom.proof.prove_contract
+
+// Assert.index: 1 is proved for this check; 2 requires revalidation after body
+// reuse. The condition stays intact for analysis, worker checks and snapshots.
+fn has_assertion(value Expr, pending Bool) Bool {
+    if value.kind == ExprKind.Assert && (!pending || value.index == 2) {
+        return true
+    }
+    var index = 0
+    while index < length(value.children) {
+        if has_assertion(get(value.children, index), pending) {
+            return true
+        }
+        index = index + 1
+    }
+    index = 0
+    while index < length(value.arms) {
+        let arm = get(value.arms, index)
+        var item = 0
+        while item < length(arm.body) {
+            if has_assertion(get(arm.body, item), pending) {
+                return true
+            }
+            item = item + 1
+        }
+        index = index + 1
+    }
+    false
+}
+
+fn assertion_expressions(values List[Expr], identities List[Int], budget List[Int]) Result[List[Expr], Text] {
+    let output = new[Expr]()
+    var index = 0
+    while index < length(values) {
+        push(output, assertion_expression(get(values, index), identities, budget)?)
+        index = index + 1
+    }
+    Result.Ok(output)
+}
+
+// Proof queues and emitted queues use the same checked source specialization
+// identities. Raw queue indices and source locations alone are insufficient.
+fn assertion_expression(value Expr, identities List[Int], budget List[Int]) Result[Expr, Text] {
+    if get(budget, 0) <= 0 {
+        return Result.Err("assertion identity budget exhausted")
+    }
+    set(budget, 0, get(budget, 0) - 1)
+    var target = value.index
+    if value.kind == ExprKind.Assert {
+        target = -1
+    }
+    if value.kind == ExprKind.Call || value.kind == ExprKind.TaskCall ||
+    value.kind == ExprKind.FunctionRef || value.kind == ExprKind.ClosureEnvironment {
+        if target < 0 || target >= length(identities) || get(identities, target) < 0 {
+            return Result.Err("assertion needs a checked source call identity")
+        }
+        target = get(identities, target)
+    }
+    let arms = new[Arm]()
+    var index = 0
+    while index < length(value.arms) {
+        let arm = get(value.arms, index)
+        push(arms, Arm {
+                body = assertion_expressions(arm.body, identities, budget)?
+                ..arm
+            })
+        index = index + 1
+    }
+    Result.Ok(Expr {
+            index = target
+            children = assertion_expressions(value.children, identities, budget)?
+            arms = arms
+            ..value
+        })
+}
+
+fn same_assertion_expression(left Expr, right Expr, budget List[Int]) Bool {
+    if get(budget, 0) <= 0 || left.kind != right.kind || left.ty != right.ty ||
+    left.text != right.text || left.index != right.index || left.falls != right.falls ||
+    length(left.children) != length(right.children) || length(left.arms) != length(right.arms) {
+        return false
+    }
+    set(budget, 0, get(budget, 0) - 1)
+    var index = 0
+    while index < length(left.children) {
+        if !same_assertion_expression(get(left.children, index), get(right.children, index), budget) {
+            return false
+        }
+        index = index + 1
+    }
+    index = 0
+    while index < length(left.arms) {
+        let a = get(left.arms, index)
+        let b = get(right.arms, index)
+        if a.variant != b.variant || a.whole != b.whole || !same(a.bindings, b.bindings) ||
+        length(a.body) != length(b.body) {
+            return false
+        }
+        var item = 0
+        while item < length(a.body) {
+            if !same_assertion_expression(get(a.body, item), get(b.body, item), budget) {
+                return false
+            }
+            item = item + 1
+        }
+        index = index + 1
+    }
+    true
+}
+
+fn same_assertion(left Expr, right Expr) Bool {
+    left.span.start == right.span.start && left.span.end == right.span.end &&
+    same_assertion_expression(left, right, [2048])
+}
+
+fn assertion_keys(identities List[Int], checks List[AssertionCheck]) List[Expr] {
+    let keys = new[AssertionCheck]()
+    var index = 0
+    var any = false
+    while index < length(checks) {
+        any = any || get(checks, index).proved
+        index = index + 1
+    }
+    if !any {
+        return []
+    }
+    index = 0
+    while index < length(checks) {
+        let check = get(checks, index)
+        let key = match assertion_expression(check.expression, identities, [2048]) {
+            Result.Ok(value) => value
+            Result.Err(_) => {
+                return []
+            }
+        }
+        push(keys, AssertionCheck {
+                expression = key
+                proved = check.proved
+            })
+        index = index + 1
+    }
+    let proved = new[Expr]()
+    index = 0
+    while index < length(keys) {
+        let candidate = get(keys, index)
+        var valid = candidate.proved
+        var other = 0
+        while valid && other < length(keys) {
+            let observed = get(keys, other)
+            if !observed.proved && same_assertion(candidate.expression, observed.expression) {
+                valid = false
+            }
+            other = other + 1
+        }
+        if valid {
+            push(proved, candidate.expression)
+        }
+        index = index + 1
+    }
+    proved
+}
+
+fn assertion_markers(value Expr, identities List[Int], keys List[Expr], clear Bool) Expr {
+    var marker = value.index
+    if value.kind == ExprKind.Assert {
+        marker = -1
+        if !clear && length(keys) != 0 {
+            match assertion_expression(value, identities, [2048]) {
+                Result.Ok(key) => {
+                    var index = 0
+                    while index < length(keys) {
+                        if same_assertion(key, get(keys, index)) {
+                            marker = 1
+                        }
+                        index = index + 1
+                    }
+                }
+                Result.Err(_) => {
+                }
+            }
+        }
+    }
+    let children = new[Expr]()
+    var index = 0
+    while index < length(value.children) {
+        push(children, assertion_markers(get(value.children, index), identities, keys, clear))
+        index = index + 1
+    }
+    let arms = new[Arm]()
+    index = 0
+    while index < length(value.arms) {
+        let arm = get(value.arms, index)
+        let body = new[Expr]()
+        var item = 0
+        while item < length(arm.body) {
+            push(body, assertion_markers(get(arm.body, item), identities, keys, clear))
+            item = item + 1
+        }
+        push(arms, Arm {
+                body = body
+                ..arm
+            })
+        index = index + 1
+    }
+    Expr {
+        index = marker
+        children = children
+        arms = arms
+        ..value
+    }
+}
+
+fn with_assertion_proofs(function Function, identities List[Int], proof_ids List[Int], checks List[AssertionCheck]) Function {
+    with_body(function, assertion_markers(function.body, identities, assertion_keys(proof_ids, checks), false))
+}
+
+fn without_assertion_proofs(function Function) Function {
+    if !has_assertion(function.body, false) {
+        return function
+    }
+    with_body(function, assertion_markers(function.body, [], [], true))
+}
