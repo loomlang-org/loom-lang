@@ -561,6 +561,7 @@ fn entered_loop(proof Verification, expr Expr, entry State, writes List[Bool], d
     discard loop_affine_candidates(proof, guard, body, candidates, writes, observed)?
     discard loop_observation_candidates(proof, expr, candidates, writes, resized, observed)?
     discard loop_affine_bounds(proof, candidates, observed)?
+    loop_assertion_candidates(proof, guard, body, candidates, observed)
     var head = loop_head(proof, writes, storage, candidates, headers)?
     head = loop_query_views(proof, clauses, head)
     head = loop_candidate_views(proof, candidates, head)
@@ -710,7 +711,16 @@ fn loop_outcomes(proof Verification, expr Expr, state State, depth Int) Result[L
             })?
         let entry = assume(condition.state, fact)
         if !loop_holds(Predicate.Constant(false), entry) {
-            discard append(output, entered_loop(proof, expr, entry, writes, depth - 1)?)?
+            // Induction executes the condition at its abstract head. Only an
+            // immutable scalar condition can reuse its already-tested entry.
+            // Otherwise start before the first evaluation: its writes must not
+            // run twice before the first body or hide an actual iteration.
+            let initial = if entry_guard_expression(get(expr.children, 0)) {
+                entry
+            } else {
+                state
+            }
+            discard append(output, entered_loop(proof, expr, initial, writes, depth - 1)?)?
         }
         index = index + 1
     }

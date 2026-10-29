@@ -70,6 +70,7 @@ ensures result >= 0
 }
 
 fn exercise() {
+    assertion_exercise()
     transfer_exercise()
     transfer_content_exercise()
     enum_transfer_exercise()

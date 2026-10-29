@@ -3818,9 +3818,22 @@ These mathematical candidates connect separately updated counters and symbolic
 offsets; translation syntax is not evidence and source arithmetic still needs
 its own definedness proof. Weighted scalar proposals remain guard-anchored;
 storage pairs observe affected lengths. Generation is bounded and pairwise,
-not general affine invariant synthesis. Rebinding a List preserves no
-handle identity. If a loop can both rebind handles and resize storage, all tracked
-extents are freshened before induction;
+not general affine invariant synthesis.
+
+Leading ordinary `assert` statements can propose immutable scalar invariants,
+including nonlinear relations such as `total == cursor * cursor`. Finite pure
+helpers can express the same predicates. This path requires an immutable scalar
+loop condition and stops at the first other statement, including a heap observation
+or cleanup registration; it follows lexical wrappers introduced by cleanup lowering.
+Each proposal must hold on entry and every normal/`continue` backedge, after
+lexical cleanup. The existing integer SMT theory handles unresolved nonlinear
+steps; unknown, timeout or a disabled backend grants no invariant. Runtime
+assertions remain in place, and no additional checks are generated to establish
+the declared postcondition. See the [assertion example](examples/loop_contracts/assertions.loom).
+This does not automatically synthesize nonlinear invariants or prove termination.
+
+Rebinding a List preserves no handle identity. If a loop can both rebind handles
+and resize storage, all tracked extents are freshened before induction;
 its initial binding cannot identify every later resize target. Whole-value
 reconstruction does not retain stale sibling fields. Other unsupported leaves
 are not admitted as written aggregate locals. Each candidate
@@ -3834,6 +3847,8 @@ preserving evaluated return snapshots. Guard calls execute with fresh result
 identities using verified summaries or finite pure expansion; their syntax is
 not reused as a stable invariant term. Optional pure expansion can suggest bounds,
 but contributes no assumed facts and every candidate still needs induction.
+Effectful conditions start induction before their first evaluation, so their
+writes cannot hide the first body by running twice in the proof model.
 Tagged resource cleanup uses the same checked-body analysis. Disarmed callbacks
 may skip unreachable drains; reachable unmodeled drains and heap operations in a
 required loop proof still reject. The List extent operations above are supported. The bounded

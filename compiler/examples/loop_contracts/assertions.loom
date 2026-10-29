@@ -1,0 +1,45 @@
+fn squares(count Int) Int
+requires count >= 0 && count <= 1000000
+ensures result == count * count {
+    var index = 0
+    var total = 0
+    while index < count {
+        assert total == index * index
+        total = total + 2 * index + 1
+        index = index + 1
+    }
+    total
+}
+
+fn triangular_relation(total Int, index Int) Bool {
+    2 * total == index * (index - 1)
+}
+
+fn triangular(count Int) Int
+requires count >= 0 && count <= 1000000
+ensures 2 * result == count * (count - 1) {
+    var index = 0
+    var total = 0
+    while index < count {
+        assert triangular_relation(total, index)
+        defer {
+            index = index + 1
+        }
+        total = total + index
+        if index % 2 == 0 {
+            continue
+        }
+    }
+    total
+}
+
+fn assertion_exercise() {
+    assert squares(0) == 0
+    assert squares(12) == 144
+    assert squares(1000000) == 1000000000000
+    assert triangular(0) == 0
+    assert triangular(12) == 66
+    assert comptime {
+        squares(4) + triangular(4)
+    } == 22
+}
