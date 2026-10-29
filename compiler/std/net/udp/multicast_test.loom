@@ -52,13 +52,15 @@ test async fn ipv6_membership_checks_indices_and_uses_host_interface_policy() {
                 Result.Err(UdpError.Membership) => true
                 _ => false
             }
-            // IPv6 loopback need not provide a multicast-capable default
-            // interface. If joining succeeds, leaving must succeed.
+            // Default-interface selection is host policy for both operations.
+            // Leaving may fail even after a successful join; closing the socket
+            // still drops its memberships. OS failures remain typed errors.
             match join_multicast(socket, "ff02::1", 0) {
                 Result.Ok(_) => {
                     assert match leave_multicast(socket, "ff02::1", 0) {
                         Result.Ok(_) => true
-                        Result.Err(_) => false
+                        Result.Err(UdpError.Membership) => true
+                        _ => false
                     }
                 }
                 Result.Err(UdpError.Membership) => {
