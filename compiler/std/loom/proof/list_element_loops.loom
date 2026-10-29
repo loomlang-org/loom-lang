@@ -117,23 +117,6 @@ fn loop_element_candidates(proof Verification, clauses List[Expr], candidates Li
     Result.Ok(true)
 }
 
-fn available_loop_candidates(candidates List[LoopCandidate], head State) List[LoopCandidate] {
-    let output = new[LoopCandidate]()
-    var index = 0
-    while index < length(candidates) {
-        let candidate = get(candidates, index)
-        match loop_predicate(candidate, head) {
-            Result.Ok(_) => {
-                push(output, candidate)
-            }
-            Result.Err(_) => {
-            }
-        }
-        index = index + 1
-    }
-    output
-}
-
 fn loop_candidate_preserved(proof Verification, candidate LoopCandidate, state State) Bool {
     match loop_predicate(candidate, state) {
         Result.Ok(fact) => loop_entails(proof, fact, state)

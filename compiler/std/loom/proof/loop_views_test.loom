@@ -1,0 +1,31 @@
+test fn loop_views_recheck_publication_before_assuming_guard_candidates() {
+    let state = State {
+        heap = -1
+        locals = [Value.List(10)]
+        facts = []
+        extents = []
+        observations = []
+    }
+    let entry = with_extent(10, constant(integer(1)), true, state)
+    let read = expression(ExprKind.Intrinsic, 1, "list_len", -1, [local(0)])
+    let condition = operation(">=", read, literal("0"))
+    let initial = verification(fixture(literal("0"), [], literal("true")), empty_proof_program())
+    let proof = Verification {
+        shared = true
+        ..initial
+    }
+    let candidates = [LoopCandidate.Guard(condition)]
+    assert length(loop_candidate_views(proof, candidates, entry).candidates) == 1
+    assert length(loop_candidate_views(proof, candidates, published_storage(entry)).candidates) == 0
+    let extent = get(entry.extents, 0)
+    let fixed = State {
+        extents = [ListExtent {
+                private_storage = false
+                read_only = false
+                fixed_extent = true
+                ..extent
+            }]
+        ..entry
+    }
+    assert length(loop_candidate_views(proof, candidates, fixed).candidates) == 0
+}

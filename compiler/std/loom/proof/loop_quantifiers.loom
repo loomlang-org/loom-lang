@@ -51,10 +51,16 @@ fn propose_quantified(proof Verification, candidates List[LoopCandidate], value 
     if length(candidates) >= 64 {
         return
     }
-    match pure(value, entry) {
+    let current = match loop_guard_views(proof, value, entry) {
+        Result.Ok(current) => current
+        Result.Err(_) => {
+            return
+        }
+    }
+    match pure(value, current) {
         Result.Ok(observed) => match boolean(observed) {
             Result.Ok(fact) => {
-                if loop_entails(proof, fact, entry) {
+                if loop_entails(proof, fact, current) {
                     push(candidates, LoopCandidate.Guard(value))
                 }
             }
@@ -68,9 +74,8 @@ fn propose_quantified(proof Verification, candidates List[LoopCandidate], value 
 
 // Leading source assertions can suggest relations beyond the automatic affine
 // rules. They remain runtime assertions, never assumptions supplied by the user.
-// Reuse entry and backedge validation, and keep proposals at the same scalar
-// boundary as immutable entry guards. A heap read or an effectful loop condition
-// cannot move a body-entry observation to the head before that condition runs.
+// Reuse entry/backedge validation and versioned observations. The condition
+// remains immutable: a body-entry observation cannot move before its effects.
 fn loop_assertion_candidates(proof Verification, guard Expr, body Expr,
     candidates List[LoopCandidate], entry State) {
     if !entry_guard_expression(guard) {
@@ -86,7 +91,7 @@ fn loop_assertion_prefix(proof Verification, body Expr,
     }
     if body.kind == ExprKind.Assert {
         let value = loop_candidate_guard(proof, get(body.children, 0))
-        if !entry_guard_expression(value) {
+        if !bounded_contract(value) || !observation_guard_expression(value, true) {
             return false
         }
         propose_quantified(proof, candidates, value, entry)
@@ -255,7 +260,7 @@ fn loop_quantified_candidates(proof Verification, clauses List[Expr], candidates
 fn quantified_candidate_preserved(proof Verification, candidate LoopCandidate, state State) Bool {
     match candidate {
         LoopCandidate.Guard(value) => {
-            match quantified_views(proof, value, state, false, 256) {
+            match loop_guard_views(proof, value, state) {
                 Result.Ok(current) => match loop_predicate(candidate, current) {
                     Result.Ok(fact) => loop_entails(proof, fact, current)
                     Result.Err(_) => loop_holds(Predicate.Constant(false), current)

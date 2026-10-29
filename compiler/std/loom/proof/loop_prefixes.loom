@@ -90,8 +90,16 @@ fn loop_prefix_leaves(proof Verification, candidates List[LoopCandidate], receiv
             // Keep the physical read marker: byte-domain facts belong only
             // to Bytes, even though both containers use the sequence algebra.
             let bytes = shape.kind == TypeKind.Bytes
-            let read = if bytes { "bytes_get" } else { "list_get" }
-            let size_operation = if bytes { "bytes_len" } else { "list_len" }
+            let read = if bytes {
+                "bytes_get"
+            } else {
+                "list_get"
+            }
+            let size_operation = if bytes {
+                "bytes_len"
+            } else {
+                "list_len"
+            }
             let extent = match list_state(identity, entry) {
                 Result.Ok(value) => value
                 Result.Err(_) => {
@@ -112,7 +120,11 @@ fn loop_prefix_leaves(proof Verification, candidates List[LoopCandidate], receiv
                             let limit = proof_expr(receiver, ExprKind.Binary, 2, "<=", -1, proof_children(end, size))
                             let bound = -1 - array_identity(proof)
                             let index = proof_expr(receiver, ExprKind.Intrinsic, 1, "proof_bound", bound, new[Expr]())
-                            let ty = if bytes { 1 } else { get(shape.arguments, 0) }
+                            let ty = if bytes {
+                                1
+                            } else {
+                                get(shape.arguments, 0)
+                            }
                             loop_prefix_columns(proof, candidates,
                                 proof_expr(receiver, ExprKind.Intrinsic, ty, read, -1, proof_children(receiver, index)),
                                 proof_expr(before, ExprKind.Intrinsic, ty, read, -1, proof_children(before, index)),
@@ -171,20 +183,4 @@ fn loop_prefix_candidates(proof Verification, expr Expr, candidates List[LoopCan
         }
         local = local + 1
     }
-}
-
-fn loop_candidate_views(proof Verification, candidates List[LoopCandidate], state State) State {
-    var current = state
-    var index = 0
-    while index < length(candidates) {
-        match get(candidates, index) {
-            LoopCandidate.Guard(value) => {
-                current = loop_query_views(proof, [value], current)
-            }
-            _ => {
-            }
-        }
-        index = index + 1
-    }
-    current
 }

@@ -1,0 +1,114 @@
+import std.bytes.new
+import std.bytes.push
+import std.list.push
+import std.time.sleep_ms
+
+fn stored_relation(total List[Int], cursor Int) Bool {
+    total[0] == cursor * cursor
+}
+
+fn stored_squares(count Int) Int
+requires count >= 0 && count <= 1000000
+ensures result == count * count {
+    let total = [0]
+    var cursor = 0
+    while cursor < count {
+        assert stored_relation(total, cursor)
+        defer {
+            cursor = cursor + 1
+        }
+        total[0] = total[0] + 2 * cursor + 1
+        continue
+    }
+    total[0]
+}
+
+fn captured_squares(count Int) Int
+requires count >= 0 && count <= 1000000
+ensures result == count * count {
+    var total = 0
+    let read = fn() Int {
+        total
+    }
+    var cursor = 0
+    while cursor < count {
+        assert total == cursor * cursor
+        total = total + 2 * cursor + 1
+        cursor = cursor + 1
+    }
+    read()
+}
+
+fn byte_squares(count Int) Int
+requires count >= 0 && count <= 10
+ensures result == count * count {
+    let total = std.bytes.new()
+    push(total, 0)
+    var cursor = 0
+    while cursor < count {
+        assert total[0] == cursor * cursor
+        total[0] = total[0] + 2 * cursor + 1
+        cursor = cursor + 1
+    }
+    total[0]
+}
+
+record StoredTotal {
+    amount Int
+    notes List[Int]
+}
+
+fn field_squares(count Int) Int
+requires count >= 0 && count <= 1000000
+ensures result == count * count {
+    let notes = [0]
+    let total = [StoredTotal {
+            amount = 0
+            notes = notes
+        }]
+    var cursor = 0
+    while cursor < count {
+        assert total[0].amount == cursor * cursor
+        push(notes, cursor)
+        let previous = total[0]
+        total[0] = StoredTotal {
+            amount = previous.amount + 2 * cursor + 1
+            notes = previous.notes
+        }
+        cursor = cursor + 1
+    }
+    total[0].amount
+}
+
+async fn waiting_squares(count Int) Int
+requires count >= 0 && count <= 10
+ensures result == count * count {
+    let total = [0]
+    var cursor = 0
+    while cursor < count {
+        assert total[0] == cursor * cursor
+        sleep_ms(1).await
+        total[0] = total[0] + 2 * cursor + 1
+        cursor = cursor + 1
+    }
+    total[0]
+}
+
+fn storage_assertion_exercise() {
+    assert stored_squares(0) == 0
+    assert stored_squares(12) == 144
+    assert captured_squares(0) == 0
+    assert captured_squares(12) == 144
+    assert byte_squares(0) == 0
+    assert byte_squares(10) == 100
+    assert field_squares(0) == 0
+    assert field_squares(12) == 144
+    assert comptime {
+        stored_squares(4) + captured_squares(4) + byte_squares(4) + field_squares(4)
+    } == 64
+}
+
+test async fn private_loop_observations_survive_wait_registration() {
+    assert waiting_squares(0).await == 0
+    assert waiting_squares(4).await == 16
+}

@@ -564,10 +564,11 @@ fn entered_loop(proof Verification, expr Expr, entry State, writes List[Bool], d
     loop_assertion_candidates(proof, guard, body, candidates, observed)
     var head = loop_head(proof, writes, storage, candidates, headers)?
     head = loop_query_views(proof, clauses, head)
-    head = loop_candidate_views(proof, candidates, head)
-    candidates = available_loop_candidates(candidates, head)
     while true {
         discard loop_step(proof)?
+        let viewed = loop_candidate_views(proof, candidates, head)
+        head = viewed.state
+        candidates = viewed.candidates
         let assumed = loop_assumptions(head, candidates)?
         // The persistent predicate holds initially and every actual store must
         // preserve it. Reintroduce that same inductive fact after heap widening,
@@ -683,8 +684,6 @@ fn entered_loop(proof Verification, expr Expr, entry State, writes List[Bool], d
             // Removing an identity hypothesis changes the abstract head itself.
             // Rebuild it and recheck dependents, exits and captured returns.
             head = loop_query_views(proof, clauses, loop_head(proof, writes, storage, candidates, headers)?)
-            head = loop_candidate_views(proof, candidates, head)
-            candidates = available_loop_candidates(candidates, head)
         }
     }
     Result.Err("loop invariant inference did not converge")
