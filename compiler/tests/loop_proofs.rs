@@ -210,3 +210,102 @@ ensures result >= 0.0 {
     fs::write(&source, &program).unwrap();
     success(&check());
 }
+
+#[test]
+fn storage_assertions_recheck_versions_aliases_and_worker_publication() {
+    let package = tempfile::tempdir().unwrap();
+    let source = package.path().join("main.loom");
+    let storage = include_str!("../examples/loop_contracts/storage_assertions.loom");
+    let program = format!(
+        r#"import std.task.worker.run
+{storage}
+async fn main() {{
+    assert run(fn() Int {{ 7 }}).await == 7
+    storage_assertion_exercise()
+    assert waiting_squares(4).await == 16
+}}
+"#
+    );
+    let cache = package.path().join("cache");
+    let check = || {
+        common::loom(&[
+            "check",
+            package.path().to_str().unwrap(),
+            "--frontend-cache",
+            cache.to_str().unwrap(),
+        ])
+    };
+    fs::write(&source, &program).unwrap();
+    success(&check());
+    success(&check());
+    let artifact = common::executable(package.path(), "storage-loops");
+    for level in ["0", "2"] {
+        success(
+            &common::command(&["build", package.path().to_str().unwrap()])
+                .arg("--output")
+                .arg(&artifact)
+                .env("LOOM_OPT_LEVEL", level)
+                .output()
+                .unwrap(),
+        );
+        success(&common::run_tasks(&artifact));
+    }
+    for changed in [
+        program.replace("total[0] + 2 * cursor + 1", "total[0] + 2 * cursor + 2"),
+        program.replace("let total = [0]", "let total = [1]"),
+        program.replace("total[0] = total[0] + 2 * cursor + 1", "break"),
+        program.replace("total[0] = total[0] + 2 * cursor + 1", "return total[0]"),
+        program.replace(
+            "cursor = cursor + 1\n        }",
+            "cursor = cursor + 2\n        }",
+        ),
+        program
+            .replace("let total = [0]", "let total = [0]\n    let alias = total")
+            .replace(
+                "total[0] = total[0] + 2 * cursor + 1",
+                "alias[0] = total[0] + 2 * cursor + 2",
+            ),
+        program.replace(
+            "total[0] = total[0] + 2 * cursor + 1",
+            "total[0] = total[0] + 2 * cursor + 1\n        defer { total[0] = 0 }",
+        ),
+        program.replace("sleep_ms(1).await", "run(fn() { total[0] = 0 }).await"),
+        program
+            .replace(
+                "    total[0] == cursor * cursor",
+                "    total[0] = cursor * cursor\n    total[0] == cursor * cursor",
+            )
+            .replace("total[0] = total[0] + 2 * cursor + 1", "total[0] = 0"),
+        r#"
+import std.list.length
+import std.task.worker.run
+
+fn shared_squares(total List[Int], count Int) Int
+requires length(total) == 1 && total[0] == 0
+requires count >= 0 && count <= 1000000
+ensures result == count * count {
+    var cursor = 0
+    while cursor < count {
+        assert total[0] == cursor * cursor
+        total[0] = total[0] + 2 * cursor + 1
+        cursor = cursor + 1
+    }
+    total[0]
+}
+async fn main() {
+    assert run(fn() Int { 7 }).await == 7
+    assert shared_squares([0], 4) == 16
+}
+"#
+        .to_owned(),
+    ] {
+        assert_ne!(changed, program, "test edit did not apply");
+        fs::write(&source, &changed).unwrap();
+        let output = check();
+        assert!(!output.status.success(), "unsound storage loop: {changed}");
+        let error = String::from_utf8_lossy(&output.stderr);
+        assert!(error.contains("proved") || error.contains("SMT"), "{error}");
+    }
+    fs::write(&source, &program).unwrap();
+    success(&check());
+}

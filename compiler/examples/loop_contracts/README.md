@@ -28,14 +28,19 @@ reuse the same mathematical arithmetic and induction checks, not a second
 executor or trusted update-pattern rule. General multi-local affine synthesis
 remains outside this candidate generator.
 
-Leading ordinary `assert` statements can also propose immutable scalar relations.
+Leading ordinary `assert` statements can also propose scalar and versioned-storage relations.
 The [assertion example](assertions.loom) proves square and triangular sums,
 including a finite pure helper, `continue` and lexical cleanup. These predicates
 use the same entry/all-backedge checks and the existing integer SMT theory;
 failed or unknown proposals supply no facts. The assertions still execute at
 runtime. This proposal path stops before other statements and requires an
-immutable scalar loop condition; heap observations and effectful conditions do
-not move from body entry to the loop head. Nonlinear invariants are not synthesized
+immutable scalar loop condition; effectful conditions do not move from body entry
+to the loop head. The [storage example](storage_assertions.loom) applies the same
+rules to List/Bytes cells, pure helpers and immutable record fields beside mutable
+children. Observations require coherent current versions at entry, each abstract
+head and every backedge; publication or unprotected sharing removes unavailable
+proposals. Private storage can survive real asynchronous wait registration.
+Nonlinear invariants are not synthesized
 automatically, and arbitrary nonlinear arithmetic need not be decidable.
 
 The [helper example](helper_affine.loom) derives coefficients from finite pure

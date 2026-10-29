@@ -1,0 +1,79 @@
+record LoopViews {
+    state State
+    candidates List[LoopCandidate]
+}
+
+// An inductive observation must denote a coherent current version, not a
+// previous scalar sample of storage that another worker may change. The same
+// rule applies at entry, each abstract head and every checked backedge.
+fn loop_guard_views(proof Verification, value Expr, state State) Result[State, Text] {
+    let current = quantified_views(proof, value, state, true, 256)?
+    loop_read_views(proof, value, current, 256)
+}
+
+fn loop_read_views(proof Verification, value Expr, state State, depth Int) Result[State, Text] {
+    if depth <= 0 {
+        return Result.Err("loop observation depth exhausted")
+    }
+    if function_layout(value) {
+        return Result.Ok(state)
+    }
+    var current = state
+    var index = 0
+    while index < length(value.children) {
+        current = loop_read_views(proof, get(value.children, index), current, depth - 1)?
+        index = index + 1
+    }
+    if list_length_expression(value) || list_read_expression(value) || cell_read_expression(value) {
+        match pure(get(value.children, 0), current)? {
+            Value.List(identity) => {
+                if proof.shared && !stable_storage(list_state(identity, current)?) {
+                    return Result.Err("loop observation is not proved interference-safe")
+                }
+            }
+            Value.EntryList(_, _) => {
+            }
+            _ => {
+                return Result.Err("loop observation requires tracked storage")
+            }
+        }
+    }
+    if value.kind == ExprKind.Intrinsic && value.text == "proof_argument" && contains_versioned_input(value) {
+        let input = pure(get(value.children, 0), current)?
+        let shape = get(get(value.children, 1).children, 0)
+        current = function_argument_state(proof, shape, input, current)?
+    }
+    Result.Ok(current)
+}
+
+// Losing a usable view removes the proposal before it can be assumed. In
+// particular, publication must not retain the earlier private-storage premise.
+fn loop_candidate_views(proof Verification, candidates List[LoopCandidate], state State) LoopViews {
+    var current = state
+    let available = new[LoopCandidate]()
+    var index = 0
+    while index < length(candidates) {
+        let candidate = get(candidates, index)
+        let viewed = match candidate {
+            LoopCandidate.Guard(value) => loop_guard_views(proof, value, current)
+            _ => Result.Ok(current)
+        }
+        match viewed {
+            Result.Ok(next) => match loop_predicate(candidate, next) {
+                Result.Ok(_) => {
+                    current = next
+                    push(available, candidate)
+                }
+                Result.Err(_) => {
+                }
+            }
+            Result.Err(_) => {
+            }
+        }
+        index = index + 1
+    }
+    LoopViews {
+        state = current
+        candidates = available
+    }
+}

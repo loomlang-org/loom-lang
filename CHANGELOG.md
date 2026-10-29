@@ -5,6 +5,12 @@ implementation, not a compatibility ledger for previous prototypes.
 
 ## Unreleased
 
+- Propose versioned List/Bytes loop invariants from ordinary leading assertions,
+  including pure helpers and inline scalar fields beside shared children.
+  Recheck observation coherence at entry, each abstract head and every backedge;
+  publication and unprotected shared input cannot retain private-view evidence.
+  Reuse existing array/SMT induction without new syntax or runtime machinery.
+
 - Add tuple parallel assignment with nested local targets, exactly-once RHS
   evaluation and checked conversions before source-ordered rebinding. Reuse
   native assignments for closure cells, CTFE, contracts and Task transfers;

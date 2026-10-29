@@ -3841,16 +3841,23 @@ its own definedness proof. Weighted scalar proposals remain guard-anchored;
 storage pairs observe affected lengths. Generation is bounded and pairwise,
 not general affine invariant synthesis.
 
-Leading ordinary `assert` statements can propose immutable scalar invariants,
-including nonlinear relations such as `total == cursor * cursor`. Finite pure
-helpers can express the same predicates. This path requires an immutable scalar
-loop condition and stops at the first other statement, including a heap observation
-or cleanup registration; it follows lexical wrappers introduced by cleanup lowering.
+Leading ordinary `assert` statements can propose scalar and versioned-storage
+invariants, including nonlinear relations such as `total[0] == cursor * cursor`.
+Finite pure helpers can express the same predicates. Current List/Bytes reads
+and immutable element fields reuse the existing versioned array rules; mutable
+children are not frozen. Each observation needs a coherent view at entry, every
+abstract loop head and every backedge. Shared unprotected storage or publication
+that loses that view removes the proposal before it can be assumed. Private
+storage can retain its view across suspension.
+This path requires an immutable scalar loop condition and stops at the first
+non-assertion statement, including cleanup registration; it follows lexical
+wrappers introduced by cleanup lowering.
 Each proposal must hold on entry and every normal/`continue` backedge, after
 lexical cleanup. The existing integer SMT theory handles unresolved nonlinear
 steps; unknown, timeout or a disabled backend grants no invariant. Runtime
 assertions remain in place, and no additional checks are generated to establish
-the declared postcondition. See the [assertion example](examples/loop_contracts/assertions.loom).
+the declared postcondition. See the [scalar](examples/loop_contracts/assertions.loom)
+and [storage](examples/loop_contracts/storage_assertions.loom) examples.
 This does not automatically synthesize nonlinear invariants or prove termination.
 
 Rebinding a List preserves no handle identity. If a loop can both rebind handles

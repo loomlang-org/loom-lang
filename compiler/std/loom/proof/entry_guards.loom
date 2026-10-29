@@ -14,13 +14,20 @@ fn entry_scope(entry State, current State) State {
 // An unmarked heap read is a post-state expression, even when its spelling
 // matches an entry read. Only immutable terms may guard an entry observation.
 fn entry_guard_expression(value Expr) Bool {
+    observation_guard_expression(value, false)
+}
+
+fn observation_guard_expression(value Expr, storage Bool) Bool {
+    if storage && function_layout(value) {
+        return true
+    }
     let shape = proof_operation(value)
-    if shape.arity < 0 || shape.heap || shape.flow == OperandFlow.Choice {
+    if shape.arity < 0 || (!storage && shape.heap) || shape.flow == OperandFlow.Choice {
         return false
     }
     var index = 0
     while index < length(value.children) {
-        if !entry_guard_expression(get(value.children, index)) {
+        if !observation_guard_expression(get(value.children, index), storage) {
             return false
         }
         index = index + 1
