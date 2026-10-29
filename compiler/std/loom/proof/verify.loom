@@ -26,6 +26,7 @@ record Verification {
     body_calls List[Int]
     capture_returns Bool
     returns List[Outcome]
+    assertions Option[List[AssertionCheck]]
 }
 
 record RecordPath {
@@ -718,6 +719,9 @@ fn execute_expression(proof Verification, expr Expr, state State, depth Int) Res
         return Result.Ok(new[Outcome]())
     }
     if expr.kind == ExprKind.Let || expr.kind == ExprKind.Assign || expr.kind == ExprKind.Return || expr.kind == ExprKind.Assert || expr.kind == ExprKind.Discard {
+        if expr.kind == ExprKind.Assert {
+            observe_assertion(proof, expr, state)
+        }
         let values = execute(proof, get(expr.children, 0), state, depth - 1)?
         let output = new[Outcome]()
         var index = 0

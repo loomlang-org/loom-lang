@@ -74,6 +74,7 @@ fn call_body_at(value Expr, offset Int, mapping Option[List[Int]], depth Int) Re
 
 fn inference_frame(proof Verification, query ProofQuery) Verification {
     Verification {
+        assertions = Option.None
         loop_control = Option.None
         query = query
         capture_returns = false
@@ -169,6 +170,7 @@ fn source_body_call(proof Verification, target Int, function Function, input Cal
         }, proof.fresh)?
     let frame = Verification {
         function = scope
+        assertions = Option.None
         loop_control = Option.None
         body_calls = calls
         capture_returns = true

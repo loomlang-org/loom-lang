@@ -1,0 +1,99 @@
+fn assertion_report(function Function) ContractProof {
+    match prove_contract(empty_proof_program(), function, no_proof_backend(), false, new[InputGuarantee]()) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            assert false
+            ContractProof {
+                postconditions = []
+                assertions = []
+            }
+        }
+    }
+}
+
+test fn assertion_evidence_precedes_its_own_assumptions_and_fault_checks() {
+    let nonnegative = operation(">=", local(0), literal("0"))
+    let divide = operation("/", local(0), local(0))
+    let partial = operation("==", divide, divide)
+    let body = expression(ExprKind.Block, 1, "", -1, [
+            expression(ExprKind.Assert, 0, "first", -1, [nonnegative]),
+            expression(ExprKind.Assert, 0, "known", -1, [nonnegative]),
+            expression(ExprKind.Assert, 0, "partial", -1, [partial]),
+            expression(ExprKind.Assert, 0, "checked", -1, [partial]),
+            literal("0")
+        ])
+    let function = fixture(body, [], operation("==", local(1), literal("0")))
+    let evidence = assertion_report(function)
+    assert length(evidence.assertions) == 4
+    assert !get(evidence.assertions, 0).proved
+    assert get(evidence.assertions, 1).proved
+    assert !get(evidence.assertions, 2).proved
+    assert get(evidence.assertions, 3).proved
+}
+
+test fn assertion_evidence_retains_operand_effects_even_with_a_known_result() {
+    let predicate = expression(ExprKind.Block, 2, "", -1, [
+            expression(ExprKind.Assign, 0, "", 0, [literal("7")]),
+            expression(ExprKind.Bool, 2, "true", -1, [])
+        ])
+    let body = expression(ExprKind.Block, 1, "", -1, [
+            expression(ExprKind.Assert, 0, "effectful", -1, [predicate]),
+            literal("0")
+        ])
+    let source = fixture(body, [], operation("==", local(1), literal("0")))
+    let function = Function {
+        locals = [Local {
+                mutable = true
+                ..get(source.locals, 0)
+            }, get(source.locals, 1)]
+        ..source
+    }
+    let evidence = assertion_report(function)
+    assert length(evidence.assertions) == 1
+    assert !get(evidence.assertions, 0).proved
+}
+
+test fn assertion_evidence_keeps_weaker_induction_passes() {
+    let assertion = expression(ExprKind.Assert, 0, "loop", -1,
+        [operation("==", local(3), literal("0"))])
+    let iteration = expression(ExprKind.Block, 0, "", -1, [
+            assertion,
+            expression(ExprKind.Assign, 0, "", 3, [literal("1")]),
+            expression(ExprKind.Assign, 0, "", 2, [operation("+", local(2), literal("1"))])
+        ])
+    let body = expression(ExprKind.Block, 1, "", -1, [
+            expression(ExprKind.Let, 0, "", 2, [literal("0")]),
+            expression(ExprKind.Let, 0, "", 3, [literal("0")]),
+            expression(ExprKind.While, 0, "", -1, [operation("<", local(2), local(0)), iteration]),
+            literal("0")
+        ])
+    let initial = fixture(body,
+        [operation(">=", local(0), literal("0")), operation("<=", local(0), literal("1000"))],
+        operation("==", local(1), literal("0")))
+    let function = Function {
+        locals = [get(initial.locals, 0), get(initial.locals, 1),
+            Local {
+                name = "cursor"
+                ty = 1
+                mutable = true
+                is_scoped = false
+            }, Local {
+                name = "total"
+                ty = 1
+                mutable = true
+                is_scoped = false
+            }]
+        ..initial
+    }
+    let evidence = assertion_report(function)
+    var proved = false
+    var retained = false
+    var index = 0
+    while index < length(evidence.assertions) {
+        let check = get(evidence.assertions, index)
+        proved = proved || check.proved
+        retained = retained || !check.proved
+        index = index + 1
+    }
+    assert proved && retained
+}

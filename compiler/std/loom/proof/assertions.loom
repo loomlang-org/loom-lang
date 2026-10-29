@@ -1,0 +1,102 @@
+// Evidence about the actual root body's assertions. A false entry also matters:
+// a later path or a weaker induction pass must veto earlier successful evidence.
+pub record AssertionCheck {
+    expression Expr
+    proved Bool
+}
+
+pub record ContractProof {
+    postconditions List[Expr]
+    assertions List[AssertionCheck]
+}
+
+fn observe_assertion(proof Verification, expression Expr, state State) {
+    match proof.assertions {
+        Option.Some(checks) => {
+            push(checks, AssertionCheck {
+                    expression = expression
+                    proved = assertion_proved(proof, get(expression.children, 0), state)
+                })
+        }
+        Option.None => {
+        }
+    }
+}
+
+// Check the incoming state, before evaluating the source operand. A successful
+// call/read may otherwise have already supplied the very safety facts at issue.
+fn assertion_proved(proof Verification, source Expr, state State) Bool {
+    let expression = loop_candidate_guard(proof, source)
+    if !bounded_contract(expression) || !observation_guard_expression(expression, true) {
+        return false
+    }
+    let current = match loop_guard_views(proof, expression, state) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            return false
+        }
+    }
+    let fact = match pure(expression, current) {
+        Result.Ok(Value.Boolean(value)) => value
+        _ => {
+            return false
+        }
+    }
+    match defined(expression, current) {
+        Result.Ok(valid) => {
+            if valid && loop_holds(fact, current) {
+                return true
+            }
+        }
+        Result.Err(_) => {
+        }
+    }
+    if !proof.query.backend.enabled {
+        return false
+    }
+    // Optional evidence owns its query. It cannot weaken or consume a required
+    // proof's obligations, and failed/unknown evidence retains the source check.
+    let query = proof_query(proof.query.backend)
+    match solver_defined(query, expression, current, 256) {
+        Result.Ok(_) => {
+            solver_fact(query, fact, current)
+            match discharge(query) {
+                Result.Ok(proved) => proved
+                Result.Err(_) => false
+            }
+        }
+        Result.Err(_) => false
+    }
+}
+
+// Compiler-host entry point. Callee guarantees must already be checked, as for
+// verify_with_helpers. This reports evidence; it never rewrites the source body.
+pub fn prove_contract(program Program, function Function, backend ProofBackend,
+    shared Bool, protected List[InputGuarantee]) Result[ContractProof, Text] {
+    let ordinary = contract_verification(program, function, backend, shared)?
+    proved_contract(ordinary, protected)
+}
+
+fn proved_contract(ordinary Verification, protected List[InputGuarantee]) Result[ContractProof, Text] {
+    let checks = new[AssertionCheck]()
+    let proof = Verification {
+        assertions = Option.Some(checks)
+        ..ordinary
+    }
+    if length(proof.function.postconditions) != 0 {
+        discard verify_body(proof, protected)?
+    }
+    Result.Ok(ContractProof {
+            postconditions = proof.function.postconditions
+            assertions = checks
+        })
+}
+
+pub fn prove_contract(types List[Type], function Function, backend ProofBackend,
+    shared Bool, protected List[InputGuarantee]) Result[ContractProof, Text] {
+    let ordinary = verification(function, proof_program_with_types(types), backend)
+    proved_contract(Verification {
+            shared = shared
+            ..ordinary
+        }, protected)
+}
