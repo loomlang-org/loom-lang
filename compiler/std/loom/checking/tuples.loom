@@ -28,13 +28,13 @@ fn tuple_literal(context Context, node Node, expected Int) Result[Expr, Failure]
             }
         }
     }
-    tuple_literal(context, node, inputs, hints, new[Node]())
+    tuple_literal(context, node, inputs, hints, Option.None)
 }
 
 // Expected element types may be partial during assignment with wildcards.
 // Keep expansion gaps and effects on the same path as ordinary tuple literals.
 fn tuple_literal(context Context, node Node, inputs CallInputs,
-    hints List[Int], targets List[Node]) Result[Expr, Failure] {
+    hints List[Int], targets Option[List[Node]]) Result[Expr, Failure] {
     let elements = new[Int]()
     let fields = new[Expr]()
     var index = 0
@@ -45,14 +45,15 @@ fn tuple_literal(context Context, node Node, inputs CallInputs,
         } else {
             get(hints, index)
         }
-        let value = if length(targets) == 0 {
-            input_value(context, inputs, index, hint, false)?
-        } else {
-            let prepared = match saved_input(inputs, index) {
-                Option.Some(value) => value
-                Option.None => assignment_value(context, get(targets, index), source)?
+        let value = match targets {
+            Option.None => input_value(context, inputs, index, hint, false)?
+            Option.Some(patterns) => {
+                let prepared = match saved_input(inputs, index) {
+                    Option.Some(value) => value
+                    Option.None => assignment_value(context, get(patterns, index), source)?
+                }
+                input_effects(context, inputs, index, source, prepared)
             }
-            input_effects(context, inputs, index, source, prepared)
         }
         if value.ty == 0 && !inferred_empty(context) {
             return Result.Err(error(context, source, "tuple elements must produce a value"))

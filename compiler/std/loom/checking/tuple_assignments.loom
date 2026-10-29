@@ -28,7 +28,7 @@ fn assignment_value(context Context, target Node, source Node) Result[Expr, Fail
         if length(target.children) != length(inputs.nodes) {
             return Result.Err(error(context, target, "assignment element count must match the tuple"))
         }
-        return tuple_literal(context, source, inputs, new[Int](), target.children)
+        return tuple_literal(context, source, inputs, new[Int](), Option.Some(target.children))
     }
     expr_mode(context, source, hint, false)
 }
