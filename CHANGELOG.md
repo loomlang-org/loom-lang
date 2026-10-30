@@ -5,6 +5,11 @@ implementation, not a compatibility ledger for previous prototypes.
 
 ## Unreleased
 
+- Prove recursive factory storage origins with input-origin requirements,
+  retaining failed cyclic dependencies and rejecting input aliases/publication.
+  Keep ordinary helper value inference separate from origin evidence; constrained
+  recursive results still validate their actual contents at construction.
+
 - Compose finite histogram membership with properties proved over an integer
   sequence column. Keep premises, ranges, content versions and index-independent
   key substitution exact. Try the base theory first and preserve host failures;
