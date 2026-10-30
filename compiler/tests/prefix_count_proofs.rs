@@ -75,7 +75,7 @@ fn merge_proves_order_and_multiset_union_without_retaining_loop_scans() {
     let package = tempfile::tempdir().unwrap();
     let source = package.path().join("main.loom");
     let program = include_str!("../examples/merge_contracts/main.loom");
-    fs::write(&source, &program).unwrap();
+    fs::write(&source, program).unwrap();
     for mode in ["check", "test", "run"] {
         success(&common::loom(&[mode, package.path().to_str().unwrap()]));
     }
