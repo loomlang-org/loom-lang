@@ -98,7 +98,7 @@ fn numeric(operator Text, a Linear, b Linear) Result[Value, Text] {
 
 fn logical(operator Text, a Predicate, b Predicate) Result[Value, Text] {
     if operator == "&&" {
-        return Result.Ok(Value.Boolean(bag_conjunction(a, b)))
+        return Result.Ok(Value.Boolean(Predicate.And(predicates(a, b))))
     }
     if operator == "||" {
         return Result.Ok(Value.Boolean(Predicate.Or(predicates(a, b))))

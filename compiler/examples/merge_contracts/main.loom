@@ -1,7 +1,7 @@
 import std.list.length
 import std.list.push
 
-fn ordered(values List[Int]) Bool {
+pub fn ordered(values List[Int]) Bool {
     var index = 1
     while index < length(values) {
         if values[index - 1] > values[index] {
@@ -12,7 +12,7 @@ fn ordered(values List[Int]) Bool {
     true
 }
 
-fn prefix_occurrences(values List[Int], needle Int, end Int) Int
+pub fn prefix_occurrences(values List[Int], needle Int, end Int) Int
 requires end >= 0 && end <= length(values)
 {
     var index = 0
@@ -53,11 +53,13 @@ fn merge_tails_above(output List[Int], source List[Int], start Int) Bool {
     true
 }
 
-fn merge_ordered(left List[Int], right List[Int]) List[Int]
+pub fn merge_ordered(left List[Int], right List[Int]) List[Int]
 requires ordered(left) && ordered(right)
 ensures ordered(result)
-ensures length(result) == length(left) + length(right)
-ensures merge_counts_match(left, result, left, right, length(left), length(right)) && merge_counts_match(right, result, left, right, length(left), length(right)) {
+ensures length(result) == old(length(left)) + old(length(right))
+ensures merge_counts_match(old(left), result, old(left), old(right), old(length(left)), old(length(right)))
+ensures merge_counts_match(old(right), result, old(left), old(right), old(length(left)), old(length(right)))
+{
     let first = length(left)
     let second = length(right)
     let output List[Int] = []
