@@ -28,8 +28,7 @@ fn histogram_support_preserves_premises_ranges_versions_and_columns() {
         program.replace("prefix_occurrences(values, values[index], end) > 0", "prefix_occurrences(values, values[index], index) > 0"),
         program.replace("    prefix_occurrences(values, values[index], end) > 0", "    let saved = values[index]\n    values[index] = saved + 1\n    prefix_occurrences(values, saved, end) > 0"),
         program
-            .replace("fn positive_member(values List[Int], needle Int)", "fn positive_member(values List[Int], other List[Int], needle Int)")
-            .replace("requires nonnegative(values)", "requires nonnegative(other)")
+            .replace("fn positive_member(values List[Int], needle Int) Bool\nrequires nonnegative(values)", "fn positive_member(values List[Int], other List[Int], needle Int) Bool\nrequires nonnegative(other)")
             .replace("positive_member([0, 3, 9], 3)", "positive_member([0, 3, 9], [0], 3)")
             .replace("positive_member([0], 0)", "positive_member([0], [0], 0)"),
     ] {
