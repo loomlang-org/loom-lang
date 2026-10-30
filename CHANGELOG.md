@@ -5,6 +5,11 @@ implementation, not a compatibility ledger for previous prototypes.
 
 ## Unreleased
 
+- Allow checked synchronous Text/Bytes stream writes in normal-return proofs.
+  Preserve eager arguments and lexical cleanup; counts remain independently
+  unknown, external effects still execute, and shared storage retains its
+  interference rules. Other unsupported native operations still reject.
+
 - Remove proven assertion operands during native lowering after checking their
   complete evaluation, effects and fault conditions. Keep source conditions in
   analysis and caches; revalidate reused bodies and shared-worker programs.

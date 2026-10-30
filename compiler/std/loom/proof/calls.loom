@@ -722,6 +722,9 @@ fn body_call(proof Verification, call Expr, state State, depth Int) Result[List[
         return execute_list_operation(proof, call, primitive, state, depth)
     }
     if function.runtime_name != "" || length(function.params) != length(call.children) {
+        if external_write(function, call) {
+            return execute_external_write(proof, call, state, depth)
+        }
         return Result.Err("body proof needs a checked source function")
     }
     // Opaque inputs carry no facts. Their presence is harmless; actual

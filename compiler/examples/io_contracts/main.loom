@@ -1,0 +1,13 @@
+import std.io.write_text
+
+fn report_value(value Int) Int
+ensures result == value {
+    defer {
+        discard write_text("reported\n")
+    }
+    value
+}
+
+fn main() {
+    assert report_value(42) == 42
+}
