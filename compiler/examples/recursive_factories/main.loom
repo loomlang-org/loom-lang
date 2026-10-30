@@ -1,0 +1,63 @@
+import std.list.length
+import std.result.Result
+import std.result.ConstraintError
+
+fn positive(values List[Int]) Bool {
+    var index = 0
+    while index < length(values) {
+        if values[index] <= 0 {
+            return false
+        }
+        index = index + 1
+    }
+    true
+}
+
+type PositiveValues = List[Int] where positive(self)
+
+fn fresh_values(seed List[Int], count Int, value Int) List[Int] {
+    if count <= 0 {
+        return [value, 2, 3]
+    }
+    fresh_values(seed, count - 1, value)
+}
+
+fn make(seed List[Int], count Int, value Int) Result[PositiveValues, ConstraintError] {
+    PositiveValues(fresh_values(seed, count, value))
+}
+
+fn empty_after(count Int) List[Int] {
+    if count <= 0 {
+        return []
+    }
+    empty_after(count - 1)
+}
+
+fn known_empty() List[Int]
+ensures length(result) == 0
+{
+    empty_after(0)
+}
+
+fn exercise() {
+    let seed = [-1]
+    let checked = make(seed, 3, 1)
+    seed[0] = -2
+    assert match checked {
+        Result.Ok(values) => length(values) == 3 && values[0] == 1 && values[2] == 3
+        Result.Err(_) => false
+    }
+    assert match make(seed, 2, 0) {
+        Result.Ok(_) => false
+        Result.Err(_) => true
+    }
+    assert length(known_empty()) == 0
+}
+
+test fn recursive_factory_seals_fresh_storage_without_freezing_inputs() {
+    exercise()
+}
+
+fn main() {
+    exercise()
+}

@@ -1,4 +1,4 @@
-// Active hypotheses belong to this invocation's exact input-origin profile.
+// Active hypotheses retain prepared targets and input-origin requirements.
 // No result is cached: a failed cyclic hypothesis invalidates the entire scan,
 // including effects checked earlier under that hypothesis.
 record FactoryInvocation {
