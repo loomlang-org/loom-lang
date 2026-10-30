@@ -7,7 +7,7 @@ test fn finite_order_requires_one_integer_column_and_unit_index_stride() {
     let second = IntegerTerm.Select(10, [2], index)
     assert match order_step(-7, Predicate.Not([Predicate.IntegerCompare(">", first, second)]), false, 0) {
         Option.Some(step) => step.relation == "<=" && step.version == 10 &&
-        order_path(step.path, [2]) && length(step.offset.terms) == 0 &&
+        same_projection(step.path, [2]) && length(step.offset.terms) == 0 &&
         compare(step.offset.constant, integer(0)) == 0
         _ => false
     }

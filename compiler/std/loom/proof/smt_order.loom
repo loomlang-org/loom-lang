@@ -16,20 +16,6 @@ fn order_mentions(value Linear, identity Int) Bool {
     false
 }
 
-fn order_path(left List[Int], right List[Int]) Bool {
-    if length(left) != length(right) {
-        return false
-    }
-    var index = 0
-    while index < length(left) {
-        if get(left, index) != get(right, index) {
-            return false
-        }
-        index = index + 1
-    }
-    true
-}
-
 fn order_relation(value Text, negative Bool) Text {
     if !negative {
         return value
@@ -87,7 +73,7 @@ fn order_step(identity Int, value Predicate, negative Bool, depth Int) Option[Or
             match left {
                 IntegerTerm.Select(first, path, before) => match right {
                     IntegerTerm.Select(second, other, after) => {
-                        if first != second || !order_path(path, other) ||
+                        if first != second || !same_projection(path, other) ||
                         !same_terms(before.terms, after.terms) {
                             return Option.None
                         }
