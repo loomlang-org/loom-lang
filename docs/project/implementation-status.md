@@ -403,6 +403,11 @@ supported theories and boundaries. The central rules are:
   induction law retains shifted ranges and outer scopes, excluding distinctness
   and IEEE comparisons. A native merge fixture removes its proved loop scans;
   general comparator/permutation proofs remain open.
+  Positive finite counts can transport an established integer-column predicate
+  to a key without a named index witness. Source premises, prefix ranges,
+  versions and enclosing binders stay exact; residual index dependencies do not
+  become unrestricted value facts. Base queries retain their first attempt;
+  additional support laws do not recover from host failures or timeouts.
   Zero-based integer count scans also model explicit prefixes, with a conditional
   one-element extension law and entry snapshots of their extents. Repeated root
   predicate encodings share work within one query, retaining the existing budget

@@ -43,11 +43,19 @@ fn discharge(proof ProofQuery) Result[Bool, Text] {
     if length(proof.obligations) == 0 {
         return Result.Ok(true)
     }
-    let query = smt_query(proof.obligations)?
-    if !proof.backend.solve(proof.backend.context, query)? {
-        return Result.Err("required postcondition is not proved")
+    // Avoid introducing extra quantified search into obligations already
+    // settled by the base theories. A satisfiable abstract counterexample may
+    // need more valid theory laws; it supplies no fact to the extended query.
+    // Host errors, including cancellation and timeouts, retain their boundary.
+    let query = smt_query(proof.obligations, false)?
+    if proof.backend.solve(proof.backend.context, query)? {
+        return Result.Ok(true)
     }
-    Result.Ok(true)
+    let extended = smt_query(proof.obligations, true)?
+    if extended != query && proof.backend.solve(proof.backend.context, extended)? {
+        return Result.Ok(true)
+    }
+    Result.Err("required postcondition is not proved")
 }
 
 fn solver_condition(proof ProofQuery, condition Expr, state State) Result[Bool, Text] {

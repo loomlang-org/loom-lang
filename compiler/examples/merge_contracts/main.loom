@@ -1,4 +1,30 @@
+import std.list.length
 import std.list.push
+
+fn ordered(values List[Int]) Bool {
+    var index = 1
+    while index < length(values) {
+        if values[index - 1] > values[index] {
+            return false
+        }
+        index = index + 1
+    }
+    true
+}
+
+fn prefix_occurrences(values List[Int], needle Int, end Int) Int
+requires end >= 0 && end <= length(values)
+{
+    var index = 0
+    var count = 0
+    while index < end {
+        if values[index] == needle {
+            count = count + 1
+        }
+        index = index + 1
+    }
+    count
+}
 
 fn merge_counts_match(needles List[Int], output List[Int], left List[Int], right List[Int], first Int, second Int) Bool {
     var index = 0
@@ -71,5 +97,9 @@ fn merge_count_cases() {
 }
 
 test fn merging_proves_order_length_and_both_input_histograms() {
+    merge_count_cases()
+}
+
+fn main() {
     merge_count_cases()
 }

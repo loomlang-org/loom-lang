@@ -74,17 +74,7 @@ fn prefix_counts_recheck_extents_old_versions_and_scan_edits() {
 fn merge_proves_order_and_multiset_union_without_retaining_loop_scans() {
     let package = tempfile::tempdir().unwrap();
     let source = package.path().join("main.loom");
-    let ordered = include_str!("../examples/smt_contracts/quantified.loom")
-        .split("fn occurrences")
-        .next()
-        .unwrap();
-    let counts = include_str!("../examples/smt_contracts/count_scopes.loom")
-        .split("fn bounded_counts")
-        .next()
-        .unwrap();
-    let merge = include_str!("../examples/smt_contracts/count_merges.loom");
-    let program =
-        format!("{ordered}\n{counts}\n{merge}\nfn main() {{\n    merge_count_cases()\n}}\n");
+    let program = include_str!("../examples/merge_contracts/main.loom");
     fs::write(&source, &program).unwrap();
     for mode in ["check", "test", "run"] {
         success(&common::loom(&[mode, package.path().to_str().unwrap()]));

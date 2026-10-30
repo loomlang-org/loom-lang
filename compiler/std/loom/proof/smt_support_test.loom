@@ -26,3 +26,26 @@ test fn histogram_support_keeps_its_premise_range_and_index_dependency() {
     assert !contains(support_encoding(constant(integer(0)),
             Predicate.IntegerCompare(">=", selected, IntegerTerm.Select(11, [], variable(-7)))), "loom_support_key")
 }
+
+test fn extended_theories_do_not_retry_a_host_failure() {
+    let calls = [0]
+    let backend = ProofBackend {
+        enabled = true
+        context = ""
+        solve = fn(context Text, query Text) Result[Bool, Text] {
+            calls[0] = calls[0] + 1
+            Result.Err("host stopped")
+        }
+    }
+    let query = proof_query(backend)
+    push(query.obligations, Obligation {
+            facts = []
+            conclusion = integer_limit(">", IntegerTerm.Count(10,
+                    [IntegerTerm.Linear(constant(integer(1))), IntegerTerm.Linear(variable(2))]), 0)
+        })
+    assert match discharge(query) {
+        Result.Err(message) => message == "host stopped"
+        _ => false
+    }
+    assert calls[0] == 1
+}

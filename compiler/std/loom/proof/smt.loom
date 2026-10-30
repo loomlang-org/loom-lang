@@ -29,6 +29,7 @@ fn smt_binder(value SmtBinder, condition Text) Text {
 }
 
 record SmtWriter {
+    extended Bool
     declarations Bytes
     names List[Text]
     budget List[Int]
@@ -565,6 +566,10 @@ fn smt_redundant_fact(facts List[Predicate], index Int) Bool {
 }
 
 fn smt_query(obligations List[Obligation]) Result[Text, Text] {
+    smt_query(obligations, true)
+}
+
+fn smt_query(obligations List[Obligation], extended Bool) Result[Text, Text] {
     let budget = new[Int]()
     push(budget, 65536)
     let counts = new[Linear]()
@@ -576,6 +581,7 @@ fn smt_query(obligations List[Obligation]) Result[Text, Text] {
         scan = scan + 1
     }
     let writer = SmtWriter {
+        extended = extended
         declarations = std.bytes.new()
         names = new[Text]()
         budget = budget

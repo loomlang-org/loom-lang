@@ -3629,10 +3629,17 @@ equal counts for every input element normalize to finite histogram equality;
 an in-range store removes the previous occurrence and adds the replacement.
 These sequence laws prove arbitrary-index swaps and permutation through calls
 and loops, including duplicates and equal indices.
+An established prefix predicate also applies to a key with a proved positive
+occurrence count. The [membership example](examples/histogram_contracts/main.loom)
+derives an integer bound without naming an index witness. The rule preserves
+its premise, prefix extent, column and outer scope; index-dependent predicates
+do not acquire an unrestricted key property. Evaluation safety remains separate.
+The prover first tries its base theories, then adds support laws after a
+satisfiable abstract result. Host failures and timeouts still propagate.
 Prefix extension adds exactly the last element's contribution. Its explicit
 extent participates in ordinary operand checks and entry snapshots; writes
 outside the prefix preserve its counts. The [prefix](examples/smt_contracts/count_prefixes.loom)
-and [merge](examples/smt_contracts/count_merges.loom) examples compose these laws
+and [merge](examples/merge_contracts/main.loom) examples compose these laws
 with order proofs. The merge proves result length and both input histograms,
 without retaining its eight loop assertion scans in native code. This does not
 prove arbitrary comparator laws or the general library sorting implementation.

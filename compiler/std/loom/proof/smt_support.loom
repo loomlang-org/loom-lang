@@ -7,7 +7,7 @@ import std.text.replace
 // select term and reject any remaining occurrence of its bound index.
 fn smt_support(writer SmtWriter, identity Int, start Linear, end Linear,
     condition Text, premise Text) Result[Bool, Text] {
-    if length(writer.counts) == 0 || length(start.terms) != 0 || compare(start.constant, integer(0)) != 0 || order_mentions(end, identity) {
+    if !writer.extended || length(writer.counts) == 0 || length(start.terms) != 0 || compare(start.constant, integer(0)) != 0 || order_mentions(end, identity) {
         return Result.Ok(true)
     }
     var scope = 0
@@ -45,6 +45,9 @@ fn smt_support(writer SmtWriter, identity Int, start Linear, end Linear,
 
 fn smt_count_presence(writer SmtWriter, identity Int, size Linear,
     needle Text, count Text) Result[Bool, Text] {
+    if !writer.extended {
+        return Result.Ok(true)
+    }
     discard smt_step(writer, 0)?
     // A matching in-prefix index witnesses a positive count. This supplies no
     // source access/evaluation fact, nor a witness merely from seeing a term.
