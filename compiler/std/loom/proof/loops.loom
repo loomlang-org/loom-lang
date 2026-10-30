@@ -527,6 +527,10 @@ fn entered_loop(proof Verification, expr Expr, entry State, writes List[Bool], d
     let observed = loop_query_views(proof, clauses, entry)
     let resized = loop_storage_targets(proof, expr, observed, writes, false)?
     var candidates = loop_candidates(proof, loop_candidate_guard(proof, guard), writes, resized, observed)?
+    // Reserve storage identities and explicit source relations before optional
+    // derived candidates. Every proposal still needs entry/backedge proof.
+    var headers = loop_header_candidates(proof, candidates, writes, observed)?
+    loop_assertion_candidates(proof, guard, body, candidates, observed)
     loop_quantified_candidates(proof, clauses, candidates, writes, expr, observed)
     var storage = forget_modified_extents(proof, observed, resized)
     if storage.heap >= 0 && !graph_readonly_expression(proof.program, expr) {
@@ -543,14 +547,10 @@ fn entered_loop(proof Verification, expr Expr, entry State, writes List[Bool], d
             storage = forget_modified_elements(storage, modified)
         }
     }
-    // Reserve identity proposals before optional affine pairs. Length relations
-    // cannot displace the headers needed to retain checked storage provenance.
-    var headers = loop_header_candidates(proof, candidates, writes, observed)?
     loop_prefix_candidates(proof, expr, candidates, writes, resized, observed)
     discard loop_affine_candidates(proof, guard, body, candidates, writes, observed)?
     discard loop_observation_candidates(proof, expr, candidates, writes, resized, observed)?
     discard loop_affine_bounds(proof, candidates, observed)?
-    loop_assertion_candidates(proof, guard, body, candidates, observed)
     var head = loop_head(proof, writes, storage, candidates, headers)?
     head = loop_query_views(proof, clauses, head)
     while true {

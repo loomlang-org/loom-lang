@@ -73,7 +73,7 @@ fn propose_quantified(proof Verification, candidates List[LoopCandidate], value 
 }
 
 // Leading source assertions can suggest relations beyond the automatic affine
-// rules. They remain runtime assertions, never assumptions supplied by the user.
+// rules. They supply no facts before entry and backedge validation succeeds.
 // Reuse entry/backedge validation and versioned observations. The condition
 // remains immutable: a body-entry observation cannot move before its effects.
 fn loop_assertion_candidates(proof Verification, guard Expr, body Expr,

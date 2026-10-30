@@ -5,6 +5,11 @@ implementation, not a compatibility ledger for previous prototypes.
 
 ## Unreleased
 
+- Prioritize storage identities and leading source assertions before optional
+  quantified and affine loop candidates. Independent loop-carried locals no
+  longer crowd these source relations out of speculative search; entry and
+  every-backedge validation still apply.
+
 - Allow checked synchronous Text/Bytes stream writes in normal-return proofs.
   Preserve eager arguments and lexical cleanup; counts remain independently
   unknown, external effects still execute, and shared storage retains its
