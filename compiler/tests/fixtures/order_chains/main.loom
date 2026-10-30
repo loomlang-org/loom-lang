@@ -1,0 +1,109 @@
+import std.list.length
+import std.list.push
+
+fn ordered(values List[Int]) Bool {
+    var index = 1
+    while index < length(values) {
+        if values[index - 1] > values[index] {
+            return false
+        }
+        index = index + 1
+    }
+    true
+}
+
+pub fn follows(values List[Int], first Int, second Int) Bool
+requires ordered(values) && first >= 0 && first < second && second < length(values)
+ensures result {
+    values[first] <= values[second]
+}
+
+record Item {
+    key Int
+    payload Int
+}
+
+fn ordered_keys(values List[Item]) Bool {
+    var index = 1
+    while index < length(values) {
+        if values[index - 1].key > values[index].key {
+            return false
+        }
+        index = index + 1
+    }
+    true
+}
+
+pub fn follows_key(values List[Item], first Int, second Int) Bool
+requires ordered_keys(values) && first >= 0 && first < second && second < length(values)
+ensures result {
+    values[first].key <= values[second].key
+}
+
+fn tails_above(output List[Int], source List[Int], start Int) Bool {
+    if length(output) == 0 {
+        return true
+    }
+    let last = output[length(output) - 1]
+    var index = start
+    while index < length(source) {
+        if source[index] < last {
+            return false
+        }
+        index = index + 1
+    }
+    true
+}
+
+fn merge(left List[Int], right List[Int]) List[Int]
+requires ordered(left) && ordered(right)
+ensures ordered(result) {
+    let first = length(left)
+    let second = length(right)
+    let output List[Int] = []
+    var i = 0
+    var j = 0
+    while i < first || j < second {
+        assert i >= 0 && i <= first
+        assert j >= 0 && j <= second
+        assert ordered(output)
+        assert tails_above(output, left, i)
+        assert tails_above(output, right, j)
+        if i < first && (j >= second || left[i] <= right[j]) {
+            push(output, left[i])
+            i = i + 1
+        } else {
+            push(output, right[j])
+            j = j + 1
+        }
+    }
+    output
+}
+
+fn exercise() {
+    let values = merge([-1, 2, 4], [-3, 2, 7])
+    assert ordered(values)
+    assert length(values) == 6
+    assert follows(values, 0, 5)
+    let items = [Item {
+            key = 1
+            payload = 9
+        }, Item {
+            key = 2
+            payload = 0
+        }, Item {
+            key = 3
+            payload = -1
+        }]
+    assert follows_key(items, 0, 2)
+    assert length(merge([], [])) == 0
+    assert ordered(merge([], [1, 1]))
+}
+
+test fn adjacent_order_composes_through_distant_reads_and_merge() {
+    exercise()
+}
+
+fn main() {
+    exercise()
+}

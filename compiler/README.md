@@ -3876,6 +3876,18 @@ establish the declared postcondition. See the [scalar](examples/loop_contracts/a
 and [storage](examples/loop_contracts/storage_assertions.loom) examples.
 This does not automatically synthesize nonlinear invariants or prove termination.
 
+Adjacent integer comparisons on one versioned sequence column also imply the
+same transitive relation between any two ordered indices in that finite range.
+The theory uses induction on the index distance, not bounded unrolling or a
+recognized sorting function. It preserves the column's field path, content
+version, shifted range and enclosing quantifier scopes. The rule is conditional
+on the adjacent premise; observing a scan in a negated goal supplies no fact.
+Distinctness and IEEE comparisons are excluded, and access/evaluation safety
+remains a separate obligation. The [merge fixture](tests/fixtures/order_chains/main.loom)
+checks ordinary adjacent-order and suffix assertions without retaining their
+loop scans in native code. This does not prove arbitrary comparator laws,
+permutation or general sequence induction.
+
 Rebinding a List preserves no handle identity. If a loop can both rebind handles
 and resize storage, all tracked extents are freshened before induction;
 its initial binding cannot identify every later resize target. Whole-value

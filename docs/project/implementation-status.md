@@ -398,6 +398,11 @@ supported theories and boundaries. The central rules are:
   and true on every visited path and induction pass. Conditions remain in
   checked analysis and caches; reused bodies and shared-worker programs
   revalidate the evidence. Cleanup checks remain on fault/cancellation paths.
+  Finite adjacent integer-order premises compose through arbitrary index
+  distances on the same content version and field column. The conditional
+  induction law retains shifted ranges and outer scopes, excluding distinctness
+  and IEEE comparisons. A native merge fixture removes its proved loop scans;
+  general comparator/permutation proofs remain open.
   Current observations
   require coherent storage views at each induction step; unavailable or published
   shared storage supplies no invariant. Private views survive suspension.
