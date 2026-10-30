@@ -23,7 +23,7 @@ fn loop_entails(proof Verification, fact Predicate, state State, extended Bool) 
     if loop_holds(fact, state) {
         return true
     }
-    if !proof.query.backend.enabled || !loop_solver_fact(fact) {
+    if !proof.query.backend.enabled || (!extended && !loop_solver_fact(fact)) {
         return false
     }
     let query = proof_query(proof.query.backend)
