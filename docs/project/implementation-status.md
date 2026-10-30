@@ -403,6 +403,12 @@ supported theories and boundaries. The central rules are:
   induction law retains shifted ranges and outer scopes, excluding distinctness
   and IEEE comparisons. A native merge fixture removes its proved loop scans;
   general comparator/permutation proofs remain open.
+  Zero-based integer count scans also model explicit prefixes, with a conditional
+  one-element extension law and entry snapshots of their extents. Repeated root
+  predicate encodings share work within one query, retaining the existing budget
+  and exact scopes/versions. An ordinary merge proves ordering, length and both
+  input histograms; its eight loop assertions are removed in native lowering.
+  General comparator and whole sorting-algorithm proofs remain open.
   Current observations
   require coherent storage views at each induction step; unavailable or published
   shared storage supplies no invariant. Private views survive suspension.

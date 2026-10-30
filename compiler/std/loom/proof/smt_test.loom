@@ -106,6 +106,8 @@ test fn count_laws_close_nested_ranges_and_binder_dependent_extents() {
     let inner = "(forall ((loom_bound Int)) (let ((n-8 loom_bound)) (=> (and (<= (+ 0 (* 1 n-7)) n-8) (< n-8 (+ 1 (* 1 n-7)))) "
     let bound = "(and (<= 0 (select (loom_bag a10 (+ 0 (* 1 n-7))) (select a11 (+ 0 (* 1 n-8)))))"
     assert contains(query, concat(outer, concat(inner, bound)))
+    assert contains(query, concat(outer, concat(inner,
+                "(=> (> (+ 0 (* 1 n-7)) 0) (= (select (loom_bag a10 ")))
     assert !contains(query, "(bv Int)")
     let ground = IntegerTerm.Count(10, [size, IntegerTerm.Linear(variable(2))])
     let scoped_extent = encoding([Obligation {

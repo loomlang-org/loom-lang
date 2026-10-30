@@ -1,0 +1,75 @@
+import std.list.push
+
+fn merge_counts_match(needles List[Int], output List[Int], left List[Int], right List[Int], first Int, second Int) Bool {
+    var index = 0
+    while index < length(needles) {
+        let needle = needles[index]
+        if prefix_occurrences(output, needle, length(output)) != prefix_occurrences(left, needle, first) + prefix_occurrences(right, needle, second) {
+            return false
+        }
+        index = index + 1
+    }
+    true
+}
+
+fn merge_tails_above(output List[Int], source List[Int], start Int) Bool {
+    if length(output) == 0 {
+        return true
+    }
+    let last = output[length(output) - 1]
+    var index = start
+    while index < length(source) {
+        if source[index] < last {
+            return false
+        }
+        index = index + 1
+    }
+    true
+}
+
+fn merge_ordered(left List[Int], right List[Int]) List[Int]
+requires ordered(left) && ordered(right)
+ensures ordered(result)
+ensures length(result) == length(left) + length(right)
+ensures merge_counts_match(left, result, left, right, length(left), length(right)) && merge_counts_match(right, result, left, right, length(left), length(right)) {
+    let first = length(left)
+    let second = length(right)
+    let output List[Int] = []
+    var i = 0
+    var j = 0
+    while i < first || j < second {
+        assert i >= 0 && i <= first
+        assert j >= 0 && j <= second
+        assert length(output) == i + j
+        assert merge_counts_match(left, output, left, right, i, j)
+        assert merge_counts_match(right, output, left, right, i, j)
+        assert ordered(output)
+        assert merge_tails_above(output, left, i)
+        assert merge_tails_above(output, right, j)
+        if i < first && (j >= second || left[i] <= right[j]) {
+            push(output, left[i])
+            i = i + 1
+        } else {
+            push(output, right[j])
+            j = j + 1
+        }
+    }
+    output
+}
+
+fn merge_count_cases() {
+    let left = [-1, 2, 4]
+    let right = [-3, 2, 7]
+    let output = merge_ordered(left, right)
+    assert ordered(output) && length(output) == 6
+    assert merge_counts_match(left, output, left, right, 3, 3)
+    assert merge_counts_match(right, output, left, right, 3, 3)
+    assert prefix_occurrences(output, 2, 6) == 2
+    assert length(merge_ordered([], [])) == 0
+    let single = merge_ordered([], [1, 1])
+    assert length(single) == 2 && single[0] == 1 && single[1] == 1
+}
+
+test fn merging_proves_order_length_and_both_input_histograms() {
+    merge_count_cases()
+}
