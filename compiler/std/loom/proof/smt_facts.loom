@@ -1,0 +1,27 @@
+record SmtFact {
+    value Predicate
+    encoded Text
+}
+
+// Each root predicate has one scope in this query. Reuse its encoding, including
+// already registered theory laws, across safety and result obligations. Nested
+// binders still use the ordinary encoder; this cache cannot move a fact across
+// scopes or versions. A miss remains subject to the existing encoding budget.
+fn smt_root(writer SmtWriter, value Predicate, cache List[SmtFact]) Result[Text, Text] {
+    var index = 0
+    while index < length(cache) {
+        let entry = get(cache, index)
+        if same(entry.value, value) {
+            return Result.Ok(entry.encoded)
+        }
+        index = index + 1
+    }
+    let encoded = smt_predicate(writer, value, 0)?
+    if length(cache) < 256 {
+        push(cache, SmtFact {
+                value = value,
+                encoded = encoded
+            })
+    }
+    Result.Ok(encoded)
+}

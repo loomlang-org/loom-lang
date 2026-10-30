@@ -5,6 +5,11 @@ implementation, not a compatibility ledger for previous prototypes.
 
 ## Unreleased
 
+- Model explicit count prefixes and their finite extension law, preserving
+  entry extents, versioned reads and ordinary evaluation checks. Reuse repeated
+  root predicate encodings within one proof query. An ordinary merge now proves
+  ordering, length and both input histograms without runtime loop assertion scans.
+
 - Derive finite integer-order chains from adjacent comparisons over one
   versioned sequence column. Distant reads and a checked merge loop compose
   without runtime invariant scans; bounds, field paths and enclosing ranges

@@ -1,0 +1,42 @@
+import std.list.push
+
+fn prefix_grows(values List[Int], needle Int, end Int) Bool
+requires end >= 0 && end < length(values)
+ensures result {
+    prefix_occurrences(values, needle, end + 1) ==
+    prefix_occurrences(values, needle, end) + if values[end] == needle {
+        1
+    } else {
+        0
+    }
+}
+
+fn prefix_untouched(values List[Int], needle Int, end Int)
+requires end >= 0 && end < length(values)
+ensures prefix_occurrences(values, needle, end) == old(prefix_occurrences(values, needle, end)) {
+    values[end] = needle
+}
+
+fn count_append(values List[Int], needle Int)
+ensures prefix_occurrences(values, needle, length(values)) == old(prefix_occurrences(values, needle, length(values))) + 1
+ensures prefix_occurrences(values, needle, old(length(values))) == old(prefix_occurrences(values, needle, length(values))) {
+    push(values, needle)
+}
+
+fn count_prefix_cases() {
+    let values = [1, 2, 1]
+    assert prefix_occurrences(values, 1, 0) == 0
+    assert prefix_grows(values, 1, 0)
+    assert prefix_grows(values, 1, 2)
+    prefix_untouched(values, 7, 2)
+    assert prefix_occurrences(values, 1, 2) == 1
+    count_append(values, 1)
+    assert prefix_occurrences(values, 1, 4) == 2
+    let empty List[Int] = []
+    count_append(empty, 8)
+    assert prefix_occurrences(empty, 8, 1) == 1
+}
+
+test fn count_prefixes_preserve_extent_versions_and_exact_extension() {
+    count_prefix_cases()
+}

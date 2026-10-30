@@ -3623,12 +3623,19 @@ eager arguments and guarded access checks remain required. The
 length/empty guards with a copy contract without splitting the predicate.
 Local element
 observations expand within the iteration; the tail cannot depend on the updated
-cursor. A complete equality scan over `List[Int]` with a
+cursor. A zero-based equality scan over a checked prefix of `List[Int]` with a
 separate zero-based accumulator derives occurrence counts. Equal lengths and
 equal counts for every input element normalize to finite histogram equality;
 an in-range store removes the previous occurrence and adds the replacement.
 These sequence laws prove arbitrary-index swaps and permutation through calls
 and loops, including duplicates and equal indices.
+Prefix extension adds exactly the last element's contribution. Its explicit
+extent participates in ordinary operand checks and entry snapshots; writes
+outside the prefix preserve its counts. The [prefix](examples/smt_contracts/count_prefixes.loom)
+and [merge](examples/smt_contracts/count_merges.loom) examples compose these laws
+with order proofs. The merge proves result length and both input histograms,
+without retaining its eight loop assertion scans in native code. This does not
+prove arbitrary comparator laws or the general library sorting implementation.
 Count bounds instantiate at each actual symbolic needle, retaining any enclosing
 quantifier ranges and their dependencies. This avoids universal search over
 unrelated integers without sampling source values or changing source checks.
