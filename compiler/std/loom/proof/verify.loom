@@ -17,6 +17,7 @@ record Verification {
     program Program
     fresh List[Int]
     budget List[Int]
+    loop_plans List[LoopPlan]
     loop_control Option[LoopControl]
     query ProofQuery
     shared Bool

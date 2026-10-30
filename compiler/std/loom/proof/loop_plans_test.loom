@@ -1,0 +1,92 @@
+import std.loom.typed.Arm
+
+fn plan_match(arm Arm) Expr {
+    Expr {
+        arms = [arm]
+        ..expression(ExprKind.Match, 0, "", -1, [literal("0")])
+    }
+}
+
+fn plan_loop(body Expr) Expr {
+    expression(ExprKind.While, 0, "", -1,
+        [expression(ExprKind.Bool, 2, "true", -1, []), body])
+}
+
+fn checked_loop_plan(proof Verification, loop Expr, entry State) List[Bool] {
+    match loop_write_plan(proof, loop, entry, 32) {
+        Result.Ok(writes) => writes
+        Result.Err(_) => {
+            assert false
+            []
+        }
+    }
+}
+
+test fn loop_plans_distinguish_match_arms_and_do_not_reuse_deeper_validation() {
+    let arm = Arm {
+        variant = 0
+        bindings = [0]
+        whole = -1
+        body = [literal("1")]
+    }
+    let first = plan_match(arm)
+    let changed = plan_match(Arm {
+            bindings = [1]
+            ..arm
+        })
+    assert !exact_expression(first, changed)
+    assert !exact_expression(first, plan_match(Arm {
+                variant = 1
+                ..arm
+            }))
+    assert !exact_expression(first, plan_match(Arm {
+                whole = 1
+                ..arm
+            }))
+    assert !exact_expression(first, plan_match(Arm {
+                body = [literal("2")]
+                ..arm
+            }))
+    let function = contract_fixture([1, 1], 0, literal("0"), [], [])
+    let proof = verification(function, empty_proof_program())
+    let entry = State {
+        heap = -1
+        locals = [Value.Empty, Value.Empty, Value.Empty]
+        facts = []
+        extents = []
+        observations = []
+    }
+    let a = checked_loop_plan(proof, plan_loop(first), entry)
+    let b = checked_loop_plan(proof, plan_loop(changed), entry)
+    assert get(a, 0) && !get(a, 1)
+    assert !get(b, 0) && get(b, 1)
+    assert length(proof.loop_plans) == 2
+    assert match loop_write_plan(proof, plan_loop(first), entry, 1) {
+        Result.Err(_) => true
+        _ => false
+    }
+}
+
+test fn reused_loop_plans_recheck_initialized_local_types() {
+    let read = expression(ExprKind.Local, 6, "", 0, [])
+    let loop = plan_loop(expression(ExprKind.Assign, 0, "", 0, [read]))
+    let function = contract_fixture([6], 0, literal("0"), [], [])
+    let proof = verification(function, capture_cell_program())
+    let empty = State {
+        heap = -1
+        locals = [Value.Empty, Value.Empty]
+        facts = []
+        extents = []
+        observations = []
+    }
+    discard checked_loop_plan(proof, loop, empty)
+    let initialized = State {
+        locals = [Value.List(10), Value.Empty]
+        ..empty
+    }
+    assert match loop_write_plan(proof, loop, initialized, 32) {
+        Result.Err(_) => true
+        _ => false
+    }
+    assert length(proof.loop_plans) == 1
+}

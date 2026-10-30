@@ -12,9 +12,8 @@ test fn tagged_cleanup_uses_its_checked_body_not_a_resource_exemption() {
         extents = []
         observations = []
     }
-    let writes = [false, false]
-    assert match loop_writes(proof, cleanup, entry, writes, false, 256) {
-        Result.Ok(_) => get(writes, 0)
+    assert match loop_write_plan(proof, cleanup, entry, 256) {
+        Result.Ok(writes) => get(writes, 0)
         _ => false
     }
     assert match execute(proof, cleanup, entry, 256) {

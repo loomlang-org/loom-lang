@@ -62,6 +62,7 @@ fn verification(function Function, program Program, backend ProofBackend) Verifi
         program = program
         fresh = fresh
         budget = budget
+        loop_plans = new[LoopPlan]()
         loop_control = Option.None
         query = proof_query(backend)
         shared = false
@@ -609,6 +610,10 @@ fn applied_call_body(proof Verification, call Expr, function Function, arguments
             Result.Ok(completed) => Result.Ok(completed)
             Result.Err(_) => applied_summary(proof, call, function, state, arguments.values, bindings, boundary, depth)
         }
+    }
+    // Mutable results need stateful value inference, not scalar expansion.
+    if !immutable_storage_type(proof.program, function.result, 0) {
+        return source_or_summary_call(proof, call, function, arguments, bindings, boundary, depth)
     }
     // Arguments already ran once. Only snapshot references and a finite pure
     // helper are expanded; unsupported storage effects cannot disappear.
