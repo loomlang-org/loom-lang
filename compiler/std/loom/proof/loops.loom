@@ -10,7 +10,7 @@ import std.option.Option
 
 enum LoopCandidate {
     Entry(Int, List[Int], Text, Value)
-    Guard(Expr)
+    Guard(Expr, Bool)
     Header(Int, List[Int], Int)
     Unpublished(Int, List[Int])
     Born(Int, List[Int], Int)
@@ -213,7 +213,7 @@ fn loop_predicate(candidate LoopCandidate, state State) Result[Predicate, Text] 
             }
             boolean(binary(relation, value, initial)?)
         }
-        LoopCandidate.Guard(expr) => Result.Ok(bag_fact(boolean(pure(expr, state)?)?, state.facts))
+        LoopCandidate.Guard(expr, _) => Result.Ok(bag_fact(boolean(pure(expr, state)?)?, state.facts))
         LoopCandidate.Header(local, path, identity) => match loop_local_value(get(state.locals, local), path)? {
             Value.List(current) => Result.Ok(Predicate.Constant(current == identity))
             _ => Result.Err("loop header invariant needs a tracked List")
@@ -357,7 +357,7 @@ fn loop_guard_candidates(expr Expr, candidates List[LoopCandidate], entry State)
             }
         }
         let weak = proof_expr(expr, ExprKind.Binary, 2, relation, -1, expr.children)
-        discard add_loop_candidate(candidates, LoopCandidate.Guard(weak), entry)?
+        discard add_loop_candidate(candidates, LoopCandidate.Guard(weak, false), entry)?
     }
     Result.Ok(true)
 }

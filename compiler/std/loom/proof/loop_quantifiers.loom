@@ -16,15 +16,19 @@ fn loop_solver_fact(value Predicate) Bool {
 }
 
 fn loop_entails(proof Verification, fact Predicate, state State) Bool {
+    loop_entails(proof, fact, state, false)
+}
+
+fn loop_entails(proof Verification, fact Predicate, state State, extended Bool) Bool {
     if loop_holds(fact, state) {
         return true
     }
-    if !proof.query.backend.enabled || !loop_solver_fact(fact) {
+    if !proof.query.backend.enabled || (!extended && !loop_solver_fact(fact)) {
         return false
     }
     let query = proof_query(proof.query.backend)
     solver_fact(query, fact, state)
-    match discharge(query) {
+    match discharge(query, extended) {
         Result.Ok(value) => value
         Result.Err(_) => false
     }
@@ -47,7 +51,13 @@ fn loop_query_views(proof Verification, clauses List[Expr], state State) State {
     current
 }
 
+// Automatic guesses use the base theories; leading source assertions opt into
+// extended search. A failed guess cannot make required verification optional.
 fn propose_quantified(proof Verification, candidates List[LoopCandidate], value Expr, entry State) {
+    propose_quantified(proof, candidates, value, entry, false)
+}
+
+fn propose_quantified(proof Verification, candidates List[LoopCandidate], value Expr, entry State, extended Bool) {
     if length(candidates) >= 64 {
         return
     }
@@ -60,8 +70,8 @@ fn propose_quantified(proof Verification, candidates List[LoopCandidate], value 
     match pure(value, current) {
         Result.Ok(observed) => match boolean(observed) {
             Result.Ok(fact) => {
-                if loop_entails(proof, fact, current) {
-                    push(candidates, LoopCandidate.Guard(value))
+                if loop_entails(proof, fact, current, extended) {
+                    push(candidates, LoopCandidate.Guard(value, extended))
                 }
             }
             Result.Err(_) => {
@@ -94,7 +104,7 @@ fn loop_assertion_prefix(proof Verification, body Expr,
         if !bounded_contract(value) || !observation_guard_expression(value, true) {
             return false
         }
-        propose_quantified(proof, candidates, value, entry)
+        propose_quantified(proof, candidates, value, entry, true)
         return true
     }
     if body.kind != ExprKind.Block {
@@ -259,10 +269,10 @@ fn loop_quantified_candidates(proof Verification, clauses List[Expr], candidates
 
 fn quantified_candidate_preserved(proof Verification, candidate LoopCandidate, state State) Bool {
     match candidate {
-        LoopCandidate.Guard(value) => {
+        LoopCandidate.Guard(value, extended) => {
             match loop_guard_views(proof, value, state) {
                 Result.Ok(current) => match loop_predicate(candidate, current) {
-                    Result.Ok(fact) => loop_entails(proof, fact, current)
+                    Result.Ok(fact) => loop_entails(proof, fact, current, extended)
                     Result.Err(_) => loop_holds(Predicate.Constant(false), current)
                 }
                 Result.Err(_) => false

@@ -5,6 +5,11 @@ implementation, not a compatibility ledger for previous prototypes.
 
 ## Unreleased
 
+- Compose finite histogram membership with properties proved over an integer
+  sequence column. Keep premises, ranges, content versions and index-independent
+  key substitution exact. Try the base theory first and preserve host failures;
+  isolate the merge trial so unrelated contract tests do not recheck it.
+
 - Model explicit count prefixes and their finite extension law, preserving
   entry extents, versioned reads and ordinary evaluation checks. Reuse repeated
   root predicate encodings within one proof query. An ordinary merge now proves

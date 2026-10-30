@@ -1,0 +1,98 @@
+import std.text.contains
+
+fn support_encoding(start Linear, body Predicate) Text {
+    encoding([Obligation {
+                facts = []
+                conclusion = Predicate.And([
+                        Predicate.Forall(-7, start, variable(1), [body]),
+                        integer_limit(">=", IntegerTerm.Count(10,
+                                [IntegerTerm.Linear(variable(1)), IntegerTerm.Linear(variable(2))]), 0),
+                    ])
+            }])
+}
+
+test fn histogram_support_keeps_its_premise_range_and_index_dependency() {
+    let selected = IntegerTerm.Select(10, [], variable(-7))
+    let body = integer_limit(">=", selected, 0)
+    let query = support_encoding(constant(integer(0)), body)
+    assert contains(query, "(=> (forall ((loom_bound Int))")
+    assert contains(query, "(=> (> (select (loom_bag a10")
+    assert contains(query, "(>= (+ 0 (* 1 n2)) (+ 0))")
+    assert !contains(query, "loom_support_key")
+    assert !contains(support_encoding(constant(integer(1)), body), "(=> (> (select (loom_bag a10")
+    assert !contains(support_encoding(constant(integer(0)),
+            Predicate.IntegerCompare(">=", selected, IntegerTerm.Linear(variable(-7)))), "(=> (> (select (loom_bag a10")
+    assert !contains(support_encoding(constant(integer(0)),
+            integer_limit(">=", IntegerTerm.Select(10, [], scale(variable(-7), integer(2))), 0)), "(=> (> (select (loom_bag a10")
+    assert !contains(support_encoding(constant(integer(0)),
+            Predicate.IntegerCompare(">=", selected, IntegerTerm.Select(11, [], variable(-7)))), "(=> (> (select (loom_bag a10")
+}
+
+test fn extended_theories_do_not_retry_a_host_failure() {
+    let calls = [0]
+    let backend = ProofBackend {
+        enabled = true
+        context = ""
+        solve = fn(context Text, query Text) Result[Bool, Text] {
+            calls[0] = calls[0] + 1
+            Result.Err("host stopped")
+        }
+    }
+    let query = proof_query(backend)
+    push(query.obligations, Obligation {
+            facts = []
+            conclusion = integer_limit(">", IntegerTerm.Count(10,
+                    [IntegerTerm.Linear(constant(integer(1))), IntegerTerm.Linear(variable(2))]), 0)
+        })
+    assert match discharge(query) {
+        Result.Err(message) => message == "host stopped"
+        _ => false
+    }
+    assert calls[0] == 1
+}
+
+test fn support_instantiation_preserves_lexical_paths_and_free_names() {
+    let outer = SmtBinder {
+        identity = -3
+        start = "0"
+        end = "n1"
+    }
+    let other = SmtBinder {
+        start = "1"
+        ..outer
+    }
+    let inner = SmtBinder {
+        identity = -4
+        start = "n-3"
+        end = "n2"
+    }
+    assert support_scopes_match([outer], [outer, inner])
+    assert !support_scopes_match([outer], [other])
+    let law = SmtSupportLaw {
+        condition = "(>= loom_support_key 0)"
+        quantifiers = [outer]
+    }
+    let key = SmtSupportKey {
+        value = "n2"
+        quantifiers = []
+    }
+    assert support_no_capture(law, key)
+    assert !support_no_capture(law, SmtSupportKey {
+            value = "n-3"
+            ..key
+        })
+    assert support_no_capture(SmtSupportLaw {
+            quantifiers = []
+            ..law
+        }, SmtSupportKey {
+            value = "n-3"
+            quantifiers = [outer]
+        })
+    assert !support_no_capture(SmtSupportLaw {
+            condition = "(>= loom_support_key n-3)"
+            quantifiers = []
+        }, SmtSupportKey {
+            value = "n-3"
+            quantifiers = [outer]
+        })
+}

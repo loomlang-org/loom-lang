@@ -40,14 +40,29 @@ fn proof_query(backend ProofBackend) ProofQuery {
 // their existing fast path and never call the host. Logical declarations are
 // local to this query; no previous function's assumptions can leak into it.
 fn discharge(proof ProofQuery) Result[Bool, Text] {
+    discharge(proof, true)
+}
+
+fn discharge(proof ProofQuery, extended Bool) Result[Bool, Text] {
     if length(proof.obligations) == 0 {
         return Result.Ok(true)
     }
-    let query = smt_query(proof.obligations)?
-    if !proof.backend.solve(proof.backend.context, query)? {
+    // Avoid introducing extra quantified search into obligations already
+    // settled by the base theories. A satisfiable abstract counterexample may
+    // need more valid theory laws; it supplies no fact to the extended query.
+    // Host errors, including cancellation and timeouts, retain their boundary.
+    let query = smt_query(proof.obligations, false)?
+    if proof.backend.solve(proof.backend.context, query)? {
+        return Result.Ok(true)
+    }
+    if !extended {
         return Result.Err("required postcondition is not proved")
     }
-    Result.Ok(true)
+    let refined = smt_query(proof.obligations, true)?
+    if refined != query && proof.backend.solve(proof.backend.context, refined)? {
+        return Result.Ok(true)
+    }
+    Result.Err("required postcondition is not proved")
 }
 
 fn solver_condition(proof ProofQuery, condition Expr, state State) Result[Bool, Text] {

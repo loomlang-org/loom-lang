@@ -29,6 +29,9 @@ fn smt_binder(value SmtBinder, condition Text) Text {
 }
 
 record SmtWriter {
+    extended Bool
+    support_keys List[SmtSupportKey]
+    support_laws List[SmtSupportLaw]
     declarations Bytes
     names List[Text]
     budget List[Int]
@@ -322,6 +325,7 @@ fn smt_quantified(writer SmtWriter, identity Int, start Linear, end Linear,
     }
     let quantified = smt_binder(get(binders, length(binders) - 1), condition)
     discard smt_order_chain(writer, identity, start, end, predicate, quantified)?
+    discard smt_support(writer, identity, start, end, condition, quantified)?
     if length(writer.counts) != 0 {
         match pointwise_bag(Predicate.Forall(identity, start, end, [predicate])) {
             Option.Some(bag) => {
@@ -564,6 +568,10 @@ fn smt_redundant_fact(facts List[Predicate], index Int) Bool {
 }
 
 fn smt_query(obligations List[Obligation]) Result[Text, Text] {
+    smt_query(obligations, true)
+}
+
+fn smt_query(obligations List[Obligation], extended Bool) Result[Text, Text] {
     let budget = new[Int]()
     push(budget, 65536)
     let counts = new[Linear]()
@@ -575,6 +583,9 @@ fn smt_query(obligations List[Obligation]) Result[Text, Text] {
         scan = scan + 1
     }
     let writer = SmtWriter {
+        extended = extended
+        support_keys = []
+        support_laws = []
         declarations = std.bytes.new()
         names = new[Text]()
         budget = budget
@@ -613,6 +624,7 @@ fn smt_query(obligations List[Obligation]) Result[Text, Text] {
     // equalities before lowering arithmetic. Every branch must still be unsat;
     // default preserves Z3's theory selection and the backend's time budget.
     smt_append(body, ")))\n(check-sat-using (then simplify solve-eqs simplify (or-else split-clause skip) solve-eqs simplify aig simplify default))\n")
+    discard smt_support_instances(writer)?
     discard smt_prefix_frames(writer)?
     Result.Ok(concat(std.bytes.to_text(writer.declarations), std.bytes.to_text(body)))
 }

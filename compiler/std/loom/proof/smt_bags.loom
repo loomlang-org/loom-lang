@@ -107,6 +107,7 @@ fn smt_count(writer SmtWriter, identity Int, inputs List[IntegerTerm], depth Int
     }
     smt_assert(writer, bag_bound_scope(law, size))
     discard smt_count_prefix(writer, array, size, needle, depth + 1)?
+    discard smt_count_presence(writer, identity, size, needle, count)?
     Result.Ok(concat("(select ", concat(bag, concat(" ", concat(needle, ")")))))
 }
 

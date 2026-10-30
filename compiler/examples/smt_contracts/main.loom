@@ -71,7 +71,6 @@ fn main() {
     bitwise_cases()
     count_scope_cases()
     count_prefix_cases()
-    merge_count_cases()
 }
 
 test fn combined_contracts() {
