@@ -9,11 +9,11 @@ fn recursive_count(target Int, base Int) Function {
 }
 
 test fn recursive_groups_check_every_base_and_do_not_publish_partial_proofs() {
-    assert match verify_contract_group(proof_helpers([recursive_count(0, 0)]), [true], no_proof_backend()) {
+    assert match prove_contract_group(proof_helpers([recursive_count(0, 0)]), [true], no_proof_backend()) {
         Result.Ok(_) => true
         _ => false
     }
-    assert match verify_contract_group(proof_helpers([recursive_count(1, 0), recursive_count(0, 0)]),
+    assert match prove_contract_group(proof_helpers([recursive_count(1, 0), recursive_count(0, 0)]),
         [true, true], no_proof_backend()) {
         Result.Ok(_) => true
         _ => false
@@ -27,13 +27,13 @@ test fn recursive_groups_check_every_base_and_do_not_publish_partial_proofs() {
         } else {
             [recursive_count(1, 1), recursive_count(0, 0)]
         }
-        assert match verify_contract_group(proof_helpers(functions), [true, true], no_proof_backend()) {
+        assert match prove_contract_group(proof_helpers(functions), [true, true], no_proof_backend()) {
             Result.Err(_) => true
             _ => false
         }
         order = order + 1
     }
-    assert match verify_contract_group(proof_helpers([recursive_count(0, 0)]), [], no_proof_backend()) {
+    assert match prove_contract_group(proof_helpers([recursive_count(0, 0)]), [], no_proof_backend()) {
         Result.Err(_) => true
         _ => false
     }
@@ -43,13 +43,18 @@ test fn completed_groups_return_call_free_clauses_without_rewriting_call_summari
     let positive = operation(">=", local(0), literal("0"))
     let predicate = contract_fixture([1], 2, positive, [], [])
     let guarantee = helper_call(0, 2, [local(1)])
-    let root = contract_fixture([1], 1, local(0), [positive], [guarantee])
+    let body = expression(ExprKind.Block, 1, "", -1, [
+            expression(ExprKind.Assert, 0, "group", -1, [positive]), local(0)
+        ])
+    let root = contract_fixture([1], 1, body, [positive], [guarantee])
     let program = proof_helpers([predicate, root])
-    match verify_contract_group(program, [false, true], no_proof_backend()) {
-        Result.Ok(conditions) => {
-            assert length(conditions) == 2 && length(get(conditions, 0)) == 0
-            assert length(get(conditions, 1)) != 0
-            assert loop_call_free(get(get(conditions, 1), 0))
+    match prove_contract_group(program, [false, true], no_proof_backend()) {
+        Result.Ok(reports) => {
+            assert length(reports) == 2 && length(get(reports, 0).postconditions) == 0
+            let report = get(reports, 1)
+            assert length(report.postconditions) != 0
+            assert loop_call_free(get(report.postconditions, 0))
+            assert length(report.assertions) == 1 && get(report.assertions, 0).proved
             assert get(get(program.functions, 1).postconditions, 0).kind == ExprKind.Call
         }
         _ => {

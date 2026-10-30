@@ -287,8 +287,9 @@ fn distinct_fact(output List[Predicate], fact Predicate) {
 fn append_facts(output List[Predicate], fact Predicate) {
     match fact {
         Predicate.And(values) => {
-            append_facts(output, get(values, 0))
-            append_facts(output, get(values, 1))
+            let parts = bag_fact_parts(values)
+            append_facts(output, get(parts, 0))
+            append_facts(output, get(parts, 1))
         }
         Predicate.TextEqual(left, right) => {
             distinct_fact(output, fact)

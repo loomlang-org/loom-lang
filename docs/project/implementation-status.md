@@ -86,6 +86,10 @@ binding evidence, not behavioral compatibility or migration proof.
 Resident workers reuse valid analyses while revalidating source and observed
 inputs. They also retain bounded decisions for complete identical SMT queries
 across edits; source checking still runs and errors/timeouts are not proof facts.
+A [recursive integer merge sort](../../compiler/examples/merge_sort_contracts)
+now composes entry-state order/count contracts across a package boundary.
+Finite source goals remain intact; histogram strengthening applies to established
+facts. General comparator proofs and the standard-library sorting proof remain open.
 Theory encoding interns exact repeated laws and instantiates count bounds at
 actual symbolic query terms. Binder-dependent terms retain their enclosing
 ranges, including nested ranges and extents, rather than searching unrelated
@@ -402,7 +406,7 @@ supported theories and boundaries. The central rules are:
   distances on the same content version and field column. The conditional
   induction law retains shifted ranges and outer scopes, excluding distinctness
   and IEEE comparisons. A native merge fixture removes its proved loop scans;
-  general comparator/permutation proofs remain open.
+  general comparator proofs remain open.
   Positive finite counts can transport an established integer-column predicate
   to a key without a named index witness. Source premises, prefix ranges,
   versions and enclosing binders stay exact; residual index dependencies do not
@@ -414,8 +418,11 @@ supported theories and boundaries. The central rules are:
   one-element extension law and entry snapshots of their extents. Repeated root
   predicate encodings share work within one query, retaining the existing budget
   and exact scopes/versions. An ordinary merge proves ordering, length and both
-  input histograms; its eight loop assertions are removed in native lowering.
-  General comparator and whole sorting-algorithm proofs remain open.
+  input histograms. A recursive integer sort composes its entry-state guarantees
+  across a package boundary to prove ordering and permutation; native lowering
+  removes all eleven split/merge invariant scans. Completed recursive groups
+  retain the assertion evidence from their original successful proof. General
+  comparator laws and the standard-library sorting proof remain open.
   Current observations
   require coherent storage views at each induction step; unavailable or published
   shared storage supplies no invariant. Private views survive suspension.

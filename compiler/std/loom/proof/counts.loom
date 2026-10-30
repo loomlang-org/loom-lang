@@ -144,11 +144,16 @@ fn bag_length(value Predicate, bag Predicate) Bool {
     }
 }
 
-fn bag_conjunction(first Predicate, second Predicate) Predicate {
+// Derive a whole histogram only from an established conjunction. Goals retain
+// their finite source predicate, so a stronger SMT abstraction cannot obscure
+// the evidence needed to introduce it.
+fn bag_fact_parts(values List[Predicate]) List[Predicate] {
+    let first = get(values, 0)
+    let second = get(values, 1)
     match bag_from_counts(second) {
         Option.Some(bag) => {
             if bag_length(first, bag) {
-                return Predicate.And(predicates(first, bag))
+                return predicates(first, bag)
             }
         }
         Option.None => {
@@ -157,13 +162,13 @@ fn bag_conjunction(first Predicate, second Predicate) Predicate {
     match bag_from_counts(first) {
         Option.Some(bag) => {
             if bag_length(second, bag) {
-                return Predicate.And(predicates(bag, second))
+                return predicates(bag, second)
             }
         }
         Option.None => {
         }
     }
-    Predicate.And(predicates(first, second))
+    values
 }
 
 fn bag_fact(value Predicate, facts List[Predicate]) Predicate {

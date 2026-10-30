@@ -1,0 +1,120 @@
+import std.list.length
+import std.list.new
+import std.list.get
+import std.list.push
+import merge_contracts.ordered
+import merge_contracts.prefix_occurrences
+import merge_contracts.merge_ordered
+
+fn occurrences(values List[Int], needle Int) Int {
+    prefix_occurrences(values, needle, length(values))
+}
+
+fn same_counts(first List[Int], second List[Int]) Bool {
+    var index = 0
+    while index < length(first) {
+        if occurrences(first, get(first, index)) != occurrences(second, get(first, index)) {
+            return false
+        }
+        index = index + 1
+    }
+    true
+}
+
+fn permutation(first List[Int], second List[Int]) Bool {
+    length(first) == length(second) && same_counts(first, second)
+}
+
+fn split_counts(needles List[Int], source List[Int], end Int, left List[Int], right List[Int]) Bool {
+    var index = 0
+    while index < length(needles) {
+        let needle = needles[index]
+        if prefix_occurrences(source, needle, end) != prefix_occurrences(left, needle, length(left)) + prefix_occurrences(right, needle, length(right)) {
+            return false
+        }
+        index = index + 1
+    }
+    true
+}
+
+fn matching(first List[Int], second List[Int]) Bool {
+    var index = 0
+    while index < length(first) {
+        if get(first, index) != get(second, index) {
+            return false
+        }
+        index = index + 1
+    }
+    true
+}
+
+fn identical(first List[Int], second List[Int]) Bool {
+    length(first) == length(second) && matching(first, second)
+}
+
+fn passthrough[T](value T) T {
+    value
+}
+
+fn copied(values List[Int]) List[Int]
+ensures identical(result, old(values))
+ensures permutation(result, old(values))
+ensures identical(values, old(values))
+{
+    let output = new[Int]()
+    var index = 0
+    while index < length(values) {
+        push(output, get(values, index))
+        index = index + 1
+    }
+    passthrough(output)
+}
+
+pub fn sorted_merge(values List[Int]) List[Int]
+ensures ordered(result)
+ensures permutation(old(values), result) {
+    let count = length(values)
+    if count < 2 {
+        return copied(values)
+    }
+    let left List[Int] = []
+    let right List[Int] = []
+    var index = 0
+    while index < count {
+        assert index >= 0 && index <= count
+        assert length(left) + length(right) == index
+        assert split_counts(values, values, index, left, right)
+        if index % 2 == 0 {
+            push(left, values[index])
+        } else {
+            push(right, values[index])
+        }
+        index = index + 1
+    }
+    let first = sorted_merge(left)
+    let second = sorted_merge(right)
+    merge_ordered(first, second)
+}
+
+fn exercise(values List[Int]) {
+    let snapshot = copied(values)
+    let output = sorted_merge(values)
+    assert ordered(output)
+    assert permutation(snapshot, output)
+    assert identical(values, snapshot)
+}
+
+fn cases() {
+    exercise([])
+    exercise([7])
+    exercise([3, -1, 2, -1])
+    exercise([0, 0, -2, 4, 3, 4, -2])
+}
+
+test fn recursive_sort_preserves_order_and_entry_histogram() {
+    cases()
+}
+
+fn main() {
+    cases()
+}

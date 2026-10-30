@@ -1,0 +1,5 @@
+[module]
+name = "merge_sort_contracts"
+
+[dependencies.merge_contracts]
+path = "../merge_contracts"

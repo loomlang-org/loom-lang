@@ -3654,6 +3654,15 @@ and [merge](examples/merge_contracts/main.loom) examples compose these laws
 with order proofs. The merge proves result length and both input histograms,
 without retaining its eight loop assertion scans in native code. This does not
 prove arbitrary comparator laws or the general library sorting implementation.
+Proof goals retain their finite source predicates; histogram strengthening
+applies only to established facts. The
+[recursive merge-sort example](examples/merge_sort_contracts) composes the
+separate merge package's entry-state guarantees to prove integer ordering and
+permutation, including duplicates. A postcondition about current mutable inputs
+would not establish the same guarantee about the caller's entry data.
+Completed recursive groups retain the assertion evidence from that same proof;
+normalizing their clauses does not require rediscovering it for native lowering.
+The split and merge retain none of their eleven invariant scans in O0/O2 code.
 Count bounds instantiate at each actual symbolic needle, retaining any enclosing
 quantifier ranges and their dependencies. This avoids universal search over
 unrelated integers without sampling source values or changing source checks.

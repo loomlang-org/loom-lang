@@ -8,15 +8,15 @@ pub record ContractGroupFailure {
 // prove its own guarantee. No result escapes if any proof fails. Predicates
 // still expand actual finite pure bodies; recursion supplies no predicate axiom
 // or termination promise. Non-members are independently checked host evidence.
-pub fn verify_contract_group(program Program, members List[Bool], backend ProofBackend)
-Result[List[List[Expr]], ContractGroupFailure] {
-    verify_contract_group(program, members, backend, new[InputGuarantee]())
+pub fn prove_contract_group(program Program, members List[Bool], backend ProofBackend)
+Result[List[ContractProof], ContractGroupFailure] {
+    prove_contract_group(program, members, backend, new[InputGuarantee]())
 }
 
 // Exact continuing input policies supplied by the checked source host, not
 // promises inferred from a read-only body or a user-provided type name.
-pub fn verify_contract_group(program Program, members List[Bool], backend ProofBackend,
-    protected List[InputGuarantee]) Result[List[List[Expr]], ContractGroupFailure] {
+pub fn prove_contract_group(program Program, members List[Bool], backend ProofBackend,
+    protected List[InputGuarantee]) Result[List[ContractProof], ContractGroupFailure] {
     if length(members) != length(program.functions) {
         return Result.Err(ContractGroupFailure {
                 function = -1
@@ -26,7 +26,7 @@ pub fn verify_contract_group(program Program, members List[Bool], backend ProofB
     // Normalize each member's own obligations, but retain source-form summaries
     // in the closure. Calls expand them at their invocation boundary; normalizing
     // the entire closure first would expand safety clauses a second time.
-    let conditions = new[List[Expr]]()
+    let reports = new[ContractProof]()
     var index = 0
     while index < length(program.functions) {
         if get(members, index) {
@@ -39,25 +39,26 @@ pub fn verify_contract_group(program Program, members List[Bool], backend ProofB
                         })
                 }
             }
-            if length(proof.function.postconditions) != 0 {
-                match verify_body(proof, protected) {
-                    Result.Ok(_) => {
-                    }
-                    Result.Err(message) => {
-                        return Result.Err(ContractGroupFailure {
-                                function = index
-                                message = message
-                            })
-                    }
+            match proved_contract(proof, protected) {
+                Result.Ok(report) => {
+                    push(reports, report)
+                }
+                Result.Err(message) => {
+                    return Result.Err(ContractGroupFailure {
+                            function = index
+                            message = message
+                        })
                 }
             }
-            push(conditions, proof.function.postconditions)
         } else {
-            push(conditions, new[Expr]())
+            push(reports, ContractProof {
+                    postconditions = []
+                    assertions = []
+                })
         }
         index = index + 1
     }
-    // Publish only after every member passes. Callers keep source summaries in
-    // their closure and may retain these call-free clauses for this snapshot.
-    Result.Ok(conditions)
+    // Publish clauses and assertion evidence only after every member passes.
+    // Replaying normalized clauses need not rediscover the source proof.
+    Result.Ok(reports)
 }
