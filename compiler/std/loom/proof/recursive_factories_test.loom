@@ -1,0 +1,81 @@
+fn factory_test_program() Program {
+    let program = proof_program_with_types([])
+    var index = 0
+    while index < 6 {
+        push(program.types, publication_shape(TypeKind.Int, []))
+        index = index + 1
+    }
+    push(program.types, publication_shape(TypeKind.List, [1]))
+    push(program.types, publication_shape(TypeKind.List, [6]))
+    program
+}
+
+test fn recursive_factory_origins_check_every_return_and_function_instance() {
+    let program = factory_test_program()
+    let input = expression(ExprKind.Local, 6, "", 0, [])
+    let flag = expression(ExprKind.Local, 2, "", 1, [])
+    let fresh = expression(ExprKind.List, 6, "", -1, [literal("1")])
+    let first = contract_fixture([6, 2], 6,
+        expression(ExprKind.If, 6, "", -1, [flag, fresh, helper_call(1, 6, [input, flag])]), [], [])
+    let second = contract_fixture([6, 2], 6, helper_call(0, 6, [input, flag]), [], [])
+    push(program.functions, first)
+    push(program.functions, second)
+    assert private_factory(program, 0)
+    assert private_factory(program, 1)
+    // Both fixtures have symbol 0: only the prepared target ID identifies an
+    // invocation. A base return of incoming storage invalidates both cycles.
+    set(program.functions, 0, contract_fixture([6, 2], 6,
+            expression(ExprKind.If, 6, "", -1, [flag, input, helper_call(1, 6, [input, flag])]), [], []))
+    assert !private_factory(program, 0)
+    assert !private_factory(program, 1)
+}
+
+test fn failed_recursive_origin_hypotheses_cannot_hide_publication() {
+    let program = factory_test_program()
+    let input = expression(ExprKind.Local, 7, "", 0, [])
+    let payload = expression(ExprKind.Local, 6, "", 1, [])
+    let flag = expression(ExprKind.Local, 2, "", 2, [])
+    let yes = expression(ExprKind.Bool, 2, "true", -1, [])
+    let fresh = expression(ExprKind.List, 7, "", -1, [])
+    let first = contract_fixture([7, 6, 2], 7,
+        expression(ExprKind.If, 7, "", -1,
+            [flag, input, helper_call(1, 7, [input, payload, flag])]), [], [])
+    // On a terminating path, first(input, payload, true) returns input.
+    // Treating the recursive result as fresh here would conceal publication
+    // of the caller's payload into its incoming graph.
+    let publish = expression(ExprKind.Intrinsic, 0, "list_push", -1,
+        [helper_call(0, 7, [input, payload, yes]), payload])
+    let second = contract_fixture([7, 6, 2], 7,
+        expression(ExprKind.Block, 7, "", -1, [publish, fresh]), [], [])
+    push(program.functions, first)
+    push(program.functions, second)
+    let saved = expression(ExprKind.Local, 6, "", 2, [])
+    let root_input = expression(ExprKind.Local, 7, "", 0, [])
+    let root_flag = expression(ExprKind.Local, 2, "", 1, [])
+    let initialize = expression(ExprKind.Let, 0, "", 2,
+        [expression(ExprKind.List, 6, "", -1, [])])
+    let call = expression(ExprKind.Discard, 0, "", -1,
+        [helper_call(0, 7, [root_input, saved, root_flag])])
+    let root = contract_fixture([7, 2], 6,
+        expression(ExprKind.Block, 6, "", -1, [initialize, call, saved]), [], [])
+    let locals = clone(root.locals)
+    set(locals, 2, Local {
+            name = "payload"
+            ty = 6
+            mutable = false
+            is_scoped = false
+        })
+    push(locals, Local {
+            name = "result"
+            ty = 6
+            mutable = false
+            is_scoped = false
+        })
+    push(program.functions, Function {
+            locals = locals
+            result_local = 3
+            ..root
+        })
+    assert !private_factory(program, 2)
+    assert !fresh_list_factory(program, 2)
+}

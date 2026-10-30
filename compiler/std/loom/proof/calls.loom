@@ -355,7 +355,7 @@ fn applied_summary(proof Verification, call Expr, function Function, state State
     let paths = established_checks(proof, entry.checks, state, depth)?
     let closed = closed_storage_inputs(proof.program, function.params)
     let local_storage = closed || storage_local(proof.program, function.body)
-    let private_result = private_factory(proof.program, function)
+    let private_result = private_factory(proof.program, call.index)
     let mutable_result = !immutable_storage_type(proof.program, function.result, 0)
     let kept_extent = length(state.extents) == 0 || extent_preserving(proof.program, function.body)
     let stable = closed || (local_storage && kept_extent)
@@ -597,7 +597,7 @@ fn applied_call_body(proof Verification, call Expr, function Function, arguments
     // guarantees, never a body to expand. Type invariants need no extra ensures.
     // A fresh factory's body footprint supplies only private storage origin.
     if length(function.postconditions) != 0 || function.body.kind == ExprKind.Deferred ||
-    private_factory(proof.program, function) {
+    private_factory(proof.program, call.index) {
         let completed = applied_summary(proof, call, function, state, arguments.values, bindings, boundary, depth)?
         return Result.Ok(if function.is_async {
                 completed
