@@ -59,7 +59,7 @@ fn intrinsic_operation(primitive Text, ty Int, arity Int) ProofOperation {
     if (name == "proof_all" || name == "proof_scan_checks") && ty == 2 && arity == 3 {
         return operation_shape(3, OperandFlow.Eager, true, false)
     }
-    if name == "proof_count" && ty == 1 && arity == 2 {
+    if name == "proof_count" && ty == 1 && arity == 3 {
         return operation_shape(2, OperandFlow.Eager, true, true)
     }
     if name == "entry_list" && arity == 1 {

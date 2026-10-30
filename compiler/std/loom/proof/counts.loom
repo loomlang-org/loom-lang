@@ -1,5 +1,5 @@
 fn count_expression(value Expr) Bool {
-    value.kind == ExprKind.Intrinsic && value.text == "proof_count" && length(value.children) == 2
+    value.kind == ExprKind.Intrinsic && value.text == "proof_count" && length(value.children) == 3
 }
 
 fn scan_tail(value Expr) Expr {
@@ -24,8 +24,8 @@ fn has_bound(value Expr, identity Int) Bool {
 }
 
 fn counted_scan(context Expansion, source Expr, condition Expr, end Expr, identity Int) Result[Expr, Text] {
-    if condition.kind != ExprKind.Binary || condition.text != "==" || !list_length_expression(end) {
-        return Result.Err("count proof needs an equality scan over the complete List")
+    if condition.kind != ExprKind.Binary || condition.text != "==" || has_bound(end, identity) {
+        return Result.Err("count proof needs a stable prefix and equality scan")
     }
     var read = get(condition.children, 0)
     var needle = get(condition.children, 1)
@@ -35,17 +35,16 @@ fn counted_scan(context Expansion, source Expr, condition Expr, end Expr, identi
     }
     if !list_read_expression(read) || read.ty != 1 || has_bound(needle, identity) ||
     !entry_list_type(context.program, get(read.children, 0).ty, 0) ||
-    !bound_expression(get(read.children, 1)) || get(read.children, 1).index != identity ||
-    !exact_expression(get(read.children, 0), get(end.children, 0)) {
+    !bound_expression(get(read.children, 1)) || get(read.children, 1).index != identity {
         return Result.Err("count proof needs one Int element and a stable needle")
     }
     Result.Ok(proof_expr(source, ExprKind.Intrinsic, 1, "proof_count", -1,
-            proof_children(get(read.children, 0), needle)))
+            [get(read.children, 0), needle, end]))
 }
 
 fn counted_value(expr Expr, state State) Result[Value, Text] {
     let receiver = pure(get(expr.children, 0), state)?
-    let size = list_value_extent(receiver, state)?
+    let size = list_value_index(pure(get(expr.children, 2), state)?)?
     let contents = match receiver {
         Value.List(identity) => list_state(identity, state)?.contents
         Value.EntryList(_, contents) => contents

@@ -1,0 +1,26 @@
+// A finite prefix gains exactly its last element. Instantiate at the actual
+// extent and needle, rather than quantify over unrelated indices or values.
+// This mathematical array law grants no source access or evaluation safety.
+fn smt_count_prefix(writer SmtWriter, array Text, size Linear, needle Text,
+    depth Int) Result[Bool, Text] {
+    discard smt_step(writer, depth)?
+    let previous = add(size, constant(integer(-1)))
+    let end = smt_linear(writer, size)?
+    let last = smt_linear(writer, previous)?
+    let current = smt_bag(writer, array, size)?
+    let before = smt_bag(writer, array, previous)?
+    let output = std.bytes.new()
+    smt_append(output, concat("(=> (> ", concat(end, " 0) (= (select ")))
+    smt_append(output, concat(current, concat(" ", concat(needle, ") (+ (select "))))
+    smt_append(output, concat(before, concat(" ", concat(needle, ") (ite (= (select "))))
+    smt_append(output, concat(array, concat(" ", concat(last, ") "))))
+    smt_append(output, concat(needle, ") 1 0))))"))
+    var law = std.bytes.to_text(output)
+    var index = length(writer.quantifiers)
+    while index > 0 {
+        index = index - 1
+        law = smt_binder(get(writer.quantifiers, index), law)
+    }
+    smt_assert(writer, law)
+    Result.Ok(true)
+}

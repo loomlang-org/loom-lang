@@ -59,7 +59,7 @@ fn entry_reads(value Expr) Expr {
         let snapshot = proof_expr(receiver, ExprKind.Intrinsic, receiver.ty, "entry_list", -1,
             snapshot_child(entry_reads(receiver)))
         return proof_expr(value, value.kind, value.ty, value.text, value.index,
-            proof_children(snapshot, entry_reads(get(value.children, 1))))
+            [snapshot, entry_reads(get(value.children, 1)), entry_reads(get(value.children, 2))])
     }
     if quantified_expression(value) {
         return quantified_value(value, value.index, entry_reads(get(value.children, 0)),
