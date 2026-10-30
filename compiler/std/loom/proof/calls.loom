@@ -595,9 +595,8 @@ fn applied_call_body(proof Verification, call Expr, function Function, arguments
     discard expansion_step(context, 0)?
     // A private abstract method supplies only its checked signature and declared
     // guarantees, never a body to expand. Type invariants need no extra ensures.
-    // A fresh factory's body footprint supplies only private storage origin.
-    if length(function.postconditions) != 0 || function.body.kind == ExprKind.Deferred ||
-    private_factory(proof.program, call.index) {
+    // Origin evidence does not replace value reasoning for an ordinary helper.
+    if length(function.postconditions) != 0 || function.body.kind == ExprKind.Deferred {
         let completed = applied_summary(proof, call, function, state, arguments.values, bindings, boundary, depth)?
         return Result.Ok(if function.is_async {
                 completed
@@ -629,7 +628,7 @@ fn applied_call_body(proof Verification, call Expr, function Function, arguments
         // Expansion has not executed effects or committed state. Reuse the
         // ordinary symbolic executor with the already evaluated arguments.
         Result.Err(_) => {
-            return source_body_call(proof, call.index, function, arguments, false, depth)
+            return source_or_summary_call(proof, call, function, arguments, bindings, boundary, depth)
         }
     }
     if contains_application(value) && !result_application_needed(proof, value) &&
@@ -649,9 +648,21 @@ fn applied_call_body(proof Verification, call Expr, function Function, arguments
     if !bounded_contract(value) {
         // Unconsumed initialization metadata cannot become executable capture
         // expressions: the source body allocates their shared storage once.
-        return source_body_call(proof, call.index, function, arguments, false, depth)
+        return source_or_summary_call(proof, call, function, arguments, bindings, boundary, depth)
     }
     call_results(proof, value, context, state, boundary, depth)
+}
+
+// Infer an ordinary uncontracted body when finite evidence is available.
+// A failed attempt commits neither partial state nor obligations; the ordinary
+// call abstraction still supplies type facts and independently checked origins.
+fn source_or_summary_call(proof Verification, call Expr, function Function,
+    arguments CallArguments, bindings List[ExpansionBinding], boundary Int, depth Int) Result[List[Outcome], Text] {
+    match inferred_body_call(proof, call.index, function, arguments, false, depth) {
+        Result.Ok(completed) => Result.Ok(completed)
+        Result.Err(_) => applied_summary(proof, call, function,
+            call_scope(arguments.state, arguments.values), arguments.values, bindings, boundary, depth)
+    }
 }
 
 // Retain a known target at the same already-evaluated call boundary as scalar

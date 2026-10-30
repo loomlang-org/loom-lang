@@ -16,7 +16,7 @@ test fn recursive_factory_origins_check_every_return_and_function_instance() {
     let flag = expression(ExprKind.Local, 2, "", 1, [])
     let fresh = expression(ExprKind.List, 6, "", -1, [literal("1")])
     let first = contract_fixture([6, 2], 6,
-        expression(ExprKind.If, 6, "", -1, [flag, fresh, helper_call(1, 6, [input, flag])]), [], [])
+        expression(ExprKind.If, 6, "", -1, [flag, fresh, helper_call(1, 6, [fresh, flag])]), [], [])
     let second = contract_fixture([6, 2], 6, helper_call(0, 6, [input, flag]), [], [])
     push(program.functions, first)
     push(program.functions, second)
@@ -78,4 +78,22 @@ test fn failed_recursive_origin_hypotheses_cannot_hide_publication() {
         })
     assert !private_factory(program, 2)
     assert !fresh_list_factory(program, 2)
+}
+
+test fn recursive_origin_hypotheses_cannot_cover_weaker_inputs() {
+    let program = factory_test_program()
+    let first = expression(ExprKind.Local, 6, "", 0, [])
+    let second = expression(ExprKind.Local, 6, "", 1, [])
+    let flag = expression(ExprKind.Local, 2, "", 2, [])
+    let yes = expression(ExprKind.Bool, 2, "true", -1, [])
+    let no = expression(ExprKind.Bool, 2, "false", -1, [])
+    push(program.functions, contract_fixture([6, 6, 2], 6,
+            expression(ExprKind.If, 6, "", -1,
+                [flag, first, helper_call(0, 6, [second, first, yes])]), [], []))
+    push(program.functions, contract_fixture([6], 6,
+            helper_call(0, 6, [expression(ExprKind.List, 6, "", -1, []), first, no]), [], []))
+    // The first recursive invocation swaps a private header with the incoming
+    // one and terminates by returning that incoming alias.
+    assert !private_factory(program, 1)
+    assert !fresh_list_factory(program, 1)
 }
