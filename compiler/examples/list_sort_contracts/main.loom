@@ -1,0 +1,38 @@
+import std.list.push
+import std.list.length
+import std.list.sorted
+
+pub fn preserved_count(values List[Int], less fn(Int, Int) Bool) List[Int]
+ensures length(result) == old(length(values)) {
+    sorted(values, less)
+}
+
+type Triple = List[Int] where length(self) == 3
+
+fn constrained_copy(values Triple, less fn(Int, Int) Bool) Triple {
+    Triple(preserved_count(values, less))
+}
+
+fn exercise() {
+    let input = [3, 1, 2]
+    let output = preserved_count(input, fn(a Int, b Int) Bool {
+            if length(input) == 3 {
+                std.list.push(input, 99)
+            }
+            a < b
+        })
+    assert length(output) == 3 && length(input) == 4
+    assert output[0] == 1 && output[1] == 2 && output[2] == 3
+    let fixed = constrained_copy(Triple([3, 1, 2]), fn(a Int, b Int) Bool {
+            a < b
+        })
+    assert length(fixed) == 3 && fixed[0] == 1
+}
+
+test fn sorting_keeps_entry_shape_with_effectful_comparisons() {
+    exercise()
+}
+
+fn main() {
+    exercise()
+}

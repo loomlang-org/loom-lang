@@ -3663,6 +3663,10 @@ would not establish the same guarantee about the caller's entry data.
 Completed recursive groups retain the assertion evidence from that same proof;
 normalizing their clauses does not require rediscovering it for native lowering.
 The split and merge retain none of their eleven invariant scans in O0/O2 code.
+The [source-library sorting shape example](examples/list_sort_contracts) derives
+an integer List's entry count through the ordinary `std.list.sorted` body, even
+when comparisons modify the original input. Its constrained result needs no
+second boundary check; general comparator and mutable-element proofs remain open.
 Count bounds instantiate at each actual symbolic needle, retaining any enclosing
 quantifier ranges and their dependencies. This avoids universal search over
 unrelated integers without sampling source values or changing source checks.

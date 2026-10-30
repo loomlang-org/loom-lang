@@ -422,7 +422,14 @@ supported theories and boundaries. The central rules are:
   across a package boundary to prove ordering and permutation; native lowering
   removes all eleven split/merge invariant scans. Completed recursive groups
   retain the assertion evidence from their original successful proof. General
-  comparator laws and the standard-library sorting proof remain open.
+  comparator laws and ordering/permutation proofs for `std.list.sorted` remain open.
+  Its integer List entry count now composes through the ordinary source body,
+  unknown comparison callbacks and checked constrained construction. Structural
+  loop plans cache write masks only; local types, private views and all backedges
+  are rechecked. Optional coefficient search has its own bound, and expression
+  keys compare match branches as well as child expressions. Reachability reuses
+  the last exact fact snapshot; linear ranges share translated term vectors
+  within one query, retaining arbitrary precision and contradiction checks.
   Current observations
   require coherent storage views at each induction step; unavailable or published
   shared storage supplies no invariant. Private views survive suspension.

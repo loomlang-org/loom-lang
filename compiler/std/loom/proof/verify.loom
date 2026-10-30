@@ -17,6 +17,8 @@ record Verification {
     program Program
     fresh List[Int]
     budget List[Int]
+    loop_plans List[LoopPlan]
+    fact_check List[FactCheck]
     loop_control Option[LoopControl]
     query ProofQuery
     shared Bool
@@ -416,11 +418,38 @@ fn operation(proof Verification, expr Expr, state State, depth Int) Result[List[
     Result.Ok(output)
 }
 
+record FactCheck {
+    facts List[Predicate]
+    unreachable Bool
+}
+
+fn unreachable(proof Verification, state State) Bool {
+    // Fact lists are published read-only. Retain only the last exact snapshot;
+    // locals and heap observations do not change what follows from these facts.
+    if length(proof.fact_check) != 0 {
+        let previous = get(proof.fact_check, 0)
+        if same_predicates(previous.facts, state.facts) {
+            return previous.unreachable
+        }
+    }
+    let impossible = holds(Predicate.Constant(false), state.facts)
+    let checked = FactCheck {
+        facts = state.facts
+        unreachable = impossible
+    }
+    if length(proof.fact_check) == 0 {
+        push(proof.fact_check, checked)
+    } else {
+        set(proof.fact_check, 0, checked)
+    }
+    impossible
+}
+
 fn execute(proof Verification, expr Expr, state State, depth Int) Result[List[Outcome], Text] {
     if depth <= 0 {
         return Result.Err("proof depth budget exhausted")
     }
-    if holds(Predicate.Constant(false), state.facts) {
+    if unreachable(proof, state) {
         return Result.Ok(new[Outcome]())
     }
     if observation_expression(expr) {

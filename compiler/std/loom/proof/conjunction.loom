@@ -7,56 +7,104 @@ import std.list.set
 import std.list.length
 
 fn conjunction_step(budget List[Int]) Bool {
-    if get(budget, 0) == 0 { return false }
+    if get(budget, 0) == 0 {
+        return false
+    }
     set(budget, 0, get(budget, 0) - 1)
     true
 }
+
 fn scalar_structure(expr Expr, budget List[Int], depth Int) Bool {
-    if depth >= 64 || !conjunction_step(budget) || (expr.ty != 1 && expr.ty != 2 && expr.ty != 3 && expr.ty != 5) || length(expr.arms) != 0 { return false }
+    if depth >= 64 || !conjunction_step(budget) || (expr.ty != 1 && expr.ty != 2 && expr.ty != 3 && expr.ty != 5) || length(expr.arms) != 0 {
+        return false
+    }
     if expr.kind == ExprKind.Integer || expr.kind == ExprKind.Float || expr.kind == ExprKind.Bool || expr.kind == ExprKind.Text {
         return length(expr.children) == 0
     }
-    if expr.kind == ExprKind.Local { return expr.index == 0 && length(expr.children) == 0 }
+    if expr.kind == ExprKind.Local {
+        return expr.index == 0 && length(expr.children) == 0
+    }
     let shape = proof_operation(expr)
-    if shape.arity < 0 || shape.heap || shape.flow == OperandFlow.Choice { return false }
+    if shape.arity < 0 || shape.heap || shape.flow == OperandFlow.Choice {
+        return false
+    }
     var index = 0
     while index < length(expr.children) {
-        if !scalar_structure(get(expr.children, index), budget, depth + 1) { return false }
+        if !scalar_structure(get(expr.children, index), budget, depth + 1) {
+            return false
+        }
         index = index + 1
     }
     true
 }
+
 fn same_structure(left Expr, right Expr, budget List[Int]) Bool {
     if !conjunction_step(budget) || left.kind != right.kind || left.ty != right.ty || left.text != right.text ||
-        left.index != right.index || length(left.children) != length(right.children) { return false }
+    left.index != right.index || length(left.children) != length(right.children) || length(left.arms) != length(right.arms) {
+        return false
+    }
     var index = 0
     while index < length(left.children) {
-        if !same_structure(get(left.children, index), get(right.children, index), budget) { return false }
+        if !same_structure(get(left.children, index), get(right.children, index), budget) {
+            return false
+        }
+        index = index + 1
+    }
+    index = 0
+    while index < length(left.arms) {
+        let a = get(left.arms, index)
+        let b = get(right.arms, index)
+        if a.variant != b.variant || a.whole != b.whole || !same_projection(a.bindings, b.bindings) ||
+        length(a.body) != length(b.body) {
+            return false
+        }
+        var item = 0
+        while item < length(a.body) {
+            if !same_structure(get(a.body, item), get(b.body, item), budget) {
+                return false
+            }
+            item = item + 1
+        }
         index = index + 1
     }
     true
 }
+
 fn source_conjunct(premise Expr, goal Expr, budget List[Int]) Bool {
-    if !conjunction_step(budget) { return false }
-    if same_structure(premise, goal, budget) { return true }
-    if premise.kind != ExprKind.Binary || premise.text != "&&" { return false }
+    if !conjunction_step(budget) {
+        return false
+    }
+    if same_structure(premise, goal, budget) {
+        return true
+    }
+    if premise.kind != ExprKind.Binary || premise.text != "&&" {
+        return false
+    }
     source_conjunct(get(premise.children, 0), goal, budget) || source_conjunct(get(premise.children, 1), goal, budget)
 }
+
 fn destination_conjuncts(premise Expr, goal Expr, budget List[Int]) Bool {
-    if !conjunction_step(budget) { return false }
+    if !conjunction_step(budget) {
+        return false
+    }
     if goal.kind == ExprKind.Binary && goal.text == "&&" {
         return destination_conjuncts(premise, get(goal.children, 0), budget) && destination_conjuncts(premise, get(goal.children, 1), budget)
     }
     source_conjunct(premise, goal, budget)
 }
+
 // A held conjunction has evaluated every term successfully. Reusing exact,
 // call-free scalar terms preserves definedness, including IEEE behavior and
 // short-circuit guards within a term. Never extract terms from a disjunction.
 fn conjunction_implies(premise Expr, conclusion Expr) Bool {
-    if premise.ty != 2 || conclusion.ty != 2 { return false }
+    if premise.ty != 2 || conclusion.ty != 2 {
+        return false
+    }
     let budget = new[Int]()
     push(budget, 256)
-    if !scalar_structure(premise, budget, 0) || !scalar_structure(conclusion, budget, 0) { return false }
+    if !scalar_structure(premise, budget, 0) || !scalar_structure(conclusion, budget, 0) {
+        return false
+    }
     set(budget, 0, 1024)
     destination_conjuncts(premise, conclusion, budget)
 }

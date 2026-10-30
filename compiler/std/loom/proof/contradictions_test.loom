@@ -17,3 +17,27 @@ test fn contradiction_search_preserves_numeric_and_structural_pairs_in_both_orde
     assert !holds(Predicate.Constant(false), [Predicate.Variable(10), not(Predicate.Variable(11))])
     assert holds(Predicate.Variable(12), [Predicate.Constant(false)])
 }
+
+test fn unreachable_snapshots_recheck_changed_facts_and_keep_ancestor_states() {
+    let function = contract_fixture([], 0, literal("0"), [], [])
+    let proof = verification(function, empty_proof_program())
+    let term = variable(10)
+    let state = State {
+        heap = -1
+        locals = []
+        facts = [Predicate.Compare(">=", term), Predicate.Compare("<=", term)]
+        extents = []
+        observations = []
+    }
+    assert !unreachable(proof, state)
+    assert !unreachable(proof, state)
+    let conflicting = State {
+        facts = [Predicate.Compare(">", term), Predicate.Compare("<=", term)]
+        ..state
+    }
+    assert unreachable(proof, conflicting)
+    assert !unreachable(proof, state)
+    assert unreachable(proof, assume(state, Predicate.Constant(false)))
+    assert !unreachable(proof, state)
+    assert length(proof.fact_check) == 1
+}

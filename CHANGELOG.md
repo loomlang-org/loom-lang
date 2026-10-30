@@ -5,6 +5,13 @@ implementation, not a compatibility ledger for previous prototypes.
 
 ## Unreleased
 
+- Reuse bounded structural loop write plans while rechecking each entry's local
+  types and all inductive facts. Keep optional coefficient search separate from
+  required proof work, compare match arms in expression keys, and send mutable
+  results to stateful call inference. Prove integer source-library sorting shape
+  through effectful callbacks and constrained construction. Reuse unchanged fact
+  snapshots for reachability and translated linear ranges within one query.
+
 - Keep finite source predicates as proof goals and derive histogram abstractions
   only from established facts. Compose entry-state merge contracts across a
   package boundary to prove recursive integer sorting and permutation. Retain

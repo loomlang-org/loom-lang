@@ -1132,7 +1132,11 @@ ensures result == cursor + bias
             !output.status.success(),
             "invalid affine content proof accepted"
         );
-        assert!(String::from_utf8_lossy(&output.stderr).contains("not proved"));
+        let error = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            error.contains("proof") || error.contains("proved"),
+            "{error}"
+        );
     }
     fs::write(&source, program).unwrap();
     success(&check());

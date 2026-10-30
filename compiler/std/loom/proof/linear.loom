@@ -383,6 +383,34 @@ fn range(value Linear, facts List[Predicate]) Bounds {
     bounds
 }
 
+record RangeCheck {
+    value Linear
+    bounds Bounds
+}
+
+fn range(value Linear, facts List[Predicate], checked List[RangeCheck]) Bounds {
+    var index = 0
+    while index < length(checked) {
+        let previous = get(checked, index)
+        if same_terms(value.terms, previous.value.terms) {
+            // Translation preserves every tightening step, including != at an
+            // endpoint. Empty intervals remain empty under the same shift.
+            let shift = subtract(value.constant, previous.value.constant)
+            return Bounds {
+                low = sum(previous.bounds.low, shift)
+                high = sum(previous.bounds.high, shift)
+            }
+        }
+        index = index + 1
+    }
+    let bounds = range(value, facts)
+    push(checked, RangeCheck {
+            value = value
+            bounds = bounds
+        })
+    bounds
+}
+
 fn interval(relation Text, bounds Bounds) Bool {
     if compare(bounds.low, bounds.high) > 0 {
         return true
@@ -408,6 +436,9 @@ fn interval(relation Text, bounds Bounds) Bool {
 }
 
 fn holds(predicate Predicate, facts List[Predicate]) Bool {
+    // All range queries here use one immutable fact snapshot. Reuse translated
+    // term vectors only within this call, never across branches or requests.
+    let checked = new[RangeCheck]()
     // A directly established range needs no search for unrelated
     // contradictions. If it fails, the existing contradiction proof may still
     // discharge the goal; failure here is not evidence of falsity.
@@ -418,7 +449,7 @@ fn holds(predicate Predicate, facts List[Predicate]) Bool {
             }
         }
         Predicate.Compare(relation, value) => {
-            if interval(relation, range(value, facts)) {
+            if interval(relation, range(value, facts, checked)) {
                 return true
             }
         }
@@ -462,7 +493,7 @@ fn holds(predicate Predicate, facts List[Predicate]) Bool {
                 }
             }
             Predicate.Compare(relation, term) => {
-                if interval(inverse(relation), range(term, facts)) {
+                if interval(inverse(relation), range(term, facts, checked)) {
                     return true
                 }
             }
