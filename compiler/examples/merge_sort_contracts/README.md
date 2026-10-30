@@ -17,6 +17,8 @@ including duplicate values. The merge package states its result guarantees over
 callee preserves current input storage.
 
 The example uses ordinary functions, contracts and leading loop assertions.
-It introduces no trusted sort axiom or source annotation. Runtime cases also
+Its three split invariants and the merge's eight invariants leave no runtime
+assertion scans in either O0 or O2 native code. It introduces no trusted sort
+axiom or source annotation. Runtime cases also
 check that the input is unchanged. This is an integer example, not a proof of
 arbitrary comparators or the general standard-library sorting implementation.
