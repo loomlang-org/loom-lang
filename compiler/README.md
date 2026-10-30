@@ -3660,6 +3660,8 @@ applies only to established facts. The
 separate merge package's entry-state guarantees to prove integer ordering and
 permutation, including duplicates. A postcondition about current mutable inputs
 would not establish the same guarantee about the caller's entry data.
+Completed recursive groups retain the assertion evidence from that same proof;
+normalizing their clauses does not require rediscovering it for native lowering.
 Count bounds instantiate at each actual symbolic needle, retaining any enclosing
 quantifier ranges and their dependencies. This avoids universal search over
 unrelated integers without sampling source values or changing source checks.

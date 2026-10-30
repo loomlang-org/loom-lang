@@ -1,15 +1,19 @@
-import std.loom.proof.verify_contract_group
+import std.loom.proof.prove_contract_group
+import std.loom.proof.ContractProof
 
-fn retain_group_contracts(stage Context, functions List[Function], contexts List[Context],
-    conditions List[List[Expr]]) {
+fn retain_group_contracts(stage Context, program std.loom.typed.Program, contexts List[Context],
+    reports List[ContractProof]) {
     var index = 0
     while index < length(contexts) {
         let instance = get(stage.env.pending, index)
-        let function = get(functions, index)
-        let clauses = get(conditions, index)
-        if length(clauses) != 0 {
-            retain_contract(get(contexts, index), instance.signature,
-                with_contracts(function, function.preconditions, clauses), false)
+        let function = get(program.functions, index)
+        let report = get(reports, index)
+        if length(report.postconditions) != 0 {
+            let checked = with_assertion_proofs(
+                with_contracts(function, function.preconditions, report.postconditions),
+                function_identities(stage.env, length(stage.env.pending)),
+                program.function_identities, report.assertions)
+            retain_contract(get(contexts, index), instance.signature, checked, true)
         }
         index = index + 1
     }
@@ -104,19 +108,19 @@ fn prepared_contract_group(stage Context, root Function, body_calls Bool) Result
         interfaces = stage.env.interfaces
         witnesses = stage.env.witnesses
     }
-    match verify_contract_group(program, members, get(stage.env.inputs, 0).build.proof_backend) {
-        Result.Ok(conditions) => {
-            retain_group_contracts(stage, functions, contexts, conditions)
+    match prove_contract_group(program, members, get(stage.env.inputs, 0).build.proof_backend) {
+        Result.Ok(reports) => {
+            retain_group_contracts(stage, program, contexts, reports)
             Result.Ok(program)
         }
         Result.Err(failed) => {
             // Retain the existing pure-helper invariant fallback, with one
             // coherent private type snapshot for every member of the group.
             match expanded_invariant_types(stage.env, functions) {
-                Result.Ok(types) => match verify_contract_group(proof_types(program, types), members,
+                Result.Ok(types) => match prove_contract_group(proof_types(program, types), members,
                     get(stage.env.inputs, 0).build.proof_backend, continuing_sequence_guarantees(stage.env)) {
-                    Result.Ok(conditions) => {
-                        retain_group_contracts(stage, functions, contexts, conditions)
+                    Result.Ok(reports) => {
+                        retain_group_contracts(stage, program, contexts, reports)
                         return Result.Ok(proof_types(program, types))
                     }
                     Result.Err(_) => {
