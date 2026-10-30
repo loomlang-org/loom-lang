@@ -29,7 +29,9 @@ private key or verifier bypass is needed.
 Acquisition tests also cancel numeric/hostname connects and accepts before
 handshake registration. Peer EOF (or reset), bounded by a deadline, checks that
 an acquired but unclaimed TCP result closes; waiting for ClientHello first would
-miss that window. The `cancel-accept` mode exercises this server-side boundary.
+miss that window. `cancel-accept` and `cancel-before-accept` cover in-flight and
+early cancellation. Closing the listener clears unaccepted backlog connections;
+accepted sockets still require cancellation cleanup.
 `owned` uses scoped TLS connections, while `owned-detach` explicitly hands them
 to manually managed streams before retaining full-duplex Tasks. The
 `unclaimed-client` and `unclaimed-server` modes wait for a final completion

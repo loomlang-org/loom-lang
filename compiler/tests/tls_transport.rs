@@ -124,6 +124,7 @@ fn tls_roundtrip_verifies_peers_and_survives_moving_gc() {
             "untrusted",
             "expired",
             "cancel-accept",
+            "cancel-before-accept",
         ] {
             let output = common::run_task_command(
                 Command::new(&executable)
@@ -146,7 +147,10 @@ fn tls_roundtrip_verifies_peers_and_survives_moving_gc() {
                 output.stdout,
                 match mode {
                     "ok" | "duplex" | "owned" | "owned-detach" => b"TLS roundtrip\n".as_slice(),
-                    "cancel-accept" | "unclaimed-client" | "unclaimed-server" => {
+                    "cancel-accept"
+                    | "cancel-before-accept"
+                    | "unclaimed-client"
+                    | "unclaimed-server" => {
                         b"transport closed\n".as_slice()
                     }
                     _ => b"peer rejected\n".as_slice(),
