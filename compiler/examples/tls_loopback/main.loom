@@ -210,8 +210,8 @@ async fn main() {
             return
         }
     }
-    if mode == "cancel-accept" {
-        cancelled_accept(listener, server_options, address).await
+    if mode == "cancel-accept" || mode == "cancel-before-accept" {
+        cancelled_accept(listener, server_options, address, mode == "cancel-before-accept").await
         discard write_text("transport closed\n")
         return
     }
