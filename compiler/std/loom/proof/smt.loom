@@ -322,6 +322,7 @@ fn smt_quantified(writer SmtWriter, identity Int, start Linear, end Linear,
     }
     let quantified = smt_binder(get(binders, length(binders) - 1), condition)
     discard smt_order_chain(writer, identity, start, end, predicate, quantified)?
+    discard smt_support(writer, identity, start, end, condition, quantified)?
     if length(writer.counts) != 0 {
         match pointwise_bag(Predicate.Forall(identity, start, end, [predicate])) {
             Option.Some(bag) => {

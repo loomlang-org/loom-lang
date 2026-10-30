@@ -1,0 +1,28 @@
+import std.text.contains
+
+fn support_encoding(start Linear, body Predicate) Text {
+    encoding([Obligation {
+                facts = []
+                conclusion = Predicate.And([
+                        Predicate.Forall(-7, start, variable(1), [body]),
+                        integer_limit(">=", IntegerTerm.Count(10,
+                                [IntegerTerm.Linear(variable(1)), IntegerTerm.Linear(variable(2))]), 0),
+                    ])
+            }])
+}
+
+test fn histogram_support_keeps_its_premise_range_and_index_dependency() {
+    let selected = IntegerTerm.Select(10, [], variable(-7))
+    let body = integer_limit(">=", selected, 0)
+    let query = support_encoding(constant(integer(0)), body)
+    assert contains(query, "(=> (forall ((loom_bound Int))")
+    assert contains(query, "(forall ((loom_support_key Int)) (=> (> (select (loom_bag a10")
+    assert contains(query, "(>= loom_support_key (+ 0))")
+    assert !contains(support_encoding(constant(integer(1)), body), "loom_support_key")
+    assert !contains(support_encoding(constant(integer(0)),
+            Predicate.IntegerCompare(">=", selected, IntegerTerm.Linear(variable(-7)))), "loom_support_key")
+    assert !contains(support_encoding(constant(integer(0)),
+            integer_limit(">=", IntegerTerm.Select(10, [], scale(variable(-7), integer(2))), 0)), "loom_support_key")
+    assert !contains(support_encoding(constant(integer(0)),
+            Predicate.IntegerCompare(">=", selected, IntegerTerm.Select(11, [], variable(-7)))), "loom_support_key")
+}

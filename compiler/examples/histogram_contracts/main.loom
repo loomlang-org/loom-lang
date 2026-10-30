@@ -1,0 +1,53 @@
+import std.list.length
+
+fn prefix_occurrences(values List[Int], needle Int, end Int) Int
+requires end >= 0 && end <= length(values)
+{
+    var index = 0
+    var count = 0
+    while index < end {
+        if values[index] == needle {
+            count = count + 1
+        }
+        index = index + 1
+    }
+    count
+}
+
+fn nonnegative(values List[Int]) Bool {
+    var index = 0
+    while index < length(values) {
+        if values[index] < 0 {
+            return false
+        }
+        index = index + 1
+    }
+    true
+}
+
+fn included(values List[Int], index Int, end Int) Bool
+requires index >= 0 && index < end && end <= length(values)
+ensures result {
+    prefix_occurrences(values, values[index], end) > 0
+}
+
+fn positive_member(values List[Int], needle Int) Bool
+requires nonnegative(values) && prefix_occurrences(values, needle, length(values)) > 0
+ensures result {
+    needle >= 0
+}
+
+fn exercise() {
+    assert included([3, -1, 3], 1, 3)
+    assert included([7], 0, 1)
+    assert positive_member([0, 3, 9], 3)
+    assert positive_member([0], 0)
+}
+
+test fn finite_histogram_membership_transports_source_predicates() {
+    exercise()
+}
+
+fn main() {
+    exercise()
+}
