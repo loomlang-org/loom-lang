@@ -44,3 +44,25 @@ test fn exact_normalization_and_linear_identities_keep_canonical_values() {
     assert length(cancelled.terms) == 0 && length(cancelled.constant.digits) == 0
     assert length(value.terms) == 1 && compare(value.constant, integer(7)) == 0
 }
+
+test fn translated_ranges_preserve_exclusions_signs_and_mathematical_offsets() {
+    let value = variable(10)
+    let facts = [Predicate.Compare("!=", value), Predicate.Compare(">=", value),
+        Predicate.Compare("<=", add(value, constant(integer(-9))))]
+    let checked = new[RangeCheck]()
+    let first = range(value, facts, checked)
+    assert compare(first.low, integer(1)) == 0
+    assert compare(first.high, integer(9)) == 0
+    let offset = decimal("123456789012345678901234567890")
+    let shifted = range(add(value, constant(offset)), facts, checked)
+    assert compare(shifted.low, sum(offset, integer(1))) == 0
+    assert compare(shifted.high, sum(offset, integer(9))) == 0
+    let opposite = range(scale(value, integer(-1)), facts, checked)
+    assert compare(opposite.low, integer(-9)) == 0
+    assert compare(opposite.high, integer(-1)) == 0
+    let impossible = [Predicate.Compare(">", value), Predicate.Compare("<=", value)]
+    let separate = new[RangeCheck]()
+    discard range(value, impossible, separate)
+    let empty = range(add(value, constant(offset)), impossible, separate)
+    assert compare(empty.low, empty.high) > 0
+}

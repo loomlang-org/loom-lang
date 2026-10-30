@@ -63,6 +63,7 @@ fn verification(function Function, program Program, backend ProofBackend) Verifi
         fresh = fresh
         budget = budget
         loop_plans = new[LoopPlan]()
+        fact_check = new[FactCheck]()
         loop_control = Option.None
         query = proof_query(backend)
         shared = false
