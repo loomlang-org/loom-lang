@@ -1,0 +1,44 @@
+fn calculate(limit Int) Int
+requires limit >= 0 && limit <= 1000
+ensures result == limit * limit {
+    var cursor = 0
+    var total = 0
+    var extra0 = 0
+    var extra1 = 0
+    var extra2 = 0
+    var extra3 = 0
+    var extra4 = 0
+    var extra5 = 0
+    var extra6 = 0
+    var extra7 = 0
+    while cursor < limit {
+        assert total == cursor * cursor
+        total = total + 2 * cursor + 1
+        extra0 = extra0 + 1
+        extra1 = extra1 + 2
+        extra2 = extra2 + 3
+        extra3 = extra3 + 4
+        extra4 = extra4 + 5
+        extra5 = extra5 + 6
+        extra6 = extra6 + 7
+        extra7 = extra7 + 8
+        cursor = cursor + 1
+    }
+    discard extra0
+    discard extra1
+    discard extra2
+    discard extra3
+    discard extra4
+    discard extra5
+    discard extra6
+    discard extra7
+    total
+}
+
+fn main() {
+    assert calculate(10) == 100
+}
+
+test fn checked_result() {
+    assert calculate(10) == 100
+}

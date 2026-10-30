@@ -309,3 +309,48 @@ async fn main() {
     fs::write(&source, &program).unwrap();
     success(&check());
 }
+
+#[test]
+fn source_relations_survive_unrelated_candidate_pressure() {
+    let package = tempfile::tempdir().unwrap();
+    let path = package.path().join("main.loom");
+    let source = include_str!("fixtures/invariant_pressure/main.loom");
+    fs::write(&path, source).unwrap();
+    for command in ["check", "test", "run"] {
+        success(&common::loom(&[command, package.path().to_str().unwrap()]));
+    }
+    let artifact = common::executable(package.path(), "invariant-pressure");
+    let ir = package.path().join("invariant-pressure.ll");
+    let assertion = source
+        .lines()
+        .position(|line| line.trim() == "assert total == cursor * cursor")
+        .unwrap()
+        + 1;
+    let diagnostic = format!(":{assertion}:9: assertion failed");
+    for level in ["0", "2"] {
+        success(
+            &common::command(&["build", package.path().to_str().unwrap()])
+                .arg("--output")
+                .arg(&artifact)
+                .arg("--emit-ir")
+                .arg(&ir)
+                .env("LOOM_OPT_LEVEL", level)
+                .output()
+                .unwrap(),
+        );
+        assert!(!fs::read_to_string(&ir).unwrap().contains(&diagnostic));
+        success(&common::run_tasks(&artifact));
+    }
+    for changed in [
+        source.replace("var total = 0", "var total = 1"),
+        source.replace(
+            "total = total + 2 * cursor + 1",
+            "total = total + 2 * cursor + 2",
+        ),
+    ] {
+        fs::write(&path, changed).unwrap();
+        let checked = common::loom(&["check", package.path().to_str().unwrap()]);
+        assert!(!checked.status.success());
+        assert!(String::from_utf8_lossy(&checked.stderr).contains("postcondition"));
+    }
+}
