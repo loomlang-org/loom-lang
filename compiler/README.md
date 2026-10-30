@@ -3635,7 +3635,9 @@ derives an integer bound without naming an index witness. The rule preserves
 its premise, prefix extent, column and outer scope; index-dependent predicates
 do not acquire an unrestricted key property. Evaluation safety remains separate.
 The prover first tries its base theories, then adds support laws after a
-satisfiable abstract result. Host failures and timeouts still propagate.
+satisfiable abstract result. Support laws instantiate at actual count keys in
+compatible lexical scopes, without a new unrestricted key quantifier. Host
+failures and timeouts still propagate.
 Prefix extension adds exactly the last element's contribution. Its explicit
 extent participates in ordinary operand checks and entry snapshots; writes
 outside the prefix preserve its counts. The [prefix](examples/smt_contracts/count_prefixes.loom)

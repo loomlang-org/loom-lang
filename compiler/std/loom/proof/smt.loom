@@ -30,6 +30,8 @@ fn smt_binder(value SmtBinder, condition Text) Text {
 
 record SmtWriter {
     extended Bool
+    support_keys List[SmtSupportKey]
+    support_laws List[SmtSupportLaw]
     declarations Bytes
     names List[Text]
     budget List[Int]
@@ -582,6 +584,8 @@ fn smt_query(obligations List[Obligation], extended Bool) Result[Text, Text] {
     }
     let writer = SmtWriter {
         extended = extended
+        support_keys = []
+        support_laws = []
         declarations = std.bytes.new()
         names = new[Text]()
         budget = budget
@@ -620,6 +624,7 @@ fn smt_query(obligations List[Obligation], extended Bool) Result[Text, Text] {
     // equalities before lowering arithmetic. Every branch must still be unsat;
     // default preserves Z3's theory selection and the backend's time budget.
     smt_append(body, ")))\n(check-sat-using (then simplify solve-eqs simplify (or-else split-clause skip) solve-eqs simplify aig simplify default))\n")
+    discard smt_support_instances(writer)?
     discard smt_prefix_frames(writer)?
     Result.Ok(concat(std.bytes.to_text(writer.declarations), std.bytes.to_text(body)))
 }

@@ -407,7 +407,9 @@ supported theories and boundaries. The central rules are:
   to a key without a named index witness. Source premises, prefix ranges,
   versions and enclosing binders stay exact; residual index dependencies do not
   become unrestricted value facts. Base queries retain their first attempt;
-  additional support laws do not recover from host failures or timeouts.
+  additional support laws instantiate actual count keys in compatible lexical
+  scopes, without an unrestricted key quantifier. Host failures and timeouts
+  remain unproved.
   Zero-based integer count scans also model explicit prefixes, with a conditional
   one-element extension law and entry snapshots of their extents. Repeated root
   predicate encodings share work within one query, retaining the existing budget

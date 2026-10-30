@@ -1,5 +1,15 @@
 import std.text.replace
 
+record SmtSupportKey {
+    value Text
+    quantifiers List[SmtBinder]
+}
+
+record SmtSupportLaw {
+    condition Text
+    quantifiers List[SmtBinder]
+}
+
 // Every supported key has an index witness in the finite prefix. A property
 // depending on that index only through one integer select therefore holds for
 // every supported key. Keep the original premise, range, column and outer scope.
@@ -32,9 +42,10 @@ fn smt_support(writer SmtWriter, identity Int, start Linear, end Linear,
                 let count = concat("(select ", concat(bag, " loom_support_key)"))
                 let supported = smt_boolean_pair(">", count, "0")
                 let implication = smt_boolean_pair("=>", supported, property)
-                let quantified = concat("(forall ((loom_support_key Int)) ", concat(implication, ")"))
-                let law = smt_boolean_pair("=>", premise, quantified)
-                smt_support_scope(writer, law)
+                push(writer.support_laws, SmtSupportLaw {
+                        condition = smt_boolean_pair("=>", premise, implication)
+                        quantifiers = writer.quantifiers
+                    })
                 return Result.Ok(true)
             }
         }
@@ -49,6 +60,10 @@ fn smt_count_presence(writer SmtWriter, identity Int, size Linear,
         return Result.Ok(true)
     }
     discard smt_step(writer, 0)?
+    push(writer.support_keys, SmtSupportKey {
+            value = needle
+            quantifiers = writer.quantifiers
+        })
     // A matching in-prefix index witnesses a positive count. This supplies no
     // source access/evaluation fact, nor a witness merely from seeing a term.
     let end = smt_linear(writer, size)?
@@ -76,4 +91,78 @@ fn smt_support_scope(writer SmtWriter, original Text) {
         law = smt_binder(get(writer.quantifiers, scope), law)
     }
     smt_assert(writer, law)
+}
+
+// Instantiate the universal support law at actual count keys. An unrestricted
+// key quantifier creates unbounded model search for false candidate invariants.
+// This remains the same finite-support theorem; no candidate supplies a premise.
+fn smt_support_instances(writer SmtWriter) Result[Bool, Text] {
+    var law_index = 0
+    while law_index < length(writer.support_laws) {
+        let law = get(writer.support_laws, law_index)
+        var key_index = 0
+        while key_index < length(writer.support_keys) {
+            discard smt_step(writer, 0)?
+            let key = get(writer.support_keys, key_index)
+            if support_scopes_match(law.quantifiers, key.quantifiers) &&
+            support_no_capture(law, key) {
+                var condition = std.text.replace(law.condition, "loom_support_key", key.value)
+                let binders = if length(law.quantifiers) >= length(key.quantifiers) {
+                    law.quantifiers
+                } else {
+                    key.quantifiers
+                }
+                var scope = length(binders)
+                while scope > 0 {
+                    scope = scope - 1
+                    condition = smt_binder(get(binders, scope), condition)
+                }
+                smt_assert(writer, condition)
+            }
+            key_index = key_index + 1
+        }
+        law_index = law_index + 1
+    }
+    Result.Ok(true)
+}
+
+// One scope must extend the other lexical path. Equal numeric identities in
+// unrelated ranges must never capture a key or change the original premise.
+fn support_scopes_match(first List[SmtBinder], second List[SmtBinder]) Bool {
+    var index = 0
+    while index < length(first) && index < length(second) {
+        let left = get(first, index)
+        let right = get(second, index)
+        if left.identity != right.identity || left.start != right.start || left.end != right.end {
+            return false
+        }
+        index = index + 1
+    }
+    true
+}
+
+fn support_no_capture(law SmtSupportLaw, key SmtSupportKey) Bool {
+    let binders = if length(law.quantifiers) >= length(key.quantifiers) {
+        law.quantifiers
+    } else {
+        key.quantifiers
+    }
+    let value = if length(law.quantifiers) >= length(key.quantifiers) {
+        key.value
+    } else {
+        law.condition
+    }
+    var index = if length(law.quantifiers) < length(key.quantifiers) {
+        length(law.quantifiers)
+    } else {
+        length(key.quantifiers)
+    }
+    while index < length(binders) {
+        let name = concat("n", std.int.to_text(get(binders, index).identity))
+        if smt_mentions(value, name) {
+            return false
+        }
+        index = index + 1
+    }
+    true
 }
