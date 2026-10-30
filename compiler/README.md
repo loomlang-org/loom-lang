@@ -3637,7 +3637,9 @@ do not acquire an unrestricted key property. Evaluation safety remains separate.
 The prover first tries its base theories, then adds support laws after a
 satisfiable abstract result. Support laws instantiate at actual count keys in
 compatible lexical scopes, without a new unrestricted key quantifier. Host
-failures and timeouts still propagate.
+failures and timeouts still propagate. Automatic invariant guesses use the base
+theories; leading source assertion hints and required proofs retain extended
+search. This limits speculative work without certifying an unproved candidate.
 Prefix extension adds exactly the last element's contribution. Its explicit
 extent participates in ordinary operand checks and entry snapshots; writes
 outside the prefix preserve its counts. The [prefix](examples/smt_contracts/count_prefixes.loom)

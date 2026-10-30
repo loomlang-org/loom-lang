@@ -64,7 +64,7 @@ fn loop_element_clauses(clauses List[Expr], candidates List[LoopCandidate], entr
     while index < length(clauses) && length(candidates) < 64 {
         let clause = get(clauses, index)
         if contains_list_read(clause) && loop_call_free(clause) {
-            propose_element_candidate(candidates, LoopCandidate.Guard(clause), entry)
+            propose_element_candidate(candidates, LoopCandidate.Guard(clause, false), entry)
         }
         index = index + 1
     }

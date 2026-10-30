@@ -14,7 +14,7 @@ test fn loop_views_recheck_publication_before_assuming_guard_candidates() {
         shared = true
         ..initial
     }
-    let candidates = [LoopCandidate.Guard(condition)]
+    let candidates = [LoopCandidate.Guard(condition, false)]
     assert length(loop_candidate_views(proof, candidates, entry).candidates) == 1
     assert length(loop_candidate_views(proof, candidates, published_storage(entry)).candidates) == 0
     let extent = get(entry.extents, 0)

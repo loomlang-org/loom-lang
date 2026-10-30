@@ -55,7 +55,7 @@ fn loop_candidate_views(proof Verification, candidates List[LoopCandidate], stat
     while index < length(candidates) {
         let candidate = get(candidates, index)
         let viewed = match candidate {
-            LoopCandidate.Guard(value) => loop_guard_views(proof, value, current)
+            LoopCandidate.Guard(value, _) => loop_guard_views(proof, value, current)
             _ => Result.Ok(current)
         }
         match viewed {
