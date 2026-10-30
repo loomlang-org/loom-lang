@@ -1,0 +1,55 @@
+import std.text.contains
+
+test fn finite_order_requires_one_integer_column_and_unit_index_stride() {
+    let index = variable(-7)
+    let previous = add(index, constant(integer(-1)))
+    let first = IntegerTerm.Select(10, [2], previous)
+    let second = IntegerTerm.Select(10, [2], index)
+    assert match order_step(-7, Predicate.Not([Predicate.IntegerCompare(">", first, second)]), false, 0) {
+        Option.Some(step) => step.relation == "<=" && step.version == 10 &&
+        same_projection(step.path, [2]) && length(step.offset.terms) == 0 &&
+        compare(step.offset.constant, integer(0)) == 0
+        _ => false
+    }
+    assert match order_step(-7, Predicate.IntegerCompare("<", second, first), false, 0) {
+        Option.Some(step) => step.relation == ">"
+        _ => false
+    }
+    let invalid = [
+        Predicate.IntegerCompare("!=", first, second),
+        Predicate.IntegerCompare("<=", first, IntegerTerm.Select(11, [2], index)),
+        Predicate.IntegerCompare("<=", first, IntegerTerm.Select(10, [3], index)),
+        Predicate.IntegerCompare("<=", first, IntegerTerm.Select(10, [2], add(index, constant(integer(1))))),
+        Predicate.IntegerCompare("<=", IntegerTerm.Select(10, [2], scale(index, integer(2))),
+            IntegerTerm.Select(10, [2], add(scale(index, integer(2)), constant(integer(1))))),
+        Predicate.FloatCompare("<=", FloatValue.Select(10, [2], previous), FloatValue.Select(10, [2], index)),
+    ]
+    var position = 0
+    while position < length(invalid) {
+        assert match order_step(-7, get(invalid, position), false, 0) {
+            Option.None => true
+            _ => false
+        }
+        position = position + 1
+    }
+}
+
+test fn finite_order_laws_are_conditional_and_keep_nested_range_scope() {
+    let index = add(variable(-8), variable(-7))
+    let edges = Predicate.Forall(-8, constant(integer(1)), variable(-7),
+        [Predicate.IntegerCompare("<=",
+                IntegerTerm.Select(10, [2], add(index, constant(integer(-1)))),
+                IntegerTerm.Select(10, [2], index))])
+    let query = encoding([Obligation {
+                facts = []
+                conclusion = Predicate.Forall(-7, constant(integer(2)), variable(1), [edges])
+            }])
+    let outer = "(forall ((loom_bound Int)) (let ((n-7 loom_bound)) (=> (and (<= (+ 2) n-7) (< n-7 (+ 0 (* 1 n1)))) "
+    let inner = "(forall ((loom_bound Int)) (let ((n-8 loom_bound)) (=> (and (<= (+ 1) n-8) (< n-8 (+ 0 (* 1 n-7)))) "
+    // Even a goal supplies only an implication, closed over the outer range.
+    assert contains(query, concat("(assert ", concat(outer, concat("(=> ", inner))))
+    assert contains(query, "(<= (+ 0 (* 1 n-7)) loom_order_first)")
+    assert contains(query, "(< loom_order_second (+ 0 (* 2 n-7)))")
+    assert contains(query, "(<= (select a10_f2 loom_order_first) (select a10_f2 loom_order_second))")
+    assert !contains(query, "(assert (=> ")
+}

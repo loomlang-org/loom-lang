@@ -1,0 +1,151 @@
+record OrderStep {
+    relation Text
+    version Int
+    path List[Int]
+    offset Linear
+}
+
+fn order_mentions(value Linear, identity Int) Bool {
+    var index = 0
+    while index < length(value.terms) {
+        if get(value.terms, index).id == identity {
+            return true
+        }
+        index = index + 1
+    }
+    false
+}
+
+fn order_relation(value Text, negative Bool) Text {
+    if !negative {
+        return value
+    }
+    if value == "<" {
+        return ">="
+    }
+    if value == "<=" {
+        return ">"
+    }
+    if value == ">" {
+        return "<="
+    }
+    if value == ">=" {
+        return "<"
+    }
+    if value == "!=" {
+        return "=="
+    }
+    ""
+}
+
+fn order_reverse(value Text) Text {
+    if value == "<" {
+        return ">"
+    }
+    if value == "<=" {
+        return ">="
+    }
+    if value == ">" {
+        return "<"
+    }
+    if value == ">=" {
+        return "<="
+    }
+    value
+}
+
+fn order_step(identity Int, value Predicate, negative Bool, depth Int) Option[OrderStep] {
+    if depth >= 64 {
+        return Option.None
+    }
+    match value {
+        Predicate.Not(values) => if length(values) == 1 {
+            order_step(identity, get(values, 0), !negative, depth + 1)
+        } else {
+            Option.None
+        }
+        Predicate.IntegerCompare(relation, left, right) => {
+            var operator = order_relation(relation, negative)
+            if operator != "<" && operator != "<=" && operator != ">" &&
+            operator != ">=" && operator != "==" {
+                return Option.None
+            }
+            match left {
+                IntegerTerm.Select(first, path, before) => match right {
+                    IntegerTerm.Select(second, other, after) => {
+                        if first != second || !same_projection(path, other) ||
+                        !same_terms(before.terms, after.terms) {
+                            return Option.None
+                        }
+                        var next = after
+                        let distance = subtract(after.constant, before.constant)
+                        if compare(distance, integer(-1)) == 0 {
+                            next = before
+                            operator = order_reverse(operator)
+                        } else if compare(distance, integer(1)) != 0 {
+                            return Option.None
+                        }
+                        let offset = add(next, scale(variable(identity), integer(-1)))
+                        // Unit index stride is essential: disjoint adjacent
+                        // pairs in a strided scan do not form one chain.
+                        if order_mentions(offset, identity) {
+                            return Option.None
+                        }
+                        Option.Some(OrderStep {
+                                relation = operator
+                                version = first
+                                path = path
+                                offset = offset
+                            })
+                    }
+                    _ => Option.None
+                }
+                _ => Option.None
+            }
+        }
+        _ => Option.None
+    }
+}
+
+fn smt_order_chain(writer SmtWriter, identity Int, start Linear, end Linear,
+    predicate Predicate, premise Text) Result[Bool, Text] {
+    if order_mentions(start, identity) || order_mentions(end, identity) {
+        return Result.Ok(true)
+    }
+    var outer = 0
+    while outer < length(writer.quantifiers) {
+        if get(writer.quantifiers, outer).identity == identity {
+            return Result.Ok(true)
+        }
+        outer = outer + 1
+    }
+    let step = match order_step(identity, predicate, false, 0) {
+        Option.Some(value) => value
+        Option.None => {
+            return Result.Ok(true)
+        }
+    }
+    // Induction on q-p: the first edge is an instance of the premise;
+    // extending the finite chain uses integer-order transitivity. Distinctness
+    // and IEEE comparisons are excluded. Bounds, column and version stay exact.
+    let lower = smt_linear(writer, add(add(start, step.offset), constant(integer(-1))))?
+    let upper = smt_linear(writer, add(end, step.offset))?
+    let array = smt_array(writer, step.version, step.path)
+    let relation = smt_relation(step.relation)?
+    let output = std.bytes.new()
+    smt_append(output, concat("(=> ", concat(premise, " (forall ((loom_order_first Int) (loom_order_second Int)) (=> (and (<= ")))
+    smt_append(output, concat(lower, " loom_order_first) (< loom_order_first loom_order_second) (< loom_order_second "))
+    smt_append(output, concat(upper, concat(")) (", relation)))
+    smt_append(output, concat(" (select ", concat(array, " loom_order_first) (select ")))
+    smt_append(output, concat(array, " loom_order_second)))))"))
+    var law = std.bytes.to_text(output)
+    var scope = length(writer.quantifiers)
+    while scope > 0 {
+        scope = scope - 1
+        law = smt_binder(get(writer.quantifiers, scope), law)
+    }
+    // An implication is valid wherever the expression was encountered, even
+    // in a negated goal. Merely seeing an ordered scan supplies no premise.
+    smt_assert(writer, law)
+    Result.Ok(true)
+}

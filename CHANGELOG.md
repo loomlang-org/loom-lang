@@ -5,6 +5,11 @@ implementation, not a compatibility ledger for previous prototypes.
 
 ## Unreleased
 
+- Derive finite integer-order chains from adjacent comparisons over one
+  versioned sequence column. Distant reads and a checked merge loop compose
+  without runtime invariant scans; bounds, field paths and enclosing ranges
+  remain exact. Distinctness and IEEE comparisons gain no transitivity rule.
+
 - Prioritize storage identities and leading source assertions before optional
   quantified and affine loop candidates. Independent loop-carried locals no
   longer crowd these source relations out of speculative search; entry and
