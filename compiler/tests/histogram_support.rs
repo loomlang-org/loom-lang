@@ -45,14 +45,27 @@ fn histogram_support_preserves_premises_ranges_versions_and_columns() {
         success(&common::loom(&[mode, package.path().to_str().unwrap()]));
     }
     let artifact = common::executable(package.path(), "histogram-support");
+    let ir = package.path().join("histogram-support.ll");
     for level in ["0", "2"] {
         success(
             &common::command(&["build", package.path().to_str().unwrap()])
                 .arg("--output")
                 .arg(&artifact)
+                .arg("--emit-ir")
+                .arg(&ir)
                 .env("LOOM_OPT_LEVEL", level)
                 .output()
                 .unwrap(),
+        );
+        let lowered = fs::read_to_string(&ir).unwrap();
+        let line = program
+            .lines()
+            .position(|text| text.starts_with("        assert needle >= 0"))
+            .unwrap()
+            + 1;
+        assert!(
+            !lowered.contains(&format!(":{line}:9: assertion failed")),
+            "retained membership invariant at O{level}"
         );
         success(
             &Command::new(&artifact)
