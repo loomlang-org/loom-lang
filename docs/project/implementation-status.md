@@ -387,7 +387,9 @@ supported theories and boundaries. The central rules are:
   Shared storage still follows interference rules. Other unmodeled native
   operations remain unsupported.
 - Loop candidates need entry and every-backedge proof; losing a candidate
-  rechecks dependents. Leading ordinary assertions can propose scalar and
+  rechecks dependents. Storage identities and explicit source relations receive
+  priority over optional quantified and affine guesses within the bounded search.
+  Leading ordinary assertions can propose scalar and
   versioned List/Bytes invariants, including nonlinear integer relations, inline
   fields and finite pure helpers,
   under an immutable scalar loop condition. Entry, cleanup/backedges and every

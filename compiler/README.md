@@ -3856,6 +3856,9 @@ children are not frozen. Each observation needs a coherent view at entry, every
 abstract loop head and every backedge. Shared unprotected storage or publication
 that loses that view removes the proposal before it can be assumed. Private
 storage can retain its view across suspension.
+The bounded search reserves storage identities and explicit source relations
+before optional quantified or affine guesses. This changes search priority;
+each relation still needs the same entry and every-backedge proof.
 This path requires an immutable scalar loop condition and stops at the first
 non-assertion statement, including cleanup registration; it follows lexical
 wrappers introduced by cleanup lowering.
