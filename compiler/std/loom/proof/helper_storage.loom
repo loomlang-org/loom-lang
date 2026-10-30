@@ -52,7 +52,11 @@ fn storage_local(program Program, body Expr) Bool {
 
 // A fresh header may hold shared elements. Check its origin and publication,
 // separately from verified lengths/contents and origins of nested elements.
-fn private_factory(program Program, function Function) Bool {
+fn private_factory(program Program, target Int) Bool {
+    if target < 0 || target >= length(program.functions) {
+        return false
+    }
+    let function = get(program.functions, target)
     if function.runtime_name != "" || function.is_async ||
     immutable_storage_type(program, function.result, 0) {
         return false
@@ -70,7 +74,7 @@ fn private_factory(program Program, function Function) Bool {
     push(budget, 256)
     let effects = new[Bool]()
     push(effects, true)
-    let returned = factory_storage(program, function, inputs, closed, effects, budget, 0)
+    let returned = factory_storage(program, target, inputs, closed, effects, budget, [], 0)
     returned && get(effects, 0)
 }
 
@@ -82,7 +86,7 @@ pub fn fresh_list_factory(program Program, target Int) Bool {
     !proof_sequence_type(program, get(program.functions, target).result) {
         return false
     }
-    private_factory(program, get(program.functions, target)) || private_factory_body(program, target)
+    private_factory(program, target) || private_factory_body(program, target)
 }
 
 fn storage_leaves(value Value) Int {

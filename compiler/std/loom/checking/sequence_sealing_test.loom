@@ -41,7 +41,7 @@ test fn raw_cycles_are_ordinary_data_but_not_constrained_factory_results() {
         }
         """))
     reject_unsealed_sequence(concat(source, """
-        pub fn construct() Result[Nonempty, ConstraintError] {
+        pub fn construct() Nonempty {
             Nonempty(cycle())
         }
         """))
@@ -143,7 +143,7 @@ test fn fresh_outer_headers_allow_shared_children_and_unrelated_cycles() {
         pub fn copied(raw List[Node]) Result[Nonempty, ConstraintError] {
             Nonempty(clone(raw))
         }
-        pub fn construct(child Node, early Bool) Result[Nonempty, ConstraintError] {
+        pub fn construct(child Node, early Bool) Nonempty {
             Nonempty(factory(child, early))
         }
         pub fn read(values Nonempty) Node {

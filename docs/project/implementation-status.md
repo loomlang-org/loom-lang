@@ -487,6 +487,12 @@ supported theories and boundaries. The central rules are:
   that cannot reach the fresh output, including successful source Task results,
   without trusting pending postconditions. Saved known Tasks can yield local
   drafts without making arbitrary Task results fresh or permitting raw escapes.
+  Recursive factory origins use conditional invocation hypotheses under explicit
+  input-origin requirements. Failed cyclic returns invalidate dependent
+  publication reasoning; stronger inputs cannot justify reuse for weaker ones.
+  Ordinary finite helper value inference remains separate from origin summaries.
+  The [native example](../../compiler/examples/recursive_factories/main.loom) checks actual
+  constrained contents and rejects incoming aliases. Termination is not proved.
   Loop-carried headers retain unpublished provenance only after entry/all-backedge
   induction, including replacement after publishing an old buffer. This supplies
   neither a new allocation identity nor separation from other private headers.

@@ -1,16 +1,69 @@
+// Active hypotheses retain prepared targets and input-origin requirements.
+// No result is cached: a failed cyclic hypothesis invalidates the entire scan,
+// including effects checked earlier under that hypothesis.
+record FactoryInvocation {
+    target Int
+    inputs List[Bool]
+    closed Bool
+    recursive List[Bool]
+}
+
+// A hypothesis checked with weaker origins also covers stronger inputs. The
+// transfer rules are monotone: extra privacy cannot authorize an external
+// publication or make a previously fresh result alias incoming storage.
+fn factory_inputs_satisfy(actual List[Bool], required List[Bool]) Bool {
+    if length(actual) != length(required) {
+        return false
+    }
+    var index = 0
+    while index < length(actual) {
+        if get(required, index) && !get(actual, index) {
+            return false
+        }
+        index = index + 1
+    }
+    true
+}
+
 // True describes direct mutable headers, not their reachable element graphs.
 // Every call is scanned for publication, including calls with scalar/Unit
 // results. A closed invocation has no incoming mutable graph; only there may
 // rebindings and dereferences select arbitrary internally allocated storage.
-fn factory_storage(program Program, function Function, inputs List[Bool], closed Bool,
-    effects List[Bool], budget List[Int], depth Int) Bool {
-    if depth >= 32 || !conjunction_step(budget) || function.is_async ||
+fn factory_storage(program Program, target Int, inputs List[Bool], closed Bool,
+    effects List[Bool], budget List[Int], active List[FactoryInvocation], depth Int) Bool {
+    if depth >= 32 || !conjunction_step(budget) || target < 0 || target >= length(program.functions) {
+        set(effects, 0, false)
+        return false
+    }
+    let function = get(program.functions, target)
+    if function.is_async ||
     function.runtime_name != "" || length(function.params) != length(inputs) || length(function.locals) > 256 {
         set(effects, 0, false)
         return false
     }
-    let locals = new[Bool]()
     var index = 0
+    while index < length(active) {
+        let prior = get(active, index)
+        if prior.target == target && prior.closed == closed && factory_inputs_satisfy(inputs, prior.inputs) {
+            var member = index
+            while member < length(active) {
+                set(get(active, member).recursive, 0, true)
+                member = member + 1
+            }
+            return true
+        }
+        index = index + 1
+    }
+    let recursive = [false]
+    let nested = clone(active)
+    push(nested, FactoryInvocation {
+            target = target
+            inputs = inputs
+            closed = closed
+            recursive = recursive
+        })
+    let locals = new[Bool]()
+    index = 0
     while index < length(function.locals) {
         push(locals, index < length(inputs) && get(inputs, index) &&
             (closed || !get(function.locals, index).mutable))
@@ -19,12 +72,16 @@ fn factory_storage(program Program, function Function, inputs List[Bool], closed
     let returns = new[Bool]()
     push(returns, true)
     let returned = storage_origin(program, function, function.body, locals, returns,
-        closed, effects, budget, depth + 1)
-    get(returns, 0) && (!function.body.falls || returned)
+        closed, effects, budget, nested, depth + 1)
+    let fresh = get(returns, 0) && (!function.body.falls || returned)
+    if get(recursive, 0) && !fresh {
+        set(effects, 0, false)
+    }
+    fresh
 }
 
 fn storage_origin(program Program, function Function, value Expr, locals List[Bool],
-    returns List[Bool], closed Bool, effects List[Bool], budget List[Int], depth Int) Bool {
+    returns List[Bool], closed Bool, effects List[Bool], budget List[Int], active List[FactoryInvocation], depth Int) Bool {
     if depth >= 32 || !conjunction_step(budget) || length(value.arms) != 0 ||
     (!storage_expression(value) && value.kind != ExprKind.Call && value.kind != ExprKind.Intrinsic) {
         // Exhaustion is failure for the whole scan, even in a discarded child.
@@ -35,7 +92,7 @@ fn storage_origin(program Program, function Function, value Expr, locals List[Bo
     var index = 0
     while index < length(value.children) {
         push(inputs, storage_origin(program, function, get(value.children, index),
-                locals, returns, closed, effects, budget, depth + 1))
+                locals, returns, closed, effects, budget, active, depth + 1))
         index = index + 1
     }
     if value.kind == ExprKind.Call {
@@ -51,7 +108,10 @@ fn storage_origin(program Program, function Function, value Expr, locals List[Bo
         if callee.runtime_name != "" {
             return storage_operation_origin(program, callee.runtime_name, value, inputs, closed, effects)
         }
-        return factory_storage(program, callee, inputs, closed, effects, budget, depth + 1)
+        if immutable_storage_type(program, callee.result, 0) && graph_readonly_function(program, value.index) {
+            return true
+        }
+        return factory_storage(program, value.index, inputs, closed, effects, budget, active, depth + 1)
     }
     if value.kind == ExprKind.Intrinsic {
         return storage_operation_origin(program, value.text, value, inputs, closed, effects)

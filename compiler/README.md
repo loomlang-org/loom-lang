@@ -2877,6 +2877,13 @@ identity induction does not unroll a loop or identify fresh replacements. See th
 [stable cursor](examples/record_refinement/stable.loom). Changing loop-carried
 header identities, headers allocated outside a repeating publication and
 unsupported draft operations remain conservative.
+Recursive factories can also establish a fresh outer header. Origin hypotheses
+retain the prepared target and input guarantees; a failed cyclic return cannot
+hide publication through an incoming alias. This proves neither contents nor
+termination. The [recursive factory example](examples/recursive_factories/main.loom)
+checks contents at construction, rejects a zero element, and keeps an ordinary
+helper's known base-case value proof.
+
 Unknown predicates keep the ordinary `Result` boundary.
 The [structural builder example](examples/record_refinement/structural_drafts.loom)
 uses a generic record with a tuple field and an independently writable notes List.
