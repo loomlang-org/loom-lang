@@ -86,6 +86,10 @@ binding evidence, not behavioral compatibility or migration proof.
 Resident workers reuse valid analyses while revalidating source and observed
 inputs. They also retain bounded decisions for complete identical SMT queries
 across edits; source checking still runs and errors/timeouts are not proof facts.
+A [recursive integer merge sort](../../compiler/examples/merge_sort_contracts)
+now composes entry-state order/count contracts across a package boundary.
+Finite source goals remain intact; histogram strengthening applies to established
+facts. General comparator proofs and the standard-library sorting proof remain open.
 Theory encoding interns exact repeated laws and instantiates count bounds at
 actual symbolic query terms. Binder-dependent terms retain their enclosing
 ranges, including nested ranges and extents, rather than searching unrelated

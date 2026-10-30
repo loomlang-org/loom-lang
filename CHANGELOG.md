@@ -5,6 +5,10 @@ implementation, not a compatibility ledger for previous prototypes.
 
 ## Unreleased
 
+- Keep finite source predicates as proof goals and derive histogram abstractions
+  only from established facts. Compose entry-state merge contracts across a
+  package boundary to prove recursive integer sorting and permutation.
+
 - Prove recursive factory storage origins with input-origin requirements,
   retaining failed cyclic dependencies and rejecting input aliases/publication.
   Keep ordinary helper value inference separate from origin evidence; constrained
