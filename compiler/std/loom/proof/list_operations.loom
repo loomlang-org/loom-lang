@@ -166,7 +166,13 @@ fn list_operation_outcomes(proof Verification, primitive Text, ty Int, receiver_
         }
         match get(inputs.values, 0) {
             Value.List(identity) => {
-                state = stored_graph(proof, identity, state)
+                let element = if proof_list_type(proof.program, receiver_type) &&
+                length(get(proof.program.types, receiver_type).arguments) == 1 {
+                    get(get(proof.program.types, receiver_type).arguments, 0)
+                } else {
+                    -1
+                }
+                state = stored_graph(proof, identity, element, get(inputs.values, stored), state)
             }
             _ => {
                 state = published_storage(state)

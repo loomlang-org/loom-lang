@@ -89,7 +89,9 @@ across edits; source checking still runs and errors/timeouts are not proof facts
 A [recursive integer merge sort](../../compiler/examples/merge_sort_contracts)
 now composes entry-state order/count contracts across a package boundary.
 Finite source goals remain intact; histogram strengthening applies to established
-facts. General comparator proofs and the standard-library sorting proof remain open.
+facts. Source-library sorting now proves its entry length through unknown
+effectful comparisons, including mutable element graphs. General comparator
+laws and its ordering/permutation proofs remain open.
 Theory encoding interns exact repeated laws and instantiates count bounds at
 actual symbolic query terms. Binder-dependent terms retain their enclosing
 ranges, including nested ranges and extents, rather than searching unrelated
@@ -423,8 +425,13 @@ supported theories and boundaries. The central rules are:
   removes all eleven split/merge invariant scans. Completed recursive groups
   retain the assertion evidence from their original successful proof. General
   comparator laws and ordering/permutation proofs for `std.list.sorted` remain open.
-  Its integer List entry count now composes through the ordinary source body,
-  unknown comparison callbacks and checked constrained construction. Structural
+  Its generic List entry count now composes through the ordinary source body,
+  unknown comparison callbacks and checked constrained construction. Element
+  exclusions distinguish child graphs from their container headers, retaining
+  shared/cyclic records and captured closures without freezing them. Stores
+  widen possible ancestors; publication and every backedge revalidate the
+  exclusions. Lost loop premises withdraw the proposal before assumption and
+  rebuild the head. Structural
   loop plans cache write masks only; local types, private views and all backedges
   are rechecked. Optional coefficient search has its own bound, and expression
   keys compare match branches as well as child expressions. Reachability reuses

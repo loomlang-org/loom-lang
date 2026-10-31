@@ -59,7 +59,7 @@ fn publication_cell_coverage() Result[Bool, Text] {
     // A later edge store widens possible ancestors; a missing observation
     // cannot then conceal an earlier allocation connected by that store.
     std.list.set(proof.fresh, 0, 100)
-    let widened = stored_graph(proof, 20, state)
+    let widened = stored_graph(proof, 20, -1, Value.Opaque(-1, []), state)
     let stored = published_inputs(proof, [7], [Value.List(20)], 0, widened)
     assert !list_state(30, stored)?.private_storage
     assert !publication_value(proof, 7, Value.List(20), state,

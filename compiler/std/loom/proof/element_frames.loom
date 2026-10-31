@@ -1,0 +1,68 @@
+// An element graph excludes a header independently of whether its container
+// can equal that header. In particular, distinct logical IDs do not turn an
+// element exclusion into separation of the container roots.
+fn list_element_frame(root ListExtent, target ListExtent) Bool {
+    if target.birth_floor < 0 || !target.private_storage {
+        return false
+    }
+    (length(root.size.terms) == 0 && length(root.size.constant.digits) == 0) ||
+    storage_identity_member(root.element_unreachable, target.identity) ||
+    list_graph_frame(root, target)
+}
+
+fn element_graph(identity Int, state State) Value {
+    let excluded = new[Int]()
+    match list_state(identity, state) {
+        Result.Ok(root) => {
+            var index = 0
+            while index < length(state.extents) {
+                let target = get(state.extents, index)
+                if list_element_frame(root, target) {
+                    push(excluded, target.identity)
+                }
+                index = index + 1
+            }
+        }
+        Result.Err(_) => {
+        }
+    }
+    Value.Opaque(-1, excluded)
+}
+
+fn stored_element_frames(root ListExtent, receiver ListExtent, inserted Publication, state State) List[Int] {
+    if !extent_overlap(root, receiver) && list_element_frame(root, receiver) {
+        return root.element_unreachable
+    }
+    let retained = new[Int]()
+    var index = 0
+    while index < length(state.extents) {
+        let target = get(state.extents, index)
+        if list_element_frame(root, target) && !publication_reaches(target, state, inserted) {
+            push(retained, target.identity)
+        }
+        index = index + 1
+    }
+    retained
+}
+
+fn separate_elements(identity Int, target Int, state State) State {
+    let extents = new[ListExtent]()
+    var index = 0
+    while index < length(state.extents) {
+        let extent = get(state.extents, index)
+        var excluded = extent.element_unreachable
+        if extent.identity == identity && !storage_identity_member(excluded, target) {
+            excluded = std.list.clone(excluded)
+            push(excluded, target)
+        }
+        push(extents, ListExtent {
+                element_unreachable = excluded
+                ..extent
+            })
+        index = index + 1
+    }
+    State {
+        extents = extents
+        ..state
+    }
+}

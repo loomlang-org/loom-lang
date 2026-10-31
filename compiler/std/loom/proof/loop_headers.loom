@@ -65,6 +65,14 @@ fn loop_header_candidates(proof Verification, candidates List[LoopCandidate], wr
         }
         local = local + 1
     }
+    local = 0
+    while local < length(writes) && length(candidates) < 64 {
+        if get(writes, local) {
+            discard loop_element_sources(proof, candidates, local, [],
+                get(entry.locals, local), entry, 0)?
+        }
+        local = local + 1
+    }
     Result.Ok(length(candidates) - before)
 }
 
@@ -108,6 +116,9 @@ fn loop_header_count(candidates List[LoopCandidate]) Int {
                 count = count + 1
             }
             LoopCandidate.Unreachable(_, _, _) => {
+                count = count + 1
+            }
+            LoopCandidate.ElementFrame(_, _, _, _) => {
                 count = count + 1
             }
             _ => {
@@ -163,6 +174,15 @@ fn loop_publications(entry State, head State, backedges List[Outcome]) List[Int]
 // graph exclusions too, including ancestors widened by a descendant store.
 fn loop_graph_losses(proof Verification, entry State, head State, backedges List[Outcome]) Result[List[Int], Text] {
     let lost = new[Int]()
+    let targets = new[ListExtent]()
+    var index = 0
+    while index < length(head.extents) {
+        let target = get(head.extents, index)
+        if target.private_storage && target.birth_floor >= 0 {
+            push(targets, target)
+        }
+        index = index + 1
+    }
     var root = 0
     while root < length(head.extents) {
         let before = get(head.extents, root)
@@ -181,11 +201,24 @@ fn loop_graph_losses(proof Verification, entry State, head State, backedges List
             if !loop_holds(Predicate.Constant(false), state) {
                 let current = list_state(before.identity, state)?
                 var target = 0
-                while target < length(head.extents) && !failed {
-                    let extent = get(head.extents, target)
-                    if list_graph_frame(before, extent) {
-                        discard loop_step(proof)?
-                        failed = !list_graph_frame(current, list_state(extent.identity, state)?)
+                var charged = false
+                while target < length(targets) && !failed {
+                    let extent = get(targets, target)
+                    let whole = list_graph_frame(before, extent)
+                    let elements = !whole && list_element_frame(before, extent)
+                    if whole || elements {
+                        // One root frame is checked as a group on this edge;
+                        // every retained relation still needs its own premise.
+                        if !charged {
+                            discard loop_step(proof)?
+                            charged = true
+                        }
+                        let receiver = list_state(extent.identity, state)?
+                        failed = if whole {
+                            !list_graph_frame(current, receiver)
+                        } else {
+                            !list_element_frame(current, receiver)
+                        }
                     }
                     target = target + 1
                 }

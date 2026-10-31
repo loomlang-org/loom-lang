@@ -105,7 +105,7 @@ fn publication_value(proof Verification, ty Int, value Value, state State,
                     let child = match known_element(identity, position, state) {
                         Result.Ok(child) => child
                         Result.Err(_) => {
-                            push(graph.opaque, Value.Opaque(extent.frontier, extent.unreachable))
+                            push(graph.opaque, element_graph(identity, state))
                             return true
                         }
                     }
@@ -116,7 +116,7 @@ fn publication_value(proof Verification, ty Int, value Value, state State,
                     index = index + 1
                 }
                 if !index_relation("==", extent.size, constant(integer(index)), state) {
-                    push(graph.opaque, Value.Opaque(extent.frontier, extent.unreachable))
+                    push(graph.opaque, element_graph(identity, state))
                 }
                 true
             }

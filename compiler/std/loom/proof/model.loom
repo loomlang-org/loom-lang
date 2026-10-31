@@ -153,6 +153,9 @@ record ListExtent {
     // Reachability provenance, widened by stores into possible descendants.
     frontier Int
     unreachable List[Int]
+    // Exclusions for every current element graph, not the container header.
+    // These metadata lists are read-only; stores replace this inductive evidence.
+    element_unreachable List[Int]
     contents Int
     cells List[ListCell]
 }
