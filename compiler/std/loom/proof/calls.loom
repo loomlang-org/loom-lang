@@ -206,7 +206,14 @@ fn established_checks(proof Verification, checks List[Evaluation], state State, 
                 let skipped = proof_expr(check.value, ExprKind.Block, 0, "", -1, [])
                 proof_expr(check.value, ExprKind.If, 0, "", -1, [check.guard, evaluated, skipped])
             }
-            if !bounded_contract(step) {
+            // The Assert is an executor wrapper around the already expanded
+            // predicate, not another node of the user's contract.
+            let checked = if step.kind == ExprKind.Assert {
+                get(step.children, 0)
+            } else {
+                step
+            }
+            if !bounded_contract(checked) {
                 return Result.Err("body helper proof expansion budget exhausted")
             }
             let next = new[Outcome]()
@@ -343,7 +350,7 @@ fn applied_summary(proof Verification, call Expr, function Function, state State
         program = proof.program
         list_lengths = false
         budget = proof.budget
-        active = new[Int]()
+        active = new[HelperActivation]()
         checks = new[Evaluation]()
         observations = if proof.shared {
             proof.fresh
@@ -435,7 +442,7 @@ fn applied_summary(proof Verification, call Expr, function Function, state State
             program = proof.program
             list_lengths = false
             budget = proof.budget
-            active = new[Int]()
+            active = new[HelperActivation]()
             checks = new[Evaluation]()
             observations = if proof.shared {
                 proof.fresh
@@ -584,7 +591,7 @@ fn applied_call_body(proof Verification, call Expr, function Function, arguments
         program = proof.program
         list_lengths = false
         budget = proof.budget
-        active = new[Int]()
+        active = new[HelperActivation]()
         checks = new[Evaluation]()
         observations = if proof.shared {
             proof.fresh

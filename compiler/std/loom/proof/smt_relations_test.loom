@@ -1,0 +1,40 @@
+import std.text.contains
+
+fn relation_test_atom(first Linear, second Linear) Predicate {
+    Predicate.Application(FunctionApplication {
+            target = 21
+            arguments = [
+                PredicateKey.Integer(IntegerTerm.Select(30, [], first)),
+                PredicateKey.Integer(IntegerTerm.Select(30, [], second)),
+            ]
+            path = []
+        }, false)
+}
+
+test fn nested_universal_relations_share_one_quantifier_scope() {
+    let relation = relation_test_atom(variable(-1), variable(-2))
+    let query = encoding([Obligation {
+                facts = []
+                conclusion = Predicate.Forall(-1, constant(integer(0)), variable(7), [
+                    Predicate.Or([Predicate.Not([Predicate.Constant(true)]),
+                            Predicate.Forall(-2, constant(integer(0)), variable(7), [relation])]),
+                ])
+            }])
+    assert contains(query, "(forall ((loom_flat_0 Int)(loom_flat_1 Int))")
+    assert contains(query, "(n-1 loom_flat_0)(n-2 loom_flat_1)")
+    assert contains(query, "loom_fn21")
+}
+
+test fn adjacent_relations_require_transitivity_in_the_same_range() {
+    let position = variable(-7)
+    let edge = relation_test_atom(add(position, constant(integer(-1))), position)
+    let query = encoding([Obligation {
+                facts = []
+                conclusion = Predicate.Forall(-7, constant(integer(1)), variable(8), [edge])
+            }])
+    assert contains(query, "(assert (=> (and (forall")
+    assert contains(query, "(forall ((loom_relation_i Int) (loom_relation_j Int) (loom_relation_k Int))")
+    assert contains(query, "(<= (+ 0) loom_relation_i)")
+    assert contains(query, "(< loom_relation_j (+ 0 (* 1 n8)))")
+    assert contains(query, "loom_relation_left") && contains(query, "loom_fn21")
+}

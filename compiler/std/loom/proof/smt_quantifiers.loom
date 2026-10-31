@@ -1,0 +1,133 @@
+fn smt_constant(value Predicate, depth Int) Option[Bool] {
+    if depth >= 16 {
+        return Option.None
+    }
+    match value {
+        Predicate.Constant(value) => Option.Some(value)
+        Predicate.Not(parts) => if length(parts) == 1 {
+            match smt_constant(get(parts, 0), depth + 1) {
+                Option.Some(value) => Option.Some(!value)
+                _ => Option.None
+            }
+        } else {
+            Option.None
+        }
+        _ => Option.None
+    }
+}
+
+fn quantified_body(value Predicate, depth Int) Predicate {
+    if depth >= 16 {
+        return value
+    }
+    let parts, neutral = match value {
+        Predicate.And(parts) => (parts, true)
+        Predicate.Or(parts) => (parts, false)
+        _ => {
+            return value
+        }
+    }
+    if length(parts) == 2 {
+        var side = 0
+        while side < 2 {
+            match smt_constant(get(parts, side), 0) {
+                Option.Some(value) => if value == neutral {
+                    return quantified_body(get(parts, 1 - side), depth + 1)
+                }
+                _ => {
+                }
+            }
+            side = side + 1
+        }
+    }
+    value
+}
+
+// Flatten only a direct chain of universal ranges. Bounds may depend on earlier
+// indices, but not on a later binder that would capture a previously free name.
+// Inner encodings have already registered their scoped theory laws.
+fn smt_flat_quantified(writer SmtWriter, identity Int, first Text, last Text,
+    predicate Predicate, depth Int) Result[Option[Text], Text] {
+    let binders = [SmtBinder {
+            identity = identity
+            start = first
+            end = last
+        }]
+    var body = quantified_body(predicate, 0)
+    while length(binders) < 16 {
+        match body {
+            Predicate.Forall(next, start, end, parts) => {
+                if length(parts) != 1 {
+                    return Result.Ok(Option.None)
+                }
+                let name = concat("n", std.int.to_text(next))
+                let lower = smt_linear(writer, start)?
+                let upper = smt_linear(writer, end)?
+                if smt_mentions(lower, name) || smt_mentions(upper, name) {
+                    return Result.Ok(Option.None)
+                }
+                var index = 0
+                while index < length(binders) {
+                    let before = get(binders, index)
+                    if before.identity == next || smt_mentions(before.start, name) || smt_mentions(before.end, name) {
+                        return Result.Ok(Option.None)
+                    }
+                    index = index + 1
+                }
+                index = 0
+                while index < length(writer.quantifiers) {
+                    if get(writer.quantifiers, index).identity == next {
+                        return Result.Ok(Option.None)
+                    }
+                    index = index + 1
+                }
+                push(binders, SmtBinder {
+                        identity = next
+                        start = lower
+                        end = upper
+                    })
+                body = quantified_body(get(parts, 0), 0)
+            }
+            _ => {
+                break
+            }
+        }
+    }
+    if length(binders) < 2 {
+        return Result.Ok(Option.None)
+    }
+    let scope = std.list.clone(writer.quantifiers)
+    var index = 0
+    while index < length(binders) {
+        push(scope, get(binders, index))
+        index = index + 1
+    }
+    let condition = smt_predicate(SmtWriter {
+            quantifiers = scope
+            ..writer
+        }, body, depth + 1)?
+    let output = std.bytes.new()
+    smt_append(output, "(forall (")
+    index = 0
+    while index < length(binders) {
+        smt_append(output, concat("(loom_flat_", concat(std.int.to_text(index), " Int)")))
+        index = index + 1
+    }
+    smt_append(output, ") (let (")
+    index = 0
+    while index < length(binders) {
+        let binder = get(binders, index)
+        smt_append(output, concat("(n", concat(std.int.to_text(binder.identity),
+                    concat(" loom_flat_", concat(std.int.to_text(index), ")")))))
+        index = index + 1
+    }
+    smt_append(output, ") (=> (and")
+    index = 0
+    while index < length(binders) {
+        let binder = get(binders, index)
+        smt_append(output, concat(" ", relation_range(binder.start, binder.end, concat("n", std.int.to_text(binder.identity)))))
+        index = index + 1
+    }
+    smt_append(output, concat(") ", concat(condition, ")))")))
+    Result.Ok(Option.Some(std.bytes.to_text(output)))
+}

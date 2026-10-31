@@ -306,7 +306,7 @@ fn loop_candidate_guard(proof Verification, guard Expr) Expr {
         program = proof.program
         list_lengths = false
         budget = budget
-        active = new[Int]()
+        active = new[HelperActivation]()
         checks = new[Evaluation]()
         observations = new[Int]()
         origins = new[ObservationOrigin]()
