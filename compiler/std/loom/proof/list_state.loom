@@ -49,6 +49,7 @@ fn with_extent(identity Int, size Linear, allocated Bool, initially_private Bool
     var storage_type = -1
     var frontier = identity + 1
     var unreachable = new[Int]()
+    var element_unreachable = unreachable
     var index = 0
     while index < length(state.extents) {
         let extent = get(state.extents, index)
@@ -63,8 +64,23 @@ fn with_extent(identity Int, size Linear, allocated Bool, initially_private Bool
             storage_type = extent.storage_type
             frontier = extent.frontier
             unreachable = extent.unreachable
+            element_unreachable = extent.element_unreachable
         }
         index = index + 1
+    }
+    if length(size.terms) == 0 && length(size.constant.digits) == 0 {
+        element_unreachable = new[Int]()
+        index = 0
+        while index < length(state.extents) {
+            let target = get(state.extents, index)
+            if target.private_storage && target.birth_floor >= 0 {
+                push(element_unreachable, target.identity)
+            }
+            index = index + 1
+        }
+        if private_storage && birth_floor >= 0 && !storage_identity_member(element_unreachable, identity) {
+            push(element_unreachable, identity)
+        }
     }
     push(extents, ListExtent {
             identity = identity
@@ -78,6 +94,7 @@ fn with_extent(identity Int, size Linear, allocated Bool, initially_private Bool
             invariant_type = invariant_type
             frontier = frontier
             unreachable = unreachable
+            element_unreachable = element_unreachable
             contents = -1
             cells = new[ListCell]()
         })

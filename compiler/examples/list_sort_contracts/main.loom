@@ -1,8 +1,9 @@
 import std.list.push
+import std.list.new
 import std.list.length
 import std.list.sorted
 
-pub fn preserved_count(values List[Int], less fn(Int, Int) Bool) List[Int]
+pub fn preserved_count[T](values List[T], less fn(T, T) Bool) List[T]
 ensures length(result) == old(length(values)) {
     sorted(values, less)
 }
@@ -13,7 +14,7 @@ fn constrained_copy(values Triple, less fn(Int, Int) Bool) Triple {
     Triple(preserved_count(values, less))
 }
 
-fn exercise() {
+fn exercise_integers() {
     let input = [3, 1, 2]
     let output = preserved_count(input, fn(a Int, b Int) Bool {
             if length(input) == 3 {
@@ -27,6 +28,62 @@ fn exercise() {
             a < b
         })
     assert length(fixed) == 3 && fixed[0] == 1
+}
+
+record Node {
+    key Int
+    children List[Node]
+}
+
+fn exercise_recursive_values() {
+    let children = std.list.new[Node]()
+    let first = Node {
+        key = 3
+        children = children
+    }
+    let second = Node {
+        key = 1
+        children = children
+    }
+    push(children, first)
+    let input = [first, second]
+    let output = preserved_count(input, fn(a Node, b Node) Bool {
+            push(a.children, b)
+            if length(input) == 2 {
+                push(input, first)
+            }
+            a.key < b.key
+        })
+    assert length(output) == 2 && length(input) == 3
+    assert output[0].key == 1 && output[1].key == 3
+    push(output[0].children, second)
+    assert length(children) >= 3
+}
+
+fn exercise_callable_values() {
+    let input = std.list.new[fn() Int]()
+    push(input, fn() Int {
+            if length(input) == 2 {
+                push(input, fn() Int {
+                        9
+                    })
+            }
+            3
+        })
+    push(input, fn() Int {
+            1
+        })
+    let output = preserved_count(input, fn(a fn() Int, b fn() Int) Bool {
+            a() < b()
+        })
+    assert length(output) == 2 && length(input) == 3
+    assert output[0]() == 1 && output[1]() == 3
+}
+
+fn exercise() {
+    exercise_integers()
+    exercise_recursive_values()
+    exercise_callable_values()
 }
 
 test fn sorting_keeps_entry_shape_with_effectful_comparisons() {

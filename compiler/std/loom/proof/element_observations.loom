@@ -57,7 +57,10 @@ fn read_element_outcomes(proof Verification, ty Int, receiver_type Int, identity
     let sampled = record_parameter_value(proof, ty, 0)
     if mutable_value(sampled, true) {
         state = task_private_value(proof, receiver_type, Value.List(identity),
-            published_inputs(proof, [receiver_type], [Value.List(identity)], 0, state))
+            published_graph(state, Publication {
+                    identities = []
+                    opaque = [element_graph(identity, state)]
+                }))
     }
     state = typed_value_state(proof, ty, sampled, state)
     // Project the current source graph's exclusions through the sampled value,

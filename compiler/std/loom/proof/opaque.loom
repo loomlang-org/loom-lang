@@ -44,7 +44,7 @@ fn storage_excluded(extent ListExtent, state State, source Int) Bool {
         return true
     }
     match list_state(source, state) {
-        Result.Ok(root) => list_graph_frame(root, extent)
+        Result.Ok(root) => list_element_frame(root, extent)
         Result.Err(_) => false
     }
 }
@@ -199,21 +199,33 @@ fn completion_separation(value Value, state State, source Int) State {
 // A store may connect a previously excluded child through any ancestor of its
 // receiver. Widen every root not proved unable to reach that receiver. Exact
 // cells can still provide a more precise publication walk afterwards.
-fn stored_graph(proof Verification, identity Int, state State) State {
+fn stored_graph(proof Verification, identity Int, ty Int, value Value, state State) State {
     let target = match list_state(identity, state) {
         Result.Ok(target) => target
         Result.Err(_) => {
             return published_storage(state)
         }
     }
+    let inserted = Publication {
+        identities = []
+        opaque = []
+    }
+    if !publication_value(proof, ty, value, state, inserted, [256], 0) {
+        push(inserted.opaque, Value.Opaque(-1, []))
+    }
     let extents = new[ListExtent]()
     var index = 0
     while index < length(state.extents) {
         let extent = get(state.extents, index)
-        push(extents, if list_graph_frame(extent, target) {
-                extent
-            } else {
-                graph_extent(extent, get(proof.fresh, 0), new[Int]())
+        let elements = stored_element_frames(extent, target, inserted, state)
+        let widened = if list_graph_frame(extent, target) {
+            extent
+        } else {
+            graph_extent(extent, get(proof.fresh, 0), new[Int]())
+        }
+        push(extents, ListExtent {
+                element_unreachable = elements
+                ..widened
             })
         index = index + 1
     }
@@ -229,7 +241,10 @@ fn unframed_graphs(state State, identities List[Int]) State {
     while index < length(state.extents) {
         let extent = get(state.extents, index)
         push(extents, if storage_identity_member(identities, extent.identity) {
-                graph_extent(extent, -1, new[Int]())
+                ListExtent {
+                    element_unreachable = []
+                    ..graph_extent(extent, -1, new[Int]())
+                }
             } else {
                 extent
             })

@@ -123,8 +123,11 @@ assuming that mutable child graphs are frozen. Closed read-only functions can
 also bind tracked roots and mutable descendants at one logical heap version,
 with conservative invalidation across effects. This supports result congruence
 over shared/cyclic data, not general graph induction or invariant preservation.
-General content
-induction and constrained shared-alias preservation remain open.
+Element-graph exclusions now prove the entry count of source-library sorting
+through effectful comparators, including recursive records and captured closures.
+They distinguish child reachability from root aliasing and are rechecked after
+stores, publication and loop backedges. General content induction, comparator
+laws and constrained shared-alias preservation remain open.
 
 Use these complete acceptance stories, rather than a count of syntax features:
 

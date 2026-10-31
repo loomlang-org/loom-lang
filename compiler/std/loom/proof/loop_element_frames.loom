@@ -1,0 +1,93 @@
+// These relations follow the current local bindings, including swapped buffers.
+// They describe element graphs, never distinctness of the two root headers.
+fn loop_element_frame(local Int, path List[Int], target Int, target_path List[Int], state State) Result[Bool, Text] {
+    let source = match loop_local_value(get(state.locals, local), path)? {
+        Value.List(identity) => list_state(identity, state)?
+        _ => {
+            return Result.Err("loop element frame needs a tracked List")
+        }
+    }
+    let receiver = match loop_local_value(get(state.locals, target), target_path)? {
+        Value.List(identity) => list_state(identity, state)?
+        _ => {
+            return Result.Err("loop element frame needs a tracked target")
+        }
+    }
+    Result.Ok(list_element_frame(source, receiver))
+}
+
+fn loop_element_view(local Int, path List[Int], target Int, target_path List[Int], state State) Result[State, Text] {
+    let source = match loop_local_value(get(state.locals, local), path)? {
+        Value.List(identity) => identity
+        _ => {
+            return Result.Err("loop element view needs a tracked List")
+        }
+    }
+    let receiver = match loop_local_value(get(state.locals, target), target_path)? {
+        Value.List(identity) => list_state(identity, state)?
+        _ => {
+            return Result.Err("loop element view needs a tracked target")
+        }
+    }
+    if !receiver.private_storage || receiver.birth_floor < 0 {
+        return Result.Err("loop element view lost its allocation premise")
+    }
+    Result.Ok(separate_elements(source, receiver.identity, state))
+}
+
+fn loop_element_targets(proof Verification, candidates List[LoopCandidate], local Int, path List[Int],
+    target Int, target_path List[Int], value Value, entry State, depth Int) Result[Bool, Text] {
+    if depth >= 16 || length(candidates) >= 64 {
+        return Result.Ok(true)
+    }
+    match value {
+        Value.List(_) => {
+            discard loop_step(proof)?
+            discard add_loop_candidate(candidates,
+                LoopCandidate.ElementFrame(local, path, target, target_path), entry)?
+        }
+        Value.Record(fields) => {
+            var field = 0
+            while field < length(fields) {
+                let nested = std.list.clone(target_path)
+                push(nested, field)
+                discard loop_element_targets(proof, candidates, local, path,
+                    target, nested, get(fields, field), entry, depth + 1)?
+                field = field + 1
+            }
+        }
+        _ => {
+        }
+    }
+    Result.Ok(true)
+}
+
+fn loop_element_sources(proof Verification, candidates List[LoopCandidate], local Int, path List[Int],
+    value Value, entry State, depth Int) Result[Bool, Text] {
+    if depth >= 16 || length(candidates) >= 64 {
+        return Result.Ok(true)
+    }
+    match value {
+        Value.List(_) => {
+            var target = 0
+            while target < length(entry.locals) && length(candidates) < 64 {
+                discard loop_element_targets(proof, candidates, local, path,
+                    target, [], get(entry.locals, target), entry, 0)?
+                target = target + 1
+            }
+        }
+        Value.Record(fields) => {
+            var field = 0
+            while field < length(fields) {
+                let nested = std.list.clone(path)
+                push(nested, field)
+                discard loop_element_sources(proof, candidates, local, nested,
+                    get(fields, field), entry, depth + 1)?
+                field = field + 1
+            }
+        }
+        _ => {
+        }
+    }
+    Result.Ok(true)
+}

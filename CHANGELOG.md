@@ -5,6 +5,12 @@ implementation, not a compatibility ledger for previous prototypes.
 
 ## Unreleased
 
+- Prove generic source-library sorting length through effectful comparators and
+  shared mutable element graphs. Track child exclusions separately from root
+  identity, widen ancestors on stores, and withdraw loop proposals when their
+  allocation premises are lost. Exercise recursive cycles and captured closures
+  without changing runtime sharing or adding source ownership rules.
+
 - Reuse bounded structural loop write plans while rechecking each entry's local
   types and all inductive facts. Keep optional coefficient search separate from
   required proof work, compare match arms in expression keys, and send mutable
