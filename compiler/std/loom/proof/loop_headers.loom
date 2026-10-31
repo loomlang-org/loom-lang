@@ -175,11 +175,16 @@ fn loop_publications(entry State, head State, backedges List[Outcome]) List[Int]
 fn loop_graph_losses(proof Verification, entry State, head State, backedges List[Outcome]) Result[List[Int], Text] {
     let lost = new[Int]()
     let targets = new[ListExtent]()
+    let persistent = new[Bool]()
     var index = 0
     while index < length(head.extents) {
         let target = get(head.extents, index)
         if target.private_storage && target.birth_floor >= 0 {
             push(targets, target)
+            push(persistent, match list_state(target.identity, entry) {
+                    Result.Ok(_) => true
+                    Result.Err(_) => false
+                })
         }
         index = index + 1
     }
@@ -205,7 +210,10 @@ fn loop_graph_losses(proof Verification, entry State, head State, backedges List
                 while target < length(targets) && !failed {
                     let extent = get(targets, target)
                     let whole = list_graph_frame(before, extent)
-                    let elements = !whole && list_element_frame(before, extent)
+                    // Sampled targets follow current local bindings. Their
+                    // element relations are checked by ElementFrame candidates,
+                    // not against the abandoned handle after a reassignment.
+                    let elements = !whole && get(persistent, target) && list_element_frame(before, extent)
                     if whole || elements {
                         // One root frame is checked as a group on this edge;
                         // every retained relation still needs its own premise.
