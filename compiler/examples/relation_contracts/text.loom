@@ -1,0 +1,42 @@
+import std.text.length
+import std.list.all
+import std.list.length
+
+fn text_related(first Text, second Text) Bool {
+    std.text.length(first) <= std.text.length(second)
+}
+
+fn text_adjacent(values List[Text]) Bool {
+    var index = 1
+    while index < length(values) {
+        if !text_related(values[index - 1], values[index]) {
+            return false
+        }
+        index = index + 1
+    }
+    true
+}
+
+fn text_transitive(values List[Text]) Bool
+ensures result {
+    std.list.all(values, fn(first Text) Bool {
+            std.list.all(values, fn(middle Text) Bool {
+                    std.list.all(values, fn(last Text) Bool {
+                            !text_related(first, middle) || !text_related(middle, last) || text_related(first, last)
+                        })
+                })
+        })
+}
+
+pub fn text_endpoints(values List[Text], first Int, last Int) Bool
+requires first >= 0 && first < last && last < length(values)
+requires text_adjacent(values)
+ensures text_related(values[first], values[last]) {
+    true
+}
+
+fn exercise_text_relation() {
+    let values = ["a", "aaa", "aaaaa", "aaaaaaa"]
+    assert text_transitive(values)
+    assert text_endpoints(values, 0, 3)
+}

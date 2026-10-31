@@ -1,0 +1,139 @@
+import std.text.contains
+
+// Lift an adjacent Boolean predicate P(k) to R(k-1, k). Both holes are
+// exact SMT terms emitted by this encoder; source Text contains byte numerals,
+// never interpolated SMT. Reject binders rather than capture a shadowed name.
+fn relation_template(writer SmtWriter, identity Int, condition Text) Option[Text] {
+    if std.text.length(condition) > 8192 || smt_mentions(condition, "forall") ||
+    smt_mentions(condition, "exists") || smt_mentions(condition, "let") ||
+    smt_mentions(condition, "lambda") || smt_mentions(condition, "match") ||
+    smt_mentions(condition, "loom_relation_left") || smt_mentions(condition, "loom_relation_right") {
+        return Option.None
+    }
+    let bound = concat("n", std.int.to_text(identity))
+    let previous = match smt_linear(writer, add(variable(identity), constant(integer(-1)))) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            return Option.None
+        }
+    }
+    if !std.text.contains(condition, previous) {
+        return Option.None
+    }
+    let current = match smt_linear(writer, variable(identity)) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            return Option.None
+        }
+    }
+    // Propose data-relation induction, not arbitrary cursor arithmetic. Every
+    // occurrence of the cursor must belong to one of these two observations.
+    var observed = condition
+    var column = 0
+    while column < length(writer.columns) {
+        let source = get(writer.columns, column)
+        let first = concat("(select ", concat(source.name, concat(" ", concat(previous, ")"))))
+        let second = concat("(select ", concat(source.name, concat(" ", concat(current, ")"))))
+        observed = std.text.replace(std.text.replace(observed, first, "loom_relation_observation"), second, "loom_relation_observation")
+        column = column + 1
+    }
+    if smt_mentions(observed, bound) {
+        return Option.None
+    }
+    let output = std.bytes.new()
+    var first = false
+    var second = false
+    var index = 0
+    while index < std.text.length(condition) {
+        if byte(condition, index) == 40 && index + std.text.length(previous) <= std.text.length(condition) &&
+        std.text.slice(condition, index, index + std.text.length(previous)) == previous {
+            smt_append(output, "loom_relation_left")
+            first = true
+            index = index + std.text.length(previous)
+        } else {
+            let end = index + std.text.length(bound)
+            if end <= std.text.length(condition) && byte(condition, index) == 110 &&
+            (index == 0 || byte(condition, index - 1) <= 32 || byte(condition, index - 1) == 40 || byte(condition, index - 1) == 41) &&
+            std.text.slice(condition, index, end) == bound &&
+            (end == std.text.length(condition) || byte(condition, end) <= 32 || byte(condition, end) == 40 || byte(condition, end) == 41) {
+                smt_append(output, "loom_relation_right")
+                second = true
+                index = end
+            } else {
+                std.bytes.push(output, byte(condition, index))
+                index = index + 1
+            }
+        }
+    }
+    if first && second {
+        Option.Some(std.bytes.to_text(output))
+    } else {
+        Option.None
+    }
+}
+
+fn relation_at(body Text, first Text, second Text) Text {
+    concat("(let ((loom_relation_left ", concat(first,
+            concat(") (loom_relation_right ", concat(second, concat(")) ", concat(body, ")"))))))
+}
+
+fn relation_range(lower Text, upper Text, name Text) Text {
+    concat("(and (<= ", concat(lower, concat(" ", concat(name,
+                    concat(") (< ", concat(name, concat(" ", concat(upper, "))"))))))))
+}
+
+// Finite induction for an arbitrary relation, conditional on its transitivity
+// over this exact index range. Merely encountering a relation or its adjacent
+// scan supplies neither premise. Values, function identity, heap versions and
+// enclosing ranges remain exactly those of the encoded source predicate.
+fn smt_relation_chain(writer SmtWriter, identity Int, start Linear, end Linear,
+    predicate Predicate, condition Text, premise Text) Result[Bool, Text] {
+    if order_mentions(start, identity) || order_mentions(end, identity) {
+        return Result.Ok(true)
+    }
+    match order_step(identity, predicate, false, 0) {
+        Option.Some(_) => {
+            return Result.Ok(true)
+        }
+        _ => {
+        }
+    }
+    var outer = 0
+    while outer < length(writer.quantifiers) {
+        if get(writer.quantifiers, outer).identity == identity {
+            return Result.Ok(true)
+        }
+        outer = outer + 1
+    }
+    let body = match relation_template(writer, identity, condition) {
+        Option.Some(value) => value
+        Option.None => {
+            return Result.Ok(true)
+        }
+    }
+    let lower = smt_linear(writer, add(start, constant(integer(-1))))?
+    let upper = smt_linear(writer, end)?
+    let composition = smt_boolean_pair("or",
+        smt_boolean_pair("or",
+            concat("(not ", concat(relation_at(body, "loom_relation_i", "loom_relation_j"), ")")),
+            concat("(not ", concat(relation_at(body, "loom_relation_j", "loom_relation_k"), ")"))),
+        relation_at(body, "loom_relation_i", "loom_relation_k"))
+    let transitive = concat("(forall ((loom_relation_i Int) (loom_relation_j Int) (loom_relation_k Int)) (=> (and ",
+        concat(relation_range(lower, upper, "loom_relation_i"), concat(" ",
+                concat(relation_range(lower, upper, "loom_relation_j"), concat(" ",
+                        concat(relation_range(lower, upper, "loom_relation_k"),
+                            concat(") ", concat(composition, "))"))))))))
+    let pairs = concat("(forall ((loom_relation_i Int) (loom_relation_j Int)) (=> (and ",
+        concat(relation_range(lower, upper, "loom_relation_i"), concat(" ",
+                concat(relation_range(lower, upper, "loom_relation_j"),
+                    concat(" (< loom_relation_i loom_relation_j)) ",
+                        concat(relation_at(body, "loom_relation_i", "loom_relation_j"), "))"))))))
+    var law = concat("(=> (and ", concat(premise, concat(" ", concat(transitive, concat(") ", concat(pairs, ")"))))))
+    outer = length(writer.quantifiers)
+    while outer > 0 {
+        outer = outer - 1
+        law = smt_binder(get(writer.quantifiers, outer), law)
+    }
+    smt_assert(writer, law)
+    Result.Ok(true)
+}

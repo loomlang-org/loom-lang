@@ -28,11 +28,16 @@ record ObservationOrigin {
     identity Int
 }
 
+record HelperActivation {
+    target Int
+    callbacks List[Int]
+}
+
 record Expansion {
     program Program
     list_lengths Bool
     budget List[Int]
-    active List[Int]
+    active List[HelperActivation]
     checks List[Evaluation]
     observations List[Int]
     origins List[ObservationOrigin]
@@ -139,6 +144,9 @@ fn proof_not(value Expr) Expr {
     if value.kind == ExprKind.Unary && value.text == "!" {
         return get(value.children, 0)
     }
+    if value.kind == ExprKind.Intrinsic && value.text == "proof_logical" && length(value.children) == 1 {
+        return proof_logical(proof_not(get(value.children, 0)))
+    }
     let children = new[Expr]()
     push(children, value)
     proof_expr(value, ExprKind.Unary, 2, "!", -1, children)
@@ -150,6 +158,10 @@ fn proof_and(left Expr, right Expr) Expr {
     }
     if is_bool(right, true) || is_bool(left, false) {
         return left
+    }
+    if left.kind == ExprKind.Intrinsic && left.text == "proof_logical" && length(left.children) == 1 &&
+    right.kind == ExprKind.Intrinsic && right.text == "proof_logical" && length(right.children) == 1 {
+        return proof_logical(proof_and(get(left.children, 0), get(right.children, 0)))
     }
     proof_expr(left, ExprKind.Binary, 2, "&&", -1, proof_children(left, right))
 }
@@ -166,6 +178,10 @@ fn guarded_value(guard Expr, value Expr) Expr {
     }
     if is_bool(value, false) {
         return proof_not(guard)
+    }
+    if guard.kind == ExprKind.Intrinsic && guard.text == "proof_logical" && length(guard.children) == 1 &&
+    value.kind == ExprKind.Intrinsic && value.text == "proof_logical" && length(value.children) == 1 {
+        return proof_logical(guarded_value(get(guard.children, 0), get(value.children, 0)))
     }
     proof_expr(guard, ExprKind.Binary, 2, "||", -1, proof_children(proof_not(guard), value))
 }
@@ -279,17 +295,33 @@ fn expanded_application_body(context Expansion, value Expr, guard Expr,
         }
         index = index + 1
     }
+    let callbacks = new[Int]()
+    index = 0
+    while index < length(arguments) {
+        let argument = get(arguments, index).value
+        push(callbacks, if argument.kind == ExprKind.FunctionRef {
+                argument.index
+            } else {
+                -1
+            })
+        index = index + 1
+    }
+    let activation = HelperActivation {
+        target = value.index
+        callbacks = callbacks
+    }
     index = 0
     while index < calls {
-        if get(context.active, index) == value.index {
+        let previous = get(context.active, index)
+        if previous.target == value.index && same_projection(previous.callbacks, callbacks) {
             return Result.Err("recursive helper proof is unsupported")
         }
         index = index + 1
     }
     if calls == length(context.active) {
-        push(context.active, value.index)
+        push(context.active, activation)
     } else {
-        set(context.active, calls, value.index)
+        set(context.active, calls, activation)
     }
     index = 0
     while index < length(function.preconditions) {
@@ -667,7 +699,7 @@ fn helper_implication(program Program, locals List[Local], premise Expr, conclus
         program = program
         list_lengths = list_lengths
         budget = budget
-        active = new[Int]()
+        active = new[HelperActivation]()
         checks = new[Evaluation]()
         observations = new[Int]()
         origins = new[ObservationOrigin]()
@@ -678,7 +710,7 @@ fn helper_implication(program Program, locals List[Local], premise Expr, conclus
         program = program
         list_lengths = list_lengths
         budget = budget
-        active = new[Int]()
+        active = new[HelperActivation]()
         checks = new[Evaluation]()
         observations = new[Int]()
         origins = new[ObservationOrigin]()
@@ -828,7 +860,7 @@ fn contract_predicates(program Program, locals List[Local], inputs List[Expr], e
             program = program
             list_lengths = false
             budget = budget
-            active = new[Int]()
+            active = new[HelperActivation]()
             checks = new[Evaluation]()
             observations = observations
             origins = origins

@@ -83,7 +83,7 @@ fn loop_affine_suggestion(proof Verification, value Expr, budget List[Int]) Resu
         program = proof.program
         list_lengths = false
         budget = budget
-        active = new[Int]()
+        active = new[HelperActivation]()
         checks = new[Evaluation]()
         observations = new[Int]()
         origins = new[ObservationOrigin]()

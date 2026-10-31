@@ -6,6 +6,10 @@ fn predicate_application(value Expr) Bool {
 }
 
 fn proof_logical(value Expr) Expr {
+    if value.kind == ExprKind.Bool || (value.kind == ExprKind.Intrinsic &&
+        value.text == "proof_logical" && length(value.children) == 1) {
+        return value
+    }
     proof_expr(value, ExprKind.Intrinsic, value.ty, "proof_logical", -1, [value])
 }
 
