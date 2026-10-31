@@ -1,14 +1,8 @@
-// Lift an adjacent Boolean application P(k) to R(k-1, k). Both holes are
+import std.text.contains
+
+// Lift an adjacent Boolean predicate P(k) to R(k-1, k). Both holes are
 // exact SMT terms emitted by this encoder; source Text contains byte numerals,
 // never interpolated SMT. Reject binders rather than capture a shadowed name.
-fn relation_application(value Predicate) Bool {
-    match value {
-        Predicate.Application(_, _) => true
-        Predicate.Not(values) => length(values) == 1 && relation_application(get(values, 0))
-        _ => false
-    }
-}
-
 fn relation_template(writer SmtWriter, identity Int, condition Text) Option[Text] {
     if std.text.length(condition) > 8192 || smt_mentions(condition, "forall") ||
     smt_mentions(condition, "exists") || smt_mentions(condition, "let") ||
@@ -22,6 +16,29 @@ fn relation_template(writer SmtWriter, identity Int, condition Text) Option[Text
         Result.Err(_) => {
             return Option.None
         }
+    }
+    if !std.text.contains(condition, previous) {
+        return Option.None
+    }
+    let current = match smt_linear(writer, variable(identity)) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            return Option.None
+        }
+    }
+    // Propose data-relation induction, not arbitrary cursor arithmetic. Every
+    // occurrence of the cursor must belong to one of these two observations.
+    var observed = condition
+    var column = 0
+    while column < length(writer.columns) {
+        let source = get(writer.columns, column)
+        let first = concat("(select ", concat(source.name, concat(" ", concat(previous, ")"))))
+        let second = concat("(select ", concat(source.name, concat(" ", concat(current, ")"))))
+        observed = std.text.replace(std.text.replace(observed, first, "loom_relation_observation"), second, "loom_relation_observation")
+        column = column + 1
+    }
+    if smt_mentions(observed, bound) {
+        return Option.None
     }
     let output = std.bytes.new()
     var first = false
@@ -65,19 +82,21 @@ fn relation_range(lower Text, upper Text, name Text) Text {
                     concat(") (< ", concat(name, concat(" ", concat(upper, "))"))))))))
 }
 
-fn relation_forall(lower Text, upper Text, name Text, condition Text) Text {
-    concat("(forall ((", concat(name, concat(" Int)) (=> ",
-                concat(relation_range(lower, upper, name), concat(" ", concat(condition, "))"))))))
-}
-
 // Finite induction for an arbitrary relation, conditional on its transitivity
 // over this exact index range. Merely encountering a relation or its adjacent
 // scan supplies neither premise. Values, function identity, heap versions and
 // enclosing ranges remain exactly those of the encoded source predicate.
 fn smt_relation_chain(writer SmtWriter, identity Int, start Linear, end Linear,
     predicate Predicate, condition Text, premise Text) Result[Bool, Text] {
-    if !relation_application(predicate) || order_mentions(start, identity) || order_mentions(end, identity) {
+    if order_mentions(start, identity) || order_mentions(end, identity) {
         return Result.Ok(true)
+    }
+    match order_step(identity, predicate, false, 0) {
+        Option.Some(_) => {
+            return Result.Ok(true)
+        }
+        _ => {
+        }
     }
     var outer = 0
     while outer < length(writer.quantifiers) {

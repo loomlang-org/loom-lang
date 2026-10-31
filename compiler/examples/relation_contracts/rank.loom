@@ -1,0 +1,55 @@
+import std.list.all
+import std.list.length
+
+pub record Rank {
+    major Int
+    minor Int
+}
+
+fn rank_related(first Rank, second Rank) Bool {
+    first.major < second.major || (first.major == second.major && first.minor < second.minor)
+}
+
+fn rank_adjacent(values List[Rank]) Bool {
+    var index = 1
+    while index < length(values) {
+        if !rank_related(values[index - 1], values[index]) {
+            return false
+        }
+        index = index + 1
+    }
+    true
+}
+
+fn rank_transitive(values List[Rank]) Bool
+ensures result {
+    std.list.all(values, fn(first Rank) Bool {
+            std.list.all(values, fn(middle Rank) Bool {
+                    std.list.all(values, fn(last Rank) Bool {
+                            !rank_related(first, middle) || !rank_related(middle, last) || rank_related(first, last)
+                        })
+                })
+        })
+}
+
+pub fn rank_endpoints(values List[Rank], first Int, last Int) Bool
+requires first >= 0 && first < last && last < length(values)
+requires rank_adjacent(values)
+ensures rank_related(values[first], values[last]) {
+    true
+}
+
+fn exercise_rank_relation() {
+    let values = [Rank {
+            major = 0
+            minor = 1
+        }, Rank {
+            major = 0
+            minor = 3
+        }, Rank {
+            major = 1
+            minor = 0
+        }]
+    assert rank_transitive(values)
+    assert rank_endpoints(values, 0, 2)
+}

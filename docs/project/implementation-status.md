@@ -408,7 +408,15 @@ supported theories and boundaries. The central rules are:
   distances on the same content version and field column. The conditional
   induction law retains shifted ranges and outer scopes, excluding distinctness
   and IEEE comparisons. A native merge fixture removes its proved loop scans;
-  general comparator proofs remain open.
+  global comparator laws and standard-library ordering/permutation remain open.
+  A conditional finite-induction rule also composes admitted adjacent predicates
+  under a transitivity premise for the exact range. Text length and record
+  lexicographic relations use ordinary source contracts and nested `all` calls;
+  their transitivity helpers prove `ensures result` for arbitrary input Lists.
+  Predicate bodies, captured terms, fields, versions and outer binders stay exact;
+  neither distinctness nor negated IEEE comparisons acquire transitivity merely
+  from adjacent checks. Direct universal chains flatten without capturing free
+  range names. Complex partial-function queries can still remain unproved.
   Positive finite counts can transport an established integer-column predicate
   to a key without a named index witness. Source premises, prefix ranges,
   versions and enclosing binders stay exact; residual index dependencies do not

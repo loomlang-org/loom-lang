@@ -5,6 +5,12 @@ implementation, not a compatibility ledger for previous prototypes.
 
 ## Unreleased
 
+- Compose finite adjacent relation contracts under an exact-range transitivity
+  premise, including Text length and record lexicographic predicates. Retain
+  source scopes and content versions, distinguish nested checked callbacks,
+  and compact logical wrappers without increasing proof budgets. Preserve
+  rejection of invalid ranges, stale aliases and nontransitive comparisons.
+
 - Prove generic source-library sorting length through effectful comparators and
   shared mutable element graphs. Track child exclusions separately from root
   identity, widen ancestors on stores, and withdraw loop proposals when their

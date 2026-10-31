@@ -2663,6 +2663,15 @@ effects do not acquire a stable whole-call identity. These rules introduce no
 source annotation or runtime wrapper. Try [function contracts](examples/function_contracts)
 and [predicate contracts](examples/predicate_contracts).
 
+Finite relation contracts can compose adjacent indexed observations through a
+transitivity premise over the same range. The induction rule retains the whole
+predicate, observed content versions, captured values and field projections.
+That premise can follow from the encoded relation or established contract facts;
+the example's ordinary transitivity helpers also prove their `ensures result`.
+Nested `all` calls distinguish their checked callbacks; no helper name or user
+type supplies a law. Reflexivity and successful evaluation remain separate
+obligations. Try [Text and record relations](examples/relation_contracts).
+
 A record can have a `where` predicate over immutable `Int`, `Bool`, `Float`,
 `Text`, or nested inline record/refined fields. Shared siblings are allowed when
 the predicate does not observe them:

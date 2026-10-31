@@ -1,0 +1,12 @@
+fn exercise() {
+    exercise_text_relation()
+    exercise_rank_relation()
+}
+
+test fn source_relation_laws_compose_along_a_finite_chain() {
+    exercise()
+}
+
+fn main() {
+    exercise()
+}

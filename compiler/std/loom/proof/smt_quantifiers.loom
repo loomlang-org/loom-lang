@@ -12,6 +12,42 @@ fn smt_constant(value Predicate, depth Int) Option[Bool] {
         } else {
             Option.None
         }
+        Predicate.And(parts) => smt_constant_pair(parts, false, depth)
+        Predicate.Or(parts) => smt_constant_pair(parts, true, depth)
+        Predicate.Forall(_, _, _, parts) => if length(parts) == 1 {
+            match smt_constant(get(parts, 0), depth + 1) {
+                Option.Some(true) => Option.Some(true)
+                _ => Option.None
+            }
+        } else {
+            Option.None
+        }
+        _ => Option.None
+    }
+}
+
+fn smt_constant_pair(parts List[Predicate], absorbing Bool, depth Int) Option[Bool] {
+    if length(parts) != 2 {
+        return Option.None
+    }
+    let first = smt_constant(get(parts, 0), depth + 1)
+    let second = smt_constant(get(parts, 1), depth + 1)
+    match first {
+        Option.Some(value) => {
+            if value == absorbing {
+                return first
+            }
+            return second
+        }
+        _ => {
+        }
+    }
+    match second {
+        Option.Some(value) => if value == absorbing {
+            second
+        } else {
+            Option.None
+        }
         _ => Option.None
     }
 }
@@ -48,6 +84,13 @@ fn quantified_body(value Predicate, depth Int) Predicate {
 // Inner encodings have already registered their scoped theory laws.
 fn smt_flat_quantified(writer SmtWriter, identity Int, first Text, last Text,
     predicate Predicate, depth Int) Result[Option[Text], Text] {
+    var outer = 0
+    while outer < length(writer.quantifiers) {
+        if get(writer.quantifiers, outer).identity == identity {
+            return Result.Ok(Option.None)
+        }
+        outer = outer + 1
+    }
     let binders = [SmtBinder {
             identity = identity
             start = first

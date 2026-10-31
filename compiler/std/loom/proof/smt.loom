@@ -296,7 +296,19 @@ fn smt_quantified(writer SmtWriter, identity Int, start Linear, end Linear,
             }
             let first = smt_quantified(writer, identity, start, end, get(parts, 0), depth + 1)?
             let second = smt_quantified(writer, identity, start, end, get(parts, 1), depth + 1)?
-            return Result.Ok(smt_boolean_pair("and", first, second))
+            let quantified = smt_boolean_pair("and", first, second)
+            let binders = clone(writer.quantifiers)
+            push(binders, SmtBinder {
+                    identity = identity
+                    start = smt_linear(writer, start)?
+                    end = smt_linear(writer, end)?
+                })
+            let condition = smt_predicate(SmtWriter {
+                    quantifiers = binders
+                    ..writer
+                }, predicate, depth + 1)?
+            discard smt_relation_chain(writer, identity, start, end, predicate, condition, quantified)?
+            return Result.Ok(quantified)
         }
         _ => {
         }
