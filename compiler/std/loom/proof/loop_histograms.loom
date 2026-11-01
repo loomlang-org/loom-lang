@@ -83,9 +83,38 @@ fn loop_histogram_enabled(proof Verification, loop Expr) Bool {
     if !proof.histograms || !proof.query.backend.enabled {
         return false
     }
+    if loop_count_hint(proof, get(loop.children, 1), 64) {
+        return false
+    }
     let terms = new[LoopHistogramTerm]()
     loop_histogram_transfers(proof, get(loop.children, 1), terms, 64, true)
     length(terms) != 0
+}
+
+// Explicit count invariants already provide the requested content relation.
+// Do not add a second, stronger buffer hypothesis to that source proof.
+fn loop_count_hint(proof Verification, body Expr, depth Int) Bool {
+    if depth <= 0 {
+        return false
+    }
+    if body.kind == ExprKind.Assert {
+        return loop_counted_relation(loop_candidate_guard(proof, get(body.children, 0)))
+    }
+    if body.kind != ExprKind.Block {
+        return false
+    }
+    var index = 0
+    while index < length(body.children) {
+        let item = get(body.children, index)
+        if item.kind != ExprKind.Assert && item.kind != ExprKind.Block {
+            return false
+        }
+        if loop_count_hint(proof, item, depth - 1) {
+            return true
+        }
+        index = index + 1
+    }
+    false
 }
 
 fn loop_histogram_entry(proof Verification, loop Expr, entry State) State {
