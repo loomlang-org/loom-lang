@@ -485,6 +485,7 @@ fn smt_predicate(writer SmtWriter, value Predicate, depth Int) Result[Text, Text
             smt_quantified(writer, identity, start, end, get(conditions, 0), depth)
         }
         Predicate.Variable(id) => Result.Ok(smt_name(writer, "b", id, "Bool"))
+        Predicate.BagBalance(terms) => smt_bag_balance(writer, terms)
         Predicate.BagEqual(before, size, after, count) => {
             let first = smt_bag(writer, smt_array(writer, before, []), size)?
             let second = smt_bag(writer, smt_array(writer, after, []), count)?

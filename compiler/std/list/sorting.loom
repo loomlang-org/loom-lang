@@ -8,14 +8,20 @@ pub fn sorted[T](values List[T], less fn(T, T) Bool) List[T] {
     var output = clone(source)
     var width = 1
     while width < count {
+        assert width >= 1 && width <= count
         var start = 0
         while start < count {
+            assert start >= 0 && start <= count
             let middle = if width < count - start { start + width } else { count }
             let end = if width < count - middle { middle + width } else { count }
             var left = start
             var right = middle
             var index = start
             while index < end {
+                assert left >= start && left <= middle
+                assert right >= middle && right <= end
+                assert index >= start && index <= end
+                assert index - start == (left - start) + (right - middle)
                 // Pick the left entry on a tie, preserving its original order.
                 if left < middle && (right >= end || !less(get(source, right), get(source, left))) {
                     set(output, index, get(source, left))

@@ -1,46 +1,52 @@
-fn loop_storage_writes(proof Verification, value Expr, entry State, modified List[Int], contents Bool, depth Int) Result[Bool, Text] {
+fn loop_storage_primitive(proof Verification, value Expr) Text {
+    if value.kind == ExprKind.Intrinsic { return sequence_operation(value.text) }
+    if value.kind == ExprKind.Call && value.index >= 0 && value.index < length(proof.program.functions) {
+        return sequence_operation(forwarded_list_operation(proof.program.functions,
+                get(proof.program.functions, value.index), 0))
+    }
+    ""
+}
+
+record LoopStorageTargets {
+    resized List[Int]
+    modified List[Int]
+    extent_preserved Bool
+}
+
+fn loop_storage_writes(proof Verification, value Expr, entry State, resized List[Int],
+    modified List[Int], callbacks List[Int], depth Int) Result[Bool, Text] {
     discard loop_step(proof)?
     if depth <= 0 {
         return Result.Err("loop extent analysis budget exhausted")
     }
     if cell_store_expression(proof.program, value) {
-        return loop_storage_writes(proof, cell_store_view(value), entry, modified, contents, depth - 1)
+        return loop_storage_writes(proof, cell_store_view(value), entry, resized, modified, callbacks, depth - 1)
     }
     if value.kind == ExprKind.FrameStore {
+        push(resized, -1)
         push(modified, -1)
     }
-    var primitive = if value.kind == ExprKind.Intrinsic {
-        value.text
-    } else {
-        ""
+    let primitive = loop_storage_primitive(proof, value)
+    if value.kind == ExprKind.Call && primitive == "" {
+        if !extent_preserving(proof.program, value) { push(resized, -1) }
+        if !elements_preserving(proof.program, value) { push(modified, -1) }
     }
-    if value.kind == ExprKind.Call {
-        if value.index < 0 || value.index >= length(proof.program.functions) {
-            push(modified, -1)
-        } else {
-            primitive = forwarded_list_operation(proof.program.functions,
-                get(proof.program.functions, value.index), 0)
-            if primitive == "" && !(if contents {
-                    elements_preserving(proof.program, value)
-                } else {
-                    extent_preserving(proof.program, value)
-                }) {
-                push(modified, -1)
-            }
+    if value.kind == ExprKind.IndirectCall {
+        var index = 0
+        while index < length(callbacks) {
+            push(resized, get(callbacks, index))
+            push(modified, get(callbacks, index))
+            index = index + 1
         }
     }
-    if value.kind == ExprKind.Await || value.kind == ExprKind.Suspend || value.kind == ExprKind.IndirectCall {
-        // The next iteration cannot inherit observations from before another
-        // Task ran or an unknown callback changed a reachable alias.
-        push(modified, -1)
-    }
-    primitive = sequence_operation(primitive)
-    if primitive == "list_retain_range" || primitive == "task_drain" ||
+    if value.kind == ExprKind.Await || value.kind == ExprKind.Suspend ||
+    primitive == "list_retain_range" || primitive == "task_drain" ||
     primitive == "task_cancel" || primitive == "task_ready_result" || primitive == "task_ready_outcome" {
+        push(resized, -1)
         push(modified, -1)
     }
-    if (primitive == "list_push" || primitive == "list_append" || primitive == "list_take" ||
-        (contents && (primitive == "list_set" || primitive == "list_replace"))) && length(value.children) > 0 {
+    let resize = primitive == "list_push" || primitive == "list_append" || primitive == "list_take"
+    if (resize || primitive == "list_set" || primitive == "list_replace") && length(value.children) > 0 {
         let identity = match pure(get(value.children, 0), entry) {
             Result.Ok(receiver) => match receiver {
                 Value.List(identity) => identity
@@ -48,11 +54,13 @@ fn loop_storage_writes(proof Verification, value Expr, entry State, modified Lis
             }
             Result.Err(_) => -1
         }
+        if resize { push(resized, identity) }
         push(modified, identity)
     }
     var index = 0
     while index < length(value.children) {
-        discard loop_storage_writes(proof, get(value.children, index), entry, modified, contents, depth - 1)?
+        discard loop_storage_writes(proof, get(value.children, index), entry,
+            resized, modified, callbacks, depth - 1)?
         index = index + 1
     }
     index = 0
@@ -60,7 +68,8 @@ fn loop_storage_writes(proof Verification, value Expr, entry State, modified Lis
         let body = get(value.arms, index).body
         var item = 0
         while item < length(body) {
-            discard loop_storage_writes(proof, get(body, item), entry, modified, contents, depth - 1)?
+            discard loop_storage_writes(proof, get(body, item), entry,
+                resized, modified, callbacks, depth - 1)?
             item = item + 1
         }
         index = index + 1
@@ -68,30 +77,36 @@ fn loop_storage_writes(proof Verification, value Expr, entry State, modified Lis
     Result.Ok(true)
 }
 
-fn loop_storage_targets(proof Verification, value Expr, entry State, writes List[Bool], contents Bool) Result[List[Int], Text] {
+fn loop_storage_targets(proof Verification, value Expr, entry State, writes List[Bool]) Result[LoopStorageTargets, Text] {
+    let resized = new[Int]()
     let modified = new[Int]()
-    if length(entry.extents) == 0 {
-        return Result.Ok(modified)
+    if length(entry.extents) == 0 || elements_preserving(proof.program, value) {
+        return Result.Ok(LoopStorageTargets {
+                resized = resized
+                modified = modified
+                extent_preserved = true
+            })
     }
-    let preserved = if contents {
-        elements_preserving(proof.program, value)
-    } else {
-        extent_preserving(proof.program, value)
-    }
-    if preserved {
-        return Result.Ok(modified)
-    }
+    let preserved = extent_preserving(proof.program, value)
     var index = 0
     while index < length(proof.function.locals) {
         if get(writes, index) && loop_list_type(proof, get(proof.function.locals, index).ty, 0) {
             // A rebound receiver can target a different alias on later iterations.
-            push(modified, -1)
-            return Result.Ok(modified)
+            return Result.Ok(LoopStorageTargets {
+                    resized = if preserved { resized } else { [-1] }
+                    modified = [-1]
+                    extent_preserved = preserved
+                })
         }
         index = index + 1
     }
-    discard loop_storage_writes(proof, value, entry, modified, contents, 64)?
-    Result.Ok(modified)
+    let callbacks = loop_callback_targets(proof, value, entry, writes)
+    discard loop_storage_writes(proof, value, entry, resized, modified, callbacks, 64)?
+    Result.Ok(LoopStorageTargets {
+            resized = if preserved { [] } else { resized }
+            modified = modified
+            extent_preserved = preserved
+        })
 }
 
 fn loop_list_type(proof Verification, ty Int, depth Int) Bool {

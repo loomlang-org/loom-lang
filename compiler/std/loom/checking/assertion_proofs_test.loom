@@ -1,5 +1,29 @@
 import std.loom.lowering.lower
 
+test fn loop_assertions_without_ensures_remain_optional_and_require_evidence() {
+    let program = accepted("""
+        pub fn checked(limit Int) {
+            var index = 0
+            while index < limit {
+                assert index >= 0
+                index = index + 1
+            }
+        }
+        pub fn unknown(limit Int, value Int) {
+            var index = 0
+            while index < limit {
+                assert value > 0
+                index = index + 1
+            }
+        }
+        """)
+    assert has_assertion(get(program.functions, get(program.exports, 0)).body, 1)
+    assert !has_assertion(get(program.functions, get(program.exports, 1)).body, 1)
+    let lowered = lower(program)
+    assert dynamic_count(get(lowered.functions, get(lowered.exports, 0)).body, ExprKind.Assert) == 0
+    assert dynamic_count(get(lowered.functions, get(lowered.exports, 1)).body, ExprKind.Assert) == 1
+}
+
 test fn proved_assertion_operands_stay_in_analysis_and_leave_native_lowering() {
     let program = accepted("""
         fn yes() Bool {

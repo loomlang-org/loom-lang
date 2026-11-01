@@ -50,6 +50,7 @@ fn with_extent(identity Int, size Linear, allocated Bool, initially_private Bool
     var frontier = identity + 1
     var unreachable = new[Int]()
     var element_unreachable = unreachable
+    var root_unreachable = unreachable
     var index = 0
     while index < length(state.extents) {
         let extent = get(state.extents, index)
@@ -65,6 +66,7 @@ fn with_extent(identity Int, size Linear, allocated Bool, initially_private Bool
             frontier = extent.frontier
             unreachable = extent.unreachable
             element_unreachable = extent.element_unreachable
+            root_unreachable = extent.root_unreachable
         }
         index = index + 1
     }
@@ -95,6 +97,7 @@ fn with_extent(identity Int, size Linear, allocated Bool, initially_private Bool
             frontier = frontier
             unreachable = unreachable
             element_unreachable = element_unreachable
+            root_unreachable = root_unreachable
             contents = -1
             cells = new[ListCell]()
         })
@@ -280,6 +283,10 @@ fn private_storage_lost(before State, after State) Bool {
 fn extent_overlap(left ListExtent, right ListExtent) Bool {
     if left.identity == right.identity {
         return true
+    }
+    if storage_identity_member(left.root_unreachable, right.identity) ||
+    storage_identity_member(right.root_unreachable, left.identity) {
+        return false
     }
     if list_graph_frame(left, right) || list_graph_frame(right, left) {
         return false

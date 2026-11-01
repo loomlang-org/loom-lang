@@ -1,0 +1,266 @@
+record LoopHistogramTerm {
+    receiver Expr
+    end Expr
+    factor Number
+}
+
+fn loop_body_bindings(value Expr, declared List[Bool], budget List[Int], depth Int) {
+    if depth <= 0 || !conjunction_step(budget) {
+        return
+    }
+    if value.kind == ExprKind.Let && value.index >= 0 && value.index < length(declared) {
+        set(declared, value.index, true)
+    }
+    var index = 0
+    while index < length(value.children) {
+        loop_body_bindings(get(value.children, index), declared, budget, depth - 1)
+        index = index + 1
+    }
+    index = 0
+    while index < length(value.arms) {
+        let body = get(value.arms, index).body
+        var child = 0
+        while child < length(body) {
+            loop_body_bindings(get(body, child), declared, budget, depth - 1)
+            child = child + 1
+        }
+        index = index + 1
+    }
+}
+
+// Body declarations do not carry values between iterations in source scope.
+// Exclude them from optional proposals; actual execution and havoc are intact.
+fn loop_proposal_entry(proof Verification, body Expr, entry State) State {
+    let declared = new[Bool]()
+    var index = 0
+    while index < length(entry.locals) {
+        push(declared, false)
+        index = index + 1
+    }
+    loop_body_bindings(body, declared, [256], 64)
+    let locals = new[Value]()
+    index = 0
+    while index < length(entry.locals) {
+        push(locals, if get(declared, index) {
+                Value.Empty
+            } else {
+                get(entry.locals, index)
+            })
+        index = index + 1
+    }
+    State {
+        locals = locals
+        ..entry
+    }
+}
+
+fn loop_histogram_requested(clauses List[Expr]) Bool {
+    var index = 0
+    while index < length(clauses) {
+        if loop_counted_relation(get(clauses, index)) {
+            return true
+        }
+        index = index + 1
+    }
+    false
+}
+
+fn loop_histogram_root(proof Verification, loop Expr, entry State, local Int) Bool {
+    let ty = get(proof.function.locals, local).ty
+    if !proof_list_type(proof.program, ty) || get(get(proof.program.types, ty).arguments, 0) != 1 ||
+    !scan_mentions(loop, local) {
+        return false
+    }
+    match get(entry.locals, local) {
+        Value.List(_) => true
+        _ => false
+    }
+}
+
+fn loop_histogram_entry(proof Verification, loop Expr, entry State) State {
+    if !proof.histograms || !proof.query.backend.enabled {
+        return entry
+    }
+    var current = entry
+    var index = 0
+    while index < length(entry.locals) && index < length(proof.function.locals) {
+        if loop_histogram_root(proof, loop, entry, index) {
+            let receiver = proof_expr(loop, ExprKind.Local, get(proof.function.locals, index).ty, "", index, [])
+            let term = LoopHistogramTerm {
+                receiver = receiver
+                end = proof_expr(loop, ExprKind.Intrinsic, 1, "list_len", -1, [receiver])
+                factor = integer(1)
+            }
+            match loop_histogram_views(proof, [term], current) {
+                Result.Ok(viewed) => {
+                    current = viewed
+                }
+                _ => {
+                }
+            }
+        }
+        index = index + 1
+    }
+    current
+}
+
+fn loop_histogram_views(proof Verification, terms List[LoopHistogramTerm], state State) Result[State, Text] {
+    var current = state
+    var index = 0
+    while index < length(terms) {
+        let term = get(terms, index)
+        let value = proof_expr(term.receiver, ExprKind.Intrinsic, 1, "proof_count", -1,
+            [term.receiver, proof_expr(term.receiver, ExprKind.Integer, 1, "0", -1, []), term.end])
+        current = loop_guard_views(proof, value, current)?
+        index = index + 1
+    }
+    Result.Ok(current)
+}
+
+fn loop_histogram_terms(terms List[LoopHistogramTerm], state State) Result[List[BagTerm], Text] {
+    let output = new[BagTerm]()
+    var index = 0
+    while index < length(terms) {
+        let term = get(terms, index)
+        let value = proof_expr(term.receiver, ExprKind.Intrinsic, 1, "proof_count", -1,
+            [term.receiver, proof_expr(term.receiver, ExprKind.Integer, 1, "0", -1, []), term.end])
+        match integer_term(counted_value(value, state)?)? {
+            IntegerTerm.Count(contents, _) => {
+                push(output, BagTerm {
+                        contents = contents
+                        size = list_value_index(pure(term.end, state)?)?
+                        factor = term.factor
+                    })
+            }
+            _ => {
+                return Result.Err("histogram needs a tracked finite sequence")
+            }
+        }
+        index = index + 1
+    }
+    Result.Ok(output)
+}
+
+fn loop_histogram_add(proof Verification, candidates List[LoopCandidate], terms List[LoopHistogramTerm], entry State) {
+    if length(terms) == 0 || length(candidates) >= 64 {
+        return
+    }
+    match loop_histogram_views(proof, terms, entry) {
+        Result.Ok(viewed) => match loop_histogram_terms(terms, viewed) {
+            Result.Ok(initial) => push(candidates, LoopCandidate.Histogram(terms, initial))
+            Result.Err(_) => {
+            }
+        }
+        Result.Err(_) => {
+        }
+    }
+}
+
+fn loop_histogram_term(terms List[LoopHistogramTerm], receiver Expr, end Expr, factor Int) {
+    var index = 0
+    while index < length(terms) {
+        let term = get(terms, index)
+        if exact_expression(term.receiver, receiver) && exact_expression(term.end, end) &&
+        compare(term.factor, integer(factor)) == 0 {
+            return
+        }
+        index = index + 1
+    }
+    push(terms, LoopHistogramTerm {
+            receiver = receiver
+            end = end
+            factor = integer(factor)
+        })
+}
+
+// Reads and writes suggest prefix conservation. This is never an operation
+// summary: every actual backedge, alias effect and fault still gets checked.
+fn loop_histogram_transfers(proof Verification, value Expr, terms List[LoopHistogramTerm], depth Int) {
+    if depth <= 0 || value.kind == ExprKind.While || length(terms) >= 8 {
+        return
+    }
+    if loop_storage_primitive(proof, value) == "list_set" && length(value.children) == 3 {
+        let read = get(value.children, 2)
+        if loop_storage_primitive(proof, read) == "list_get" && read.ty == 1 && length(read.children) == 2 {
+            loop_histogram_term(terms, get(value.children, 0), get(value.children, 1), 1)
+            loop_histogram_term(terms, get(read.children, 0), get(read.children, 1), -1)
+        }
+    }
+    var index = 0
+    while index < length(value.children) {
+        loop_histogram_transfers(proof, get(value.children, index), terms, depth - 1)
+        index = index + 1
+    }
+}
+
+fn loop_histogram_candidates(proof Verification, loop Expr,
+    candidates List[LoopCandidate], writes List[Bool], entry State) {
+    if !proof.query.backend.enabled || !proof.histograms {
+        return
+    }
+    var index = 0
+    let transfers = new[LoopHistogramTerm]()
+    loop_histogram_transfers(proof, get(loop.children, 1), transfers, 64)
+    loop_histogram_add(proof, candidates, transfers, entry)
+    let roots = new[Expr]()
+    index = 0
+    while index < length(entry.locals) && index < length(proof.function.locals) {
+        let ty = get(proof.function.locals, index).ty
+        if proof_list_type(proof.program, ty) && get(get(proof.program.types, ty).arguments, 0) == 1 &&
+        scan_mentions(loop, index) {
+            match get(entry.locals, index) {
+                Value.List(_) => {
+                    let receiver = proof_expr(loop, ExprKind.Local, ty, "", index, [])
+                    push(roots, receiver)
+                    let size = proof_expr(loop, ExprKind.Intrinsic, 1, "list_len", -1, [receiver])
+                    if get(writes, index) {
+                        loop_histogram_add(proof, candidates, [LoopHistogramTerm {
+                                    receiver = receiver
+                                    end = size
+                                    factor = integer(1)
+                                }], entry)
+                    }
+                }
+                _ => {
+                }
+            }
+        }
+        index = index + 1
+    }
+    // A guard cursor partitions two initialized buffers at the same cut.
+    if length(transfers) != 0 {
+        return
+    }
+    var cursor = 0
+    while cursor < length(writes) && cursor < length(proof.function.locals) {
+        if get(writes, cursor) && get(proof.function.locals, cursor).ty == 1 &&
+        scan_mentions(get(loop.children, 0), cursor) {
+            let cut = proof_expr(loop, ExprKind.Local, 1, "", cursor, [])
+            var first = 0
+            while first < length(roots) {
+                var second = first + 1
+                while second < length(roots) {
+                    let a = get(roots, first)
+                    let b = get(roots, second)
+                    if !get(writes, a.index) && !get(writes, b.index) {
+                        loop_histogram_add(proof, candidates, [
+                                LoopHistogramTerm {
+                                    receiver = a
+                                    end = cut
+                                    factor = integer(1)
+                                },
+                                LoopHistogramTerm {
+                                    receiver = b
+                                    end = cut
+                                    factor = integer(-1)
+                                },
+                            ], entry)
+                    }
+                    second = second + 1
+                }
+                first = first + 1
+            }
+        }
+        cursor = cursor + 1
+    }
+}

@@ -126,8 +126,11 @@ over shared/cyclic data, not general graph induction or invariant preservation.
 Element-graph exclusions now prove the entry count of source-library sorting
 through effectful comparators, including recursive records and captured closures.
 They distinguish child reachability from root aliasing and are rechecked after
-stores, publication and loop backedges. General content induction, comparator
-laws and constrained shared-alias preservation remain open.
+stores, publication and loop backedges. Integer entry-count permutation now also
+composes through the library's swapped buffers and unknown effectful comparators,
+using finite histogram algebra and separately checked root separation. General
+content induction, comparator laws and constrained shared-alias preservation
+remain open.
 
 Use these complete acceptance stories, rather than a count of syntax features:
 

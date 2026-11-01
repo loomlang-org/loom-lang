@@ -69,6 +69,7 @@ fn verification(function Function, program Program, backend ProofBackend) Verifi
         shared = false
         preservation = new[Expr]()
         identity_stores = false
+        histograms = loop_histogram_requested(function.postconditions)
         protected = []
         body_calls = new[Int]()
         capture_returns = false

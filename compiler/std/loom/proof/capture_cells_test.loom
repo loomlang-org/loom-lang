@@ -189,7 +189,7 @@ test fn capture_cell_loops_and_call_frames_use_the_actual_write_footprint() {
         _ => false
     }
     let modified = new[Int]()
-    assert match loop_storage_writes(verification(function, program), write, state, modified, true, 64) {
+    assert match loop_storage_writes(verification(function, program), write, state, [], modified, [-1], 64) {
         Result.Ok(_) => true
         Result.Err(_) => false
     }

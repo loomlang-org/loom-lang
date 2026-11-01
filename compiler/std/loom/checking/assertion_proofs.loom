@@ -300,20 +300,64 @@ fn proved_helper_contract(context Context, program std.loom.typed.Program, proof
             program.function_identities, evidence.assertions))
 }
 
-// Fresh declarations already supplied their evidence during required checking.
-// Only replayed or erased-family bodies need a new concrete observation pass.
+fn loop_assertion_hint(value Expr, inside Bool) Bool {
+    if inside && value.kind == ExprKind.Assert {
+        return true
+    }
+    var index = 0
+    while index < length(value.children) {
+        if loop_assertion_hint(get(value.children, index), inside || value.kind == ExprKind.While) {
+            return true
+        }
+        index = index + 1
+    }
+    index = 0
+    while index < length(value.arms) {
+        let body = get(value.arms, index).body
+        var item = 0
+        while item < length(body) {
+            if loop_assertion_hint(get(body, item), inside) {
+                return true
+            }
+            item = item + 1
+        }
+        index = index + 1
+    }
+    false
+}
+
+// Required checking already supplied fresh contracted bodies' evidence.
+// Observe loop hints without ensures too; keep optional work out of other bodies.
 fn revalidate_assertion_proofs(env Environment, program std.loom.typed.Program) {
     var index = 0
     while index < length(program.functions) {
         let function = get(program.functions, index)
-        if has_assertion(function.body, 2) {
+        if has_assertion(function.body, 2) ||
+        (length(function.postconditions) == 0 && has_assertion(function.body, -1) &&
+            loop_assertion_hint(function.body, false)) {
             var checked = without_assertion_proofs(function)
-            if length(function.postconditions) != 0 {
+            if has_assertion(checked.body, -1) || has_assertion(checked.body, 2) {
                 let types = match expanded_invariant_types(env, function) {
                     Result.Ok(types) => types
                     Result.Err(_) => env.types
                 }
-                match prove_contract(proof_types(program, types), checked,
+                // A private true goal observes the body without adding a
+                // source contract. Only assertion evidence is retained below.
+                let observed = if length(checked.postconditions) == 0 {
+                    with_contracts(checked, checked.preconditions, [Expr {
+                                kind = ExprKind.Bool
+                                ty = 2
+                                text = "true"
+                                index = -1
+                                children = []
+                                arms = []
+                                falls = true
+                                ..checked.body
+                            }])
+                } else {
+                    checked
+                }
+                match prove_contract(proof_types(program, types), observed,
                     get(env.inputs, 0).build.proof_backend, false, continuing_sequence_guarantees(env)) {
                     Result.Ok(evidence) => {
                         checked = with_assertion_proofs(checked,

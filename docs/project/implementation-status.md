@@ -91,7 +91,13 @@ now composes entry-state order/count contracts across a package boundary.
 Finite source goals remain intact; histogram strengthening applies to established
 facts. Source-library sorting now proves its entry length through unknown
 effectful comparisons, including mutable element graphs. General comparator
-laws and its ordering/permutation proofs remain open.
+laws and general ordering/permutation proofs remain open.
+The [integer permutation trial](../../compiler/examples/sort_permutation)
+proves entry occurrence counts through unknown effectful comparators. Signed
+histogram invariants compose across private buffer swaps, with publication and
+root separation checked independently. Loop storage effects share one traversal
+within the original work budget. Bodies without ensures can also eliminate
+proved loop assertions; failed optional proofs retain their runtime checks.
 Finite relation proofs also accept a loop-defined partial predicate under
 explicit comparability and transitivity requirements. Relation-specific solver
 scheduling retains both value and successful-evaluation obligations within the

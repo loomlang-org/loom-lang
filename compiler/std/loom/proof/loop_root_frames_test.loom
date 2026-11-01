@@ -1,0 +1,51 @@
+fn root_frame_state(allocated Bool) State {
+    let state = State {
+        heap = -1
+        locals = [Value.List(10), Value.List(20)]
+        facts = []
+        extents = []
+        observations = []
+    }
+    with_extent(20, constant(integer(1)), allocated,
+        with_extent(10, constant(integer(1)), allocated, state))
+}
+
+test fn symbolic_header_ids_alone_do_not_establish_separation() {
+    let proof = verification(fixture(literal("0"), [], literal("true")), empty_proof_program())
+    let candidates = new[LoopCandidate]()
+    assert match loop_root_candidate(proof, candidates, 0, [], 1, [], root_frame_state(false)) {
+        Result.Ok(_) => true
+        _ => false
+    }
+    assert length(candidates) == 0
+}
+
+test fn current_header_separation_survives_swaps_but_refuses_alias_rebinding() {
+    let proof = verification(fixture(literal("0"), [], literal("true")), empty_proof_program())
+    let candidate = LoopCandidate.RootFrame(0, [], 1, [])
+    assert loop_candidate_preserved(proof, candidate, root_frame_state(true))
+    let viewed = loop_candidate_views(proof, [candidate], root_frame_state(false))
+    assert length(viewed.candidates) == 1 && loop_header_count(viewed.candidates) == 1
+    let state = viewed.state
+    let first = match loop_root_extent(0, [], state) {
+        Result.Ok(value) => value
+        _ => {
+            assert false
+            get(state.extents, 0)
+        }
+    }
+    let second = match loop_root_extent(1, [], state) {
+        Result.Ok(value) => value
+        _ => {
+            assert false
+            get(state.extents, 0)
+        }
+    }
+    assert !extent_overlap(first, second)
+    assert !list_element_frame(first, second) && !list_element_frame(second, first)
+    let swapped = assigned(assigned(state, 0, Value.List(20)), 1, Value.List(10))
+    assert loop_candidate_preserved(proof, candidate, swapped)
+    let alias = assigned(state, 1, Value.List(10))
+    assert !loop_candidate_preserved(proof, candidate, alias)
+    assert length(loop_candidate_views(proof, [candidate], alias).candidates) == 0
+}

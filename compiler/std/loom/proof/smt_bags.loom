@@ -167,6 +167,13 @@ fn count_predicate_extents(output List[Linear], value Predicate, depth Int) {
         return
     }
     match value {
+        Predicate.BagBalance(terms) => {
+            var index = 0
+            while index < length(terms) {
+                count_extent(output, get(terms, index).size)
+                index = index + 1
+            }
+        }
         Predicate.Application(value, _) => count_key_extents(output, value.arguments, depth - 1)
         Predicate.ValueEqual(values) => count_key_extents(output, values, depth - 1)
         Predicate.TextEqual(first, second) => {
