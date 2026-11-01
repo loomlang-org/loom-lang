@@ -100,6 +100,10 @@ within the original work budget. Bodies without ensures can also eliminate
 proved loop assertions during native preparation. Ordinary checks and editor
 analysis skip that optional work; failed proofs retain their runtime checks.
 Test entry functions keep runtime assertions rather than proving the tests themselves.
+The [record column trial](../../compiler/examples/record_sort_contracts) composes
+entry counts across nested integer fields, separate sibling columns and scalar
+key extraction. Column identities retain complete field paths; independent
+column counts do not imply whole-record permutation or preserve field pairings.
 Finite relation proofs also accept a loop-defined partial predicate under
 explicit comparability and transitivity requirements. Relation-specific solver
 scheduling retains both value and successful-evaluation obligations within the

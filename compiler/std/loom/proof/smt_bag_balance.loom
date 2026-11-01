@@ -7,7 +7,7 @@ fn balanced_bag_terms(terms List[BagTerm]) List[BagTerm] {
         var prior = 0
         while prior < length(combined) && !found {
             let other = get(combined, prior)
-            if term.contents == other.contents && compare(term.size.constant, other.size.constant) == 0 &&
+            if same_bag_column(term.column, other.column) && compare(term.size.constant, other.size.constant) == 0 &&
             same_terms(term.size.terms, other.size.terms) {
                 set(combined, prior, BagTerm {
                         factor = sum(term.factor, other.factor)
@@ -43,7 +43,7 @@ fn same_bag_terms(first List[BagTerm], second List[BagTerm]) Bool {
     while index < length(first) {
         let a = get(first, index)
         let b = get(second, index)
-        if a.contents != b.contents || compare(a.factor, b.factor) != 0 ||
+        if !same_bag_column(a.column, b.column) || compare(a.factor, b.factor) != 0 ||
         compare(a.size.constant, b.size.constant) != 0 || !same_terms(a.size.terms, b.size.terms) {
             return false
         }
@@ -77,7 +77,7 @@ fn smt_bag_balance(writer SmtWriter, terms List[BagTerm]) Result[Text, Text] {
     while index < length(terms) {
         discard smt_step(writer, 0)?
         let term = get(terms, index)
-        let array = smt_array(writer, term.contents, [])
+        let array = smt_array(writer, term.column.contents, term.column.path)
         discard smt_bag_extension(writer, array, term.size)?
         var part = smt_bag(writer, array, term.size)?
         let factor = if term.factor.negative {

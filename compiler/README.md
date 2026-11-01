@@ -3691,6 +3691,11 @@ removed during native preparation even without ensures; ordinary checks and
 editor analysis do not run this optional pass. Unknown evidence keeps runtime checks.
 Test entry functions retain their assertions for test execution; library callees
 still receive native optimization.
+The [record column trial](examples/record_sort_contracts) uses the same rules for
+nested integer fields, independent sibling fields and extraction into a scalar
+List. Histogram identities include the complete inline-field path; entry views,
+prefix frames, count support and copy invariants retain that path. Independent
+column counts do not prove preservation of complete records or field pairings.
 This does not establish comparator laws, ordering or arbitrary-element permutation.
 Count bounds instantiate at each actual symbolic needle, retaining any enclosing
 quantifier ranges and their dependencies. This avoids universal search over

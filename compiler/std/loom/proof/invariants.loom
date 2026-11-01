@@ -214,11 +214,11 @@ fn projected_type_value(types List[Type], ty Int, contents Int, path List[Int], 
 // scan binders and scalar symbols. Repeated views then reuse the same formula.
 // Export the element's type facts, never the scan's own bounds or result.
 fn quantified_type_invariants(proof Verification, primitive Text, ty Int,
-    contents Int, size Linear, state State) Result[State, Text] {
+    contents Int, size Linear, path List[Int], state State) Result[State, Text] {
     if contents < 0 {
         return Result.Ok(state)
     }
-    let value = projected_type_value(proof.program.types, ty, contents, new[Int](), variable(contents), 0)
+    let value = projected_type_value(proof.program.types, ty, contents, path, variable(contents), 0)
     let known = sequence_read_state(primitive, value,
         guarded_value_invariants(proof, ty, value, Predicate.Constant(true), text_bounds(value, state)))?
     var current = state

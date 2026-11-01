@@ -128,7 +128,10 @@ through effectful comparators, including recursive records and captured closures
 They distinguish child reachability from root aliasing and are rechecked after
 stores, publication and loop backedges. Integer entry-count permutation now also
 composes through the library's swapped buffers and unknown effectful comparators,
-using finite histogram algebra and separately checked root separation. General
+using finite histogram algebra and separately checked root separation.
+Integer-column conservation also covers nested inline fields, independent
+sibling columns and extraction into scalar Lists. It does not preserve field
+pairings merely from independent column counts. General
 content induction, comparator laws and constrained shared-alias preservation
 remain open.
 
