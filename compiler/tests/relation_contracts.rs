@@ -6,6 +6,7 @@ use common::success;
 const TEXT: &str = include_str!("../examples/relation_contracts/text.loom");
 const RANK: &str = include_str!("../examples/relation_contracts/rank.loom");
 const MAIN: &str = include_str!("../examples/relation_contracts/main.loom");
+const STEPS: &str = include_str!("../examples/relation_contracts/steps.loom");
 
 #[test]
 fn source_relation_contracts_preserve_keys_ranges_and_versions() {
@@ -14,6 +15,7 @@ fn source_relation_contracts_preserve_keys_ranges_and_versions() {
         ("text.loom", TEXT),
         ("rank.loom", RANK),
         ("main.loom", MAIN),
+        ("steps.loom", STEPS),
     ] {
         fs::write(root.path().join(name), source).unwrap();
     }
@@ -73,6 +75,20 @@ fn source_relation_contracts_preserve_keys_ranges_and_versions() {
         assert!(error.contains("proof") || error.contains("proved"), "{error}");
     }
     fs::write(root.path().join("rank.loom"), RANK).unwrap();
+    success(&check());
+    for premise in ["step_adjacent(values)", "step_transitive(values)"] {
+        let changed = STEPS.replace(&format!("requires {premise}\n"), "");
+        assert_ne!(changed, STEPS);
+        fs::write(root.path().join("steps.loom"), changed).unwrap();
+        let output = check();
+        assert!(!output.status.success(), "missing {premise} accepted");
+        let error = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            error.contains("proof") || error.contains("proved"),
+            "{error}"
+        );
+    }
+    fs::write(root.path().join("steps.loom"), STEPS).unwrap();
     success(&check());
 }
 

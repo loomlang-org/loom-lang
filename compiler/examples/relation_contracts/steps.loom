@@ -1,0 +1,56 @@
+import std.list.all
+import std.list.length
+
+// Body expansion cannot replace this loop by a relation formula. Successful
+// evaluation and the returned Boolean therefore remain independent proof facts.
+fn step_related(first Int, second Int) Bool {
+    var reached = first
+    while reached < second {
+        reached = reached + 2
+    }
+    reached == second
+}
+
+fn step_comparable(values List[Int]) Bool {
+    std.list.all(values, fn(first Int) Bool {
+            std.list.all(values, fn(second Int) Bool {
+                    discard step_related(first, second)
+                    true
+                })
+        })
+}
+
+fn step_adjacent(values List[Int]) Bool {
+    var index = 1
+    while index < length(values) {
+        if !step_related(values[index - 1], values[index]) {
+            return false
+        }
+        index = index + 1
+    }
+    true
+}
+
+fn step_transitive(values List[Int]) Bool {
+    std.list.all(values, fn(first Int) Bool {
+            std.list.all(values, fn(middle Int) Bool {
+                    std.list.all(values, fn(last Int) Bool {
+                            !step_related(first, middle) || !step_related(middle, last) || step_related(first, last)
+                        })
+                })
+        })
+}
+
+pub fn step_endpoints(values List[Int], first Int, last Int) Bool
+requires first >= 0 && first < last && last < length(values)
+requires step_comparable(values)
+requires step_adjacent(values)
+requires step_transitive(values)
+ensures step_related(values[first], values[last]) {
+    true
+}
+
+fn exercise_step_relation() {
+    assert step_endpoints([0, 2, 4, 6], 0, 3)
+    assert step_endpoints([4, 4, 4], 0, 2)
+}

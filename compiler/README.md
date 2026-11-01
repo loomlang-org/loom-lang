@@ -2671,6 +2671,10 @@ the example's ordinary transitivity helpers also prove their `ensures result`.
 Nested `all` calls distinguish their checked callbacks; no helper name or user
 type supplies a law. Reflexivity and successful evaluation remain separate
 obligations. Try [Text and record relations](examples/relation_contracts).
+The same example covers a loop-defined partial relation under explicit finite
+comparability and transitivity requirements. Relation queries defer eager
+quantified instantiation without dropping call-safety obligations or changing
+the solver time limit; more complex queries can still remain unproved.
 
 A record can have a `where` predicate over immutable `Int`, `Bool`, `Float`,
 `Text`, or nested inline record/refined fields. Shared siblings are allowed when
