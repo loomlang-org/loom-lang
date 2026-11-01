@@ -54,7 +54,7 @@ fn smt_support(writer SmtWriter, identity Int, start Linear, end Linear,
     Result.Ok(true)
 }
 
-fn smt_count_presence(writer SmtWriter, identity Int, size Linear,
+fn smt_count_presence(writer SmtWriter, column BagColumn, size Linear,
     needle Text, count Text) Result[Bool, Text] {
     if !writer.extended {
         return Result.Ok(true)
@@ -68,7 +68,7 @@ fn smt_count_presence(writer SmtWriter, identity Int, size Linear,
     // source access/evaluation fact, nor a witness merely from seeing a term.
     let end = smt_linear(writer, size)?
     let value = needle
-    let array = smt_array(writer, identity, [])
+    let array = smt_array(writer, column.contents, column.path)
     let index = "loom_occurrence_index"
     let selected = concat("(select ", concat(array, concat(" ", concat(index, ")"))))
     let lower = smt_boolean_pair("<=", "0", index)

@@ -60,8 +60,8 @@ test fn repeated_theory_laws_are_interned_without_merging_scopes_or_sorts() {
             }])
     assert length(std.text.split(query, "(assert (= n7 (seq.len t7)))")) == 2
     assert length(std.text.split(query, "(assert (= n8 (seq.len t8)))")) == 2
-    let count = IntegerTerm.Count(10, [IntegerTerm.Linear(variable(1)), IntegerTerm.Linear(variable(2))])
-    let other = IntegerTerm.Count(10, [IntegerTerm.Linear(variable(3)), IntegerTerm.Linear(variable(2))])
+    let count = IntegerTerm.Count(bag_column(10), [IntegerTerm.Linear(variable(1)), IntegerTerm.Linear(variable(2))])
+    let other = IntegerTerm.Count(bag_column(10), [IntegerTerm.Linear(variable(3)), IntegerTerm.Linear(variable(2))])
     let repeated = encoding([Obligation {
                 facts = [integer_limit(">=", count, 0)]
                 conclusion = Predicate.IntegerCompare("<=", count, other)
@@ -75,7 +75,7 @@ test fn repeated_theory_laws_are_interned_without_merging_scopes_or_sorts() {
     var index = 0
     while index < length(binders) {
         let bound = get(binders, index)
-        let selected = IntegerTerm.Count(10, [IntegerTerm.Linear(variable(1)), IntegerTerm.Select(11, [], variable(bound))])
+        let selected = IntegerTerm.Count(bag_column(10), [IntegerTerm.Linear(variable(1)), IntegerTerm.Select(11, [], variable(bound))])
         let quantified = encoding([Obligation {
                     facts = []
                     conclusion = Predicate.Forall(bound, constant(integer(0)), variable(1),
@@ -93,7 +93,7 @@ test fn repeated_theory_laws_are_interned_without_merging_scopes_or_sorts() {
 
 test fn count_laws_close_nested_ranges_and_binder_dependent_extents() {
     let size = IntegerTerm.Linear(variable(-7))
-    let count = IntegerTerm.Count(10, [size, IntegerTerm.Select(11, [], variable(-8))])
+    let count = IntegerTerm.Count(bag_column(10), [size, IntegerTerm.Select(11, [], variable(-8))])
     let query = encoding([Obligation {
                 facts = []
                 conclusion = Predicate.Forall(-7, constant(integer(0)), variable(1),
@@ -109,7 +109,7 @@ test fn count_laws_close_nested_ranges_and_binder_dependent_extents() {
     assert contains(query, concat(outer, concat(inner,
                 "(=> (> (+ 0 (* 1 n-7)) 0) (= (select (loom_bag a10 ")))
     assert !contains(query, "(bv Int)")
-    let ground = IntegerTerm.Count(10, [size, IntegerTerm.Linear(variable(2))])
+    let ground = IntegerTerm.Count(bag_column(10), [size, IntegerTerm.Linear(variable(2))])
     let scoped_extent = encoding([Obligation {
                 facts = []
                 conclusion = Predicate.Forall(-7, constant(integer(0)), variable(1),
@@ -263,8 +263,14 @@ test fn projected_arrays_keep_nested_fields_distinct_from_elements_and_each_othe
     assert mutable_value(Value.Projected(11, [1], index))
     let equality = Predicate.IntegerCompare("==", first, IntegerTerm.Select(10, [1, 23], index))
     assert match pointwise_bag(Predicate.Forall(1, constant(integer(0)), variable(4), [equality])) {
-        Option.None => true
-        Option.Some(_) => false
+        Option.Some(value) => same(value, Predicate.BagEqual(BagColumn {
+                    contents = 11
+                    path = [1, 23]
+                }, variable(4), BagColumn {
+                    contents = 10
+                    path = [1, 23]
+                }, variable(4)))
+        Option.None => false
     }
 }
 
@@ -331,7 +337,7 @@ test fn pointwise_prefix_equality_supplies_only_the_matching_histogram_law() {
     let size = variable(4)
     let equal = Predicate.IntegerCompare("==", IntegerTerm.Select(10, [], bound), IntegerTerm.Select(11, [], bound))
     let prefix = Predicate.Forall(-7, constant(integer(0)), size, [equal])
-    let bag = Predicate.BagEqual(10, size, 11, size)
+    let bag = Predicate.BagEqual(bag_column(10), size, bag_column(11), size)
     assert match pointwise_bag(prefix) {
         Option.Some(value) => same(value, bag)
         Option.None => false

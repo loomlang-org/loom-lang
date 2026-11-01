@@ -161,7 +161,7 @@ fn same(a Predicate, b Predicate) Bool {
             _ => false
         }
         Predicate.BagEqual(before, size, after, count) => match b {
-            Predicate.BagEqual(first, extent, second, other) => before == first && after == second &&
+            Predicate.BagEqual(first, extent, second, other) => same_bag_column(before, first) && same_bag_column(after, second) &&
             compare(size.constant, extent.constant) == 0 && same_terms(size.terms, extent.terms) &&
             compare(count.constant, other.constant) == 0 && same_terms(count.terms, other.terms)
             _ => false

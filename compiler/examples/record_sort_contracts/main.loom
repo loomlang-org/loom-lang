@@ -1,0 +1,161 @@
+import std.list.length
+import std.list.sorted
+import std.list.push
+import std.list.new
+
+record Key {
+    id Int
+}
+
+record Row {
+    key Key
+    amount Int
+    label Text
+}
+
+fn count(values List[Row], needle Int) Int {
+    var index = 0
+    var found = 0
+    while index < length(values) {
+        if values[index].key.id == needle {
+            found = found + 1
+        }
+        index = index + 1
+    }
+    found
+}
+
+fn count(values List[Int], needle Int) Int {
+    var index = 0
+    var found = 0
+    while index < length(values) {
+        if values[index] == needle {
+            found = found + 1
+        }
+        index = index + 1
+    }
+    found
+}
+
+fn same_keys(first List[Row], second List[Row]) Bool {
+    var index = 0
+    while index < length(first) {
+        if count(first, first[index].key.id) != count(second, first[index].key.id) {
+            return false
+        }
+        index = index + 1
+    }
+    true
+}
+
+fn same_keys(first List[Row], second List[Int]) Bool {
+    var index = 0
+    while index < length(first) {
+        if count(first, first[index].key.id) != count(second, first[index].key.id) {
+            return false
+        }
+        index = index + 1
+    }
+    true
+}
+
+fn copy_ids(values List[Row]) List[Int]
+ensures length(result) == length(old(values)) && same_keys(old(values), result) {
+    let ids = new[Int]()
+    var index = 0
+    while index < length(values) {
+        push(ids, values[index].key.id)
+        index = index + 1
+    }
+    ids
+}
+
+fn count_amount(values List[Row], needle Int) Int {
+    var index = 0
+    var found = 0
+    while index < length(values) {
+        if values[index].amount == needle {
+            found = found + 1
+        }
+        index = index + 1
+    }
+    found
+}
+
+fn same_amounts(first List[Row], second List[Row]) Bool {
+    var index = 0
+    while index < length(first) {
+        if count_amount(first, first[index].amount) != count_amount(second, first[index].amount) {
+            return false
+        }
+        index = index + 1
+    }
+    true
+}
+
+fn key_permutation(first List[Row], second List[Row]) Bool {
+    length(first) == length(second) && same_keys(first, second) && same_amounts(first, second)
+}
+
+pub fn sorted_keys(values List[Row], less fn(Row, Row) Bool) List[Row]
+ensures key_permutation(old(values), result) {
+    sorted(values, less)
+}
+
+fn exercise() {
+    let original = [
+        Row {
+            key = Key {
+                id = 3
+            },
+            amount = 10,
+            label = "three"
+        },
+        Row {
+            key = Key {
+                id = 1
+            },
+            amount = 20,
+            label = "first"
+        },
+        Row {
+            key = Key {
+                id = 1
+            },
+            amount = 30,
+            label = "second"
+        },
+    ]
+    let arranged = sorted_keys(original, fn(a Row, b Row) Bool {
+            original[0] = Row {
+                key = Key {
+                    id = 99
+                },
+                amount = 0,
+                label = "changed"
+            }
+            push(original, Row {
+                    key = Key {
+                        id = 42
+                    },
+                    amount = 0,
+                    label = "new"
+                })
+            a.key.id < b.key.id
+        })
+    assert length(arranged) == 3
+    assert arranged[0].key.id == 1 && arranged[1].key.id == 1 && arranged[2].key.id == 3
+    assert arranged[0].label == "first" && arranged[1].label == "second"
+    assert count(arranged, 1) == 2 && count(arranged, 3) == 1
+    let ids = copy_ids(arranged)
+    assert length(ids) == 3 && count(ids, 1) == 2 && count(ids, 3) == 1
+    assert length(original) > 3
+}
+
+fn main() {
+    exercise()
+}
+
+test fn nested_keys_survive_effectful_comparison() {
+    exercise()
+}

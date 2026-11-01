@@ -1,5 +1,44 @@
 fn count_expression(value Expr) Bool {
-    value.kind == ExprKind.Intrinsic && value.text == "proof_count" && length(value.children) == 3
+    value.kind == ExprKind.Intrinsic && value.text == "proof_count" && length(value.children) >= 3
+}
+
+// Trailing literal operands retain the checked inline-field path. They are
+// metadata, not a hypothetical element read or a source access permission.
+fn count_path(value Expr) List[Int] {
+    let path = new[Int]()
+    var index = 3
+    while index < length(value.children) {
+        push(path, get(value.children, index).index)
+        index = index + 1
+    }
+    path
+}
+
+fn count_value(source Expr, receiver Expr, needle Expr, end Expr, path List[Int]) Expr {
+    let children = [receiver, needle, end]
+    var index = 0
+    while index < length(path) {
+        let field = get(path, index)
+        push(children, proof_expr(source, ExprKind.Integer, 1, std.int.to_text(field), field, []))
+        index = index + 1
+    }
+    proof_expr(source, ExprKind.Intrinsic, 1, "proof_count", -1, children)
+}
+
+fn count_read(value Expr) Expr {
+    if value.kind == ExprKind.Field && length(value.children) == 1 {
+        return count_read(get(value.children, 0))
+    }
+    value
+}
+
+fn count_read_path(value Expr) List[Int] {
+    if value.kind != ExprKind.Field || length(value.children) != 1 {
+        return []
+    }
+    let path = count_read_path(get(value.children, 0))
+    push(path, value.index)
+    path
 }
 
 fn scan_tail(value Expr) Expr {
@@ -29,17 +68,17 @@ fn counted_scan(context Expansion, source Expr, condition Expr, end Expr, identi
     }
     var read = get(condition.children, 0)
     var needle = get(condition.children, 1)
-    if !list_read_expression(read) {
+    if !list_read_expression(count_read(read)) {
         read = get(condition.children, 1)
         needle = get(condition.children, 0)
     }
-    if !list_read_expression(read) || read.ty != 1 || has_bound(needle, identity) ||
-    !entry_list_type(context.program, get(read.children, 0).ty, 0) ||
-    !bound_expression(get(read.children, 1)) || get(read.children, 1).index != identity {
-        return Result.Err("count proof needs one Int element and a stable needle")
+    let element = count_read(read)
+    if !list_read_expression(element) || read.ty != 1 || has_bound(needle, identity) ||
+    !entry_list_type(context.program, get(element.children, 0).ty, 0) ||
+    !bound_expression(get(element.children, 1)) || get(element.children, 1).index != identity {
+        return Result.Err("count proof needs one Int column and a stable needle")
     }
-    Result.Ok(proof_expr(source, ExprKind.Intrinsic, 1, "proof_count", -1,
-            [get(read.children, 0), needle, end]))
+    Result.Ok(count_value(source, get(element.children, 0), needle, end, count_read_path(read)))
 }
 
 fn counted_value(expr Expr, state State) Result[Value, Text] {
@@ -56,7 +95,10 @@ fn counted_value(expr Expr, state State) Result[Value, Text] {
     let inputs = new[IntegerTerm]()
     push(inputs, IntegerTerm.Linear(size))
     push(inputs, integer_term(pure(get(expr.children, 1), state)?)?)
-    Result.Ok(Value.Nonlinear(IntegerTerm.Count(contents, inputs)))
+    Result.Ok(Value.Nonlinear(IntegerTerm.Count(BagColumn {
+                    contents = contents
+                    path = count_path(expr)
+                }, inputs)))
 }
 
 // Equal lengths and equal occurrence counts for every element of either input
@@ -88,16 +130,20 @@ fn bag_from_counts(value Predicate) Option[Predicate] {
                                     IntegerTerm.Linear(size) => match get(second, 0) {
                                         IntegerTerm.Linear(count) => match get(first, 1) {
                                             IntegerTerm.Select(array, path, index) => {
-                                                if length(path) != 0 || !same_terms(index.terms, variable(identity).terms) ||
+                                                if !same_terms(index.terms, variable(identity).terms) ||
                                                 compare(index.constant, integer(0)) != 0 {
                                                     return Option.None
                                                 }
-                                                let extent = if array == before {
+                                                let column = BagColumn {
+                                                    contents = array
+                                                    path = path
+                                                }
+                                                let extent = if same_bag_column(column, before) {
                                                     size
                                                 } else {
                                                     count
                                                 }
-                                                if (array != before && array != after) ||
+                                                if (!same_bag_column(column, before) && !same_bag_column(column, after)) ||
                                                 !same_terms(end.terms, extent.terms) || compare(end.constant, extent.constant) != 0 {
                                                     return Option.None
                                                 }
@@ -206,10 +252,15 @@ fn pointwise_bag(value Predicate) Option[Predicate] {
                         IntegerTerm.Select(before, first_path, left) => match second {
                             IntegerTerm.Select(after, second_path, right) => {
                                 let bound = variable(identity)
-                                if length(first_path) == 0 && length(second_path) == 0 &&
-                                same_terms(left.terms, bound.terms) && same_terms(right.terms, bound.terms) &&
+                                if same_terms(left.terms, bound.terms) && same_terms(right.terms, bound.terms) &&
                                 compare(left.constant, integer(0)) == 0 && compare(right.constant, integer(0)) == 0 {
-                                    return Option.Some(Predicate.BagEqual(before, end, after, end))
+                                    return Option.Some(Predicate.BagEqual(BagColumn {
+                                                contents = before
+                                                path = first_path
+                                            }, end, BagColumn {
+                                                contents = after
+                                                path = second_path
+                                            }, end))
                                 }
                             }
                             _ => {

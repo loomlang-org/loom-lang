@@ -5,7 +5,7 @@ fn support_encoding(start Linear, body Predicate) Text {
                 facts = []
                 conclusion = Predicate.And([
                         Predicate.Forall(-7, start, variable(1), [body]),
-                        integer_limit(">=", IntegerTerm.Count(10,
+                        integer_limit(">=", IntegerTerm.Count(bag_column(10),
                                 [IntegerTerm.Linear(variable(1)), IntegerTerm.Linear(variable(2))]), 0),
                     ])
             }])
@@ -41,7 +41,7 @@ test fn extended_theories_do_not_retry_a_host_failure() {
     let query = proof_query(backend)
     push(query.obligations, Obligation {
             facts = []
-            conclusion = integer_limit(">", IntegerTerm.Count(10,
+            conclusion = integer_limit(">", IntegerTerm.Count(bag_column(10),
                     [IntegerTerm.Linear(constant(integer(1))), IntegerTerm.Linear(variable(2))]), 0)
         })
     assert match discharge(query) {

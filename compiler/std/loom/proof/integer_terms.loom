@@ -139,7 +139,7 @@ fn same_integer_term(left IntegerTerm, right IntegerTerm, budget List[Int]) Bool
         }
         IntegerTerm.Count(identity, inputs) => match right {
             IntegerTerm.Count(other, values) => {
-                if identity != other || length(inputs) != length(values) {
+                if !same_bag_column(identity, other) || length(inputs) != length(values) {
                     return false
                 }
                 var index = 0

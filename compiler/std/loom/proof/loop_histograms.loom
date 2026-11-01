@@ -1,6 +1,7 @@
 record LoopHistogramTerm {
     receiver Expr
     end Expr
+    path List[Int]
     factor Number
 }
 
@@ -65,9 +66,65 @@ fn loop_histogram_requested(clauses List[Expr]) Bool {
     false
 }
 
+fn loop_histogram_paths(clauses List[Expr]) List[List[Int]] {
+    let paths = new[List[Int]]()
+    var index = 0
+    while index < length(clauses) {
+        loop_histogram_paths(get(clauses, index), paths, 64)
+        index = index + 1
+    }
+    paths
+}
+
+fn loop_histogram_paths(value Expr, paths List[List[Int]], depth Int) {
+    if depth <= 0 {
+        return
+    }
+    if count_expression(value) {
+        let path = count_path(value)
+        var index = 0
+        while index < length(paths) {
+            if same_projection(path, get(paths, index)) {
+                return
+            }
+            index = index + 1
+        }
+        push(paths, path)
+    }
+    var index = 0
+    while index < length(value.children) {
+        loop_histogram_paths(get(value.children, index), paths, depth - 1)
+        index = index + 1
+    }
+}
+
+fn histogram_column(program Program, ty Int, path List[Int], field Int, depth Int) Bool {
+    if depth >= 16 || ty < 0 || ty >= length(program.types) {
+        return false
+    }
+    let shape = get(program.types, ty)
+    if shape.kind == TypeKind.Refined && length(shape.fields) == 1 {
+        return histogram_column(program, get(shape.fields, 0).ty, path, field, depth + 1)
+    }
+    if field == length(path) {
+        return ty == 1
+    }
+    if shape.kind != TypeKind.Record && shape.kind != TypeKind.Tuple {
+        return false
+    }
+    let selected = get(path, field)
+    selected >= 0 && selected < length(shape.fields) &&
+    histogram_column(program, get(shape.fields, selected).ty, path, field + 1, depth + 1)
+}
+
+fn histogram_list_column(program Program, ty Int, path List[Int]) Bool {
+    proof_list_type(program, ty) &&
+    histogram_column(program, get(get(program.types, ty).arguments, 0), path, 0, 0)
+}
+
 fn loop_histogram_root(proof Verification, loop Expr, entry State, local Int) Bool {
     let ty = get(proof.function.locals, local).ty
-    if !proof_list_type(proof.program, ty) || get(get(proof.program.types, ty).arguments, 0) != 1 ||
+    if !proof_list_type(proof.program, ty) ||
     !scan_mentions(loop, local) {
         return false
     }
@@ -86,9 +143,16 @@ fn loop_histogram_enabled(proof Verification, loop Expr) Bool {
     if loop_count_hint(proof, get(loop.children, 1), 64) {
         return false
     }
-    let terms = new[LoopHistogramTerm]()
-    loop_histogram_transfers(proof, get(loop.children, 1), terms, 64, true)
-    length(terms) != 0
+    var column = 0
+    while column < length(proof.histogram_paths) {
+        let terms = new[LoopHistogramTerm]()
+        loop_histogram_transfers(proof, get(loop.children, 1), terms, get(proof.histogram_paths, column), 64, true)
+        if length(terms) != 0 {
+            return true
+        }
+        column = column + 1
+    }
+    false
 }
 
 // Explicit count invariants already provide the requested content relation.
@@ -126,17 +190,25 @@ fn loop_histogram_entry(proof Verification, loop Expr, entry State) State {
     while index < length(entry.locals) && index < length(proof.function.locals) {
         if loop_histogram_root(proof, loop, entry, index) {
             let receiver = proof_expr(loop, ExprKind.Local, get(proof.function.locals, index).ty, "", index, [])
-            let term = LoopHistogramTerm {
-                receiver = receiver
-                end = proof_expr(loop, ExprKind.Intrinsic, 1, "list_len", -1, [receiver])
-                factor = integer(1)
-            }
-            match loop_histogram_views(proof, [term], current) {
-                Result.Ok(viewed) => {
-                    current = viewed
+            var column = 0
+            while column < length(proof.histogram_paths) {
+                let path = get(proof.histogram_paths, column)
+                if histogram_list_column(proof.program, receiver.ty, path) {
+                    let term = LoopHistogramTerm {
+                        receiver = receiver
+                        end = proof_expr(loop, ExprKind.Intrinsic, 1, "list_len", -1, [receiver])
+                        path = path
+                        factor = integer(1)
+                    }
+                    match loop_histogram_views(proof, [term], current) {
+                        Result.Ok(viewed) => {
+                            current = viewed
+                        }
+                        _ => {
+                        }
+                    }
                 }
-                _ => {
-                }
+                column = column + 1
             }
         }
         index = index + 1
@@ -149,8 +221,8 @@ fn loop_histogram_views(proof Verification, terms List[LoopHistogramTerm], state
     var index = 0
     while index < length(terms) {
         let term = get(terms, index)
-        let value = proof_expr(term.receiver, ExprKind.Intrinsic, 1, "proof_count", -1,
-            [term.receiver, proof_expr(term.receiver, ExprKind.Integer, 1, "0", -1, []), term.end])
+        let value = count_value(term.receiver, term.receiver,
+            proof_expr(term.receiver, ExprKind.Integer, 1, "0", -1, []), term.end, term.path)
         current = loop_guard_views(proof, value, current)?
         index = index + 1
     }
@@ -162,12 +234,12 @@ fn loop_histogram_terms(terms List[LoopHistogramTerm], state State) Result[List[
     var index = 0
     while index < length(terms) {
         let term = get(terms, index)
-        let value = proof_expr(term.receiver, ExprKind.Intrinsic, 1, "proof_count", -1,
-            [term.receiver, proof_expr(term.receiver, ExprKind.Integer, 1, "0", -1, []), term.end])
+        let value = count_value(term.receiver, term.receiver,
+            proof_expr(term.receiver, ExprKind.Integer, 1, "0", -1, []), term.end, term.path)
         match integer_term(counted_value(value, state)?)? {
-            IntegerTerm.Count(contents, _) => {
+            IntegerTerm.Count(column, _) => {
                 push(output, BagTerm {
-                        contents = contents
+                        column = column
                         size = list_value_index(pure(term.end, state)?)?
                         factor = term.factor
                     })
@@ -196,11 +268,11 @@ fn loop_histogram_add(proof Verification, candidates List[LoopCandidate], terms 
     }
 }
 
-fn loop_histogram_term(terms List[LoopHistogramTerm], receiver Expr, end Expr, factor Int) {
+fn loop_histogram_term(terms List[LoopHistogramTerm], receiver Expr, end Expr, path List[Int], factor Int) {
     var index = 0
     while index < length(terms) {
         let term = get(terms, index)
-        if exact_expression(term.receiver, receiver) && exact_expression(term.end, end) &&
+        if exact_expression(term.receiver, receiver) && exact_expression(term.end, end) && same_projection(term.path, path) &&
         compare(term.factor, integer(factor)) == 0 {
             return
         }
@@ -209,13 +281,14 @@ fn loop_histogram_term(terms List[LoopHistogramTerm], receiver Expr, end Expr, f
     push(terms, LoopHistogramTerm {
             receiver = receiver
             end = end
+            path = path
             factor = integer(factor)
         })
 }
 
 // Reads and writes suggest prefix conservation. This is never an operation
 // summary: every actual backedge, alias effect and fault still gets checked.
-fn loop_histogram_transfers(proof Verification, value Expr, terms List[LoopHistogramTerm], depth Int, nested Bool) {
+fn loop_histogram_transfers(proof Verification, value Expr, terms List[LoopHistogramTerm], path List[Int], depth Int, nested Bool) {
     if depth <= 0 || (!nested && value.kind == ExprKind.While) || length(terms) >= 8 {
         return
     }
@@ -228,20 +301,30 @@ fn loop_histogram_transfers(proof Verification, value Expr, terms List[LoopHisto
             } else {
                 1
             })
-        if loop_storage_primitive(proof, read) == "list_get" && read.ty == 1 && length(read.children) == 2 {
+        let element = count_read(read)
+        if loop_storage_primitive(proof, element) == "list_get" && length(element.children) == 2 {
             let receiver = get(value.children, 0)
             let end = if indexed {
                 get(value.children, 1)
             } else {
                 proof_expr(value, ExprKind.Intrinsic, 1, "list_len", -1, [receiver])
             }
-            loop_histogram_term(terms, receiver, end, 1)
-            loop_histogram_term(terms, get(read.children, 0), get(read.children, 1), -1)
+            let source_path = count_read_path(read)
+            var field = 0
+            while field < length(path) {
+                push(source_path, get(path, field))
+                field = field + 1
+            }
+            if histogram_list_column(proof.program, receiver.ty, path) &&
+            histogram_list_column(proof.program, get(element.children, 0).ty, source_path) {
+                loop_histogram_term(terms, receiver, end, path, 1)
+                loop_histogram_term(terms, get(element.children, 0), get(element.children, 1), source_path, -1)
+            }
         }
     }
     var index = 0
     while index < length(value.children) {
-        loop_histogram_transfers(proof, get(value.children, index), terms, depth - 1, nested)
+        loop_histogram_transfers(proof, get(value.children, index), terms, path, depth - 1, nested)
         index = index + 1
     }
 }
@@ -252,26 +335,38 @@ fn loop_histogram_candidates(proof Verification, loop Expr,
         return
     }
     var index = 0
-    let transfers = new[LoopHistogramTerm]()
-    loop_histogram_transfers(proof, get(loop.children, 1), transfers, 64, false)
-    loop_histogram_add(proof, candidates, transfers, entry)
+    var transferred = false
+    var column = 0
+    while column < length(proof.histogram_paths) {
+        let transfers = new[LoopHistogramTerm]()
+        loop_histogram_transfers(proof, get(loop.children, 1), transfers, get(proof.histogram_paths, column), 64, false)
+        loop_histogram_add(proof, candidates, transfers, entry)
+        transferred = transferred || length(transfers) != 0
+        column = column + 1
+    }
     let roots = new[Expr]()
     index = 0
     while index < length(entry.locals) && index < length(proof.function.locals) {
         let ty = get(proof.function.locals, index).ty
-        if proof_list_type(proof.program, ty) && get(get(proof.program.types, ty).arguments, 0) == 1 &&
+        if proof_list_type(proof.program, ty) &&
         scan_mentions(loop, index) {
             match get(entry.locals, index) {
                 Value.List(_) => {
                     let receiver = proof_expr(loop, ExprKind.Local, ty, "", index, [])
                     push(roots, receiver)
                     let size = proof_expr(loop, ExprKind.Intrinsic, 1, "list_len", -1, [receiver])
-                    if get(writes, index) {
-                        loop_histogram_add(proof, candidates, [LoopHistogramTerm {
-                                    receiver = receiver
-                                    end = size
-                                    factor = integer(1)
-                                }], entry)
+                    var column = 0
+                    while column < length(proof.histogram_paths) {
+                        let path = get(proof.histogram_paths, column)
+                        if get(writes, index) && histogram_list_column(proof.program, ty, path) {
+                            loop_histogram_add(proof, candidates, [LoopHistogramTerm {
+                                        receiver = receiver
+                                        end = size
+                                        path = path
+                                        factor = integer(1)
+                                    }], entry)
+                        }
+                        column = column + 1
                     }
                 }
                 _ => {
@@ -281,7 +376,7 @@ fn loop_histogram_candidates(proof Verification, loop Expr,
         index = index + 1
     }
     // A guard cursor partitions two initialized buffers at the same cut.
-    if length(transfers) != 0 {
+    if transferred {
         return
     }
     var cursor = 0
@@ -296,18 +391,28 @@ fn loop_histogram_candidates(proof Verification, loop Expr,
                     let a = get(roots, first)
                     let b = get(roots, second)
                     if !get(writes, a.index) && !get(writes, b.index) {
-                        loop_histogram_add(proof, candidates, [
-                                LoopHistogramTerm {
-                                    receiver = a
-                                    end = cut
-                                    factor = integer(1)
-                                },
-                                LoopHistogramTerm {
-                                    receiver = b
-                                    end = cut
-                                    factor = integer(-1)
-                                },
-                            ], entry)
+                        var column = 0
+                        while column < length(proof.histogram_paths) {
+                            let path = get(proof.histogram_paths, column)
+                            if histogram_list_column(proof.program, a.ty, path) &&
+                            histogram_list_column(proof.program, b.ty, path) {
+                                loop_histogram_add(proof, candidates, [
+                                        LoopHistogramTerm {
+                                            receiver = a
+                                            end = cut
+                                            path = path
+                                            factor = integer(1)
+                                        },
+                                        LoopHistogramTerm {
+                                            receiver = b
+                                            end = cut
+                                            path = path
+                                            factor = integer(-1)
+                                        },
+                                    ], entry)
+                            }
+                            column = column + 1
+                        }
                     }
                     second = second + 1
                 }

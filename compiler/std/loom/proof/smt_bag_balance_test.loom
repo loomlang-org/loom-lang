@@ -1,6 +1,6 @@
 test fn finite_histogram_algebra_cancels_only_identical_versions_and_prefixes() {
     let first = BagTerm {
-        contents = 10
+        column = bag_column(10)
         size = variable(1)
         factor = integer(2)
     }
@@ -14,7 +14,7 @@ test fn finite_histogram_algebra_cancels_only_identical_versions_and_prefixes() 
     }
     assert length(balanced_bag_terms([first, second, third])) == 0
     let changed = BagTerm {
-        contents = 11
+        column = bag_column(11)
         ..third
     }
     assert length(balanced_bag_terms([first, second, changed])) == 2
@@ -23,4 +23,12 @@ test fn finite_histogram_algebra_cancels_only_identical_versions_and_prefixes() 
         ..third
     }
     assert length(balanced_bag_terms([first, second, prefix])) == 2
+    let field = BagTerm {
+        column = BagColumn {
+            contents = 10
+            path = [0, 1]
+        }
+        ..third
+    }
+    assert length(balanced_bag_terms([first, second, field])) == 2
 }

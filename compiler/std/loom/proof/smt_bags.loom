@@ -58,7 +58,7 @@ fn bag_bound_scope(value Text, sizes List[Linear]) Text {
     std.bytes.to_text(output)
 }
 
-fn smt_count(writer SmtWriter, identity Int, inputs List[IntegerTerm], depth Int) Result[Text, Text] {
+fn smt_count(writer SmtWriter, column BagColumn, inputs List[IntegerTerm], depth Int) Result[Text, Text] {
     if length(inputs) != 2 {
         return Result.Err("invalid histogram count operands")
     }
@@ -68,7 +68,7 @@ fn smt_count(writer SmtWriter, identity Int, inputs List[IntegerTerm], depth Int
             return Result.Err("histogram count needs a linear extent")
         }
     }
-    let array = smt_array(writer, identity, [])
+    let array = smt_array(writer, column.contents, column.path)
     let bag = smt_bag(writer, array, size)?
     let needle = smt_integer(writer, get(inputs, 1), depth + 1)?
     let limit = smt_linear(writer, size)?
@@ -107,7 +107,7 @@ fn smt_count(writer SmtWriter, identity Int, inputs List[IntegerTerm], depth Int
     }
     smt_assert(writer, bag_bound_scope(law, size))
     discard smt_count_prefix(writer, array, size, needle, depth + 1)?
-    discard smt_count_presence(writer, identity, size, needle, count)?
+    discard smt_count_presence(writer, column, size, needle, count)?
     Result.Ok(concat("(select ", concat(bag, concat(" ", concat(needle, ")")))))
 }
 

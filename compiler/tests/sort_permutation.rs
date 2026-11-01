@@ -72,3 +72,75 @@ fn library_sort_preserves_entry_counts_through_unknown_effectful_comparisons() {
         );
     }
 }
+
+#[test]
+fn record_sort_tracks_nested_and_sibling_columns_without_mixing_them() {
+    let package = tempfile::tempdir().unwrap();
+    let source = package.path().join("main.loom");
+    let program = include_str!("../examples/record_sort_contracts/main.loom");
+    let cache = package.path().join("cache");
+    let check = || {
+        common::loom(&[
+            "check",
+            package.path().to_str().unwrap(),
+            "--frontend-cache",
+            cache.to_str().unwrap(),
+        ])
+    };
+    fs::write(&source, program).unwrap();
+    success(&check());
+    success(&check());
+    let altered_key = "let changed = std.list.clone(values)\n    if length(changed) > 0 {\n        let row = changed[0]\n        changed[0] = Row { key = Key { id = 0 }, ..row }\n    }\n    changed";
+    for changed in [
+        program.replace("    sorted(values, less)", altered_key),
+        program.replace(
+            "    sorted(values, less)",
+            "discard sorted(values, less)\n    values",
+        ),
+        program.replacen(
+            "count(second, first[index].key.id)",
+            "count_amount(second, first[index].key.id)",
+            1,
+        ),
+        program.replacen("index < length(values)", "index < length(values) - 1", 1),
+        program.replace(
+            "push(ids, values[index].key.id)",
+            "push(ids, values[index].amount)",
+        ),
+    ] {
+        assert_ne!(changed, program);
+        fs::write(&source, format!("import std.list.clone\n{changed}")).unwrap();
+        let output = check();
+        assert!(
+            !output.status.success(),
+            "invalid column counts were proved"
+        );
+        let error = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            error.contains("proof") || error.contains("proved"),
+            "{error}"
+        );
+    }
+    fs::write(&source, program).unwrap();
+    success(&check());
+    for mode in ["test", "run"] {
+        success(&common::loom(&[mode, package.path().to_str().unwrap()]));
+    }
+    let artifact = common::executable(package.path(), "record-sort");
+    for level in ["0", "2"] {
+        success(
+            &common::command(&["build", package.path().to_str().unwrap()])
+                .arg("--output")
+                .arg(&artifact)
+                .env("LOOM_OPT_LEVEL", level)
+                .output()
+                .unwrap(),
+        );
+        success(
+            &Command::new(&artifact)
+                .env("LOOM_GC_STRESS", "1")
+                .output()
+                .unwrap(),
+        );
+    }
+}
