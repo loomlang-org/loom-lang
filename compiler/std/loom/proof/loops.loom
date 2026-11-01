@@ -200,7 +200,11 @@ fn loop_predicate(candidate LoopCandidate, state State) Result[Predicate, Text] 
                 index = index + 1
             }
             let normalized = balanced_bag_terms(current)
-            Result.Ok(if length(normalized) == 0 { Predicate.Constant(true) } else { Predicate.BagBalance(normalized) })
+            Result.Ok(if length(normalized) == 0 {
+                    Predicate.Constant(true)
+                } else {
+                    Predicate.BagBalance(normalized)
+                })
         }
         LoopCandidate.Affine(terms, relation, initial) => boolean(binary(relation,
                 loop_affine_value(terms, state)?, initial)?)
@@ -239,7 +243,7 @@ fn loop_predicate(candidate LoopCandidate, state State) Result[Predicate, Text] 
         Result.Ok(Predicate.Constant(loop_element_frame(local, path, target, target_path, state)?))
         LoopCandidate.RootFrame(local, path, target, target_path) =>
         Result.Ok(Predicate.Constant(!extent_overlap(loop_root_extent(local, path, state)?,
-                        loop_root_extent(target, target_path, state)?)))
+                    loop_root_extent(target, target_path, state)?)))
         LoopCandidate.EntryExtent(index, path, relation, initial) => {
             var value = get(state.locals, index)
             var field = 0
@@ -540,13 +544,23 @@ fn entered_loop(proof Verification, expr Expr, entry State, writes List[Bool], d
     let proposed = loop_proposal_entry(proof, body, observed)
     let targets = loop_storage_targets(proof, expr, observed, writes)?
     let resized = targets.resized
-    var candidates = loop_candidates(proof, loop_candidate_guard(proof, guard), writes, resized, proposed)?
+    // Reuse the existing optional-search budget for all candidate discovery.
+    // Actual storage effects, entry and backedges retain the mandatory budget.
+    let suggestions = Verification {
+        budget = [256]
+        ..proof
+    }
+    var candidates = match loop_candidates(suggestions, loop_candidate_guard(proof, guard), writes, resized, proposed) {
+        Result.Ok(values) => values
+        Result.Err(_) => new[LoopCandidate]()
+    }
     // Reserve storage identities and explicit source relations before optional
     // derived candidates. Every proposal still needs entry/backedge proof.
-    var headers = loop_header_candidates(proof, candidates, writes, proposed)?
-    loop_assertion_candidates(proof, guard, body, candidates, proposed)
-    loop_histogram_candidates(proof, expr, candidates, writes, proposed)
-    loop_quantified_candidates(proof, clauses, candidates, writes, expr, proposed)
+    discard loop_header_candidates(suggestions, candidates, writes, proposed)
+    var headers = loop_header_count(candidates)
+    loop_assertion_candidates(suggestions, guard, body, candidates, proposed)
+    loop_histogram_candidates(suggestions, expr, candidates, writes, proposed)
+    loop_quantified_candidates(suggestions, clauses, candidates, writes, expr, proposed)
     var storage = forget_modified_extents(proof, observed, resized)
     if storage.heap >= 0 && !graph_readonly_expression(proof.program, expr) {
         storage = changed_heap(proof, storage)
@@ -555,22 +569,16 @@ fn entered_loop(proof Verification, expr Expr, entry State, writes List[Bool], d
         let modified = targets.modified
         if targets.extent_preserved {
             storage = loop_element_head(proof, storage, modified)?
-            discard loop_element_candidates(proof, clauses, candidates, entry)?
+            discard loop_element_candidates(suggestions, clauses, candidates, entry)
         } else {
             // Changing extents can invalidate entry indices. Do not create
             // hypothetical in-bounds cells or infer an opaque call's effects.
             storage = forget_modified_elements(storage, modified)
         }
     }
-    loop_prefix_candidates(proof, expr, candidates, writes, resized, proposed)
-    // Candidate coefficient search is optional and bounded independently.
-    // Entry, effects and every backedge keep the mandatory proof budget.
-    let suggestions = Verification {
-        budget = [256]
-        ..proof
-    }
+    loop_prefix_candidates(suggestions, expr, candidates, writes, resized, proposed)
     discard loop_affine_candidates(suggestions, guard, body, candidates, writes, proposed)
-    discard loop_observation_candidates(proof, expr, candidates, writes, resized, proposed)?
+    discard loop_observation_candidates(suggestions, expr, candidates, writes, resized, proposed)
     discard loop_affine_bounds(suggestions, candidates, proposed)
     var head = loop_head(proof, writes, storage, candidates, headers)?
     head = loop_query_views(proof, clauses, head)
