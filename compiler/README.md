@@ -3687,7 +3687,8 @@ prefix transfers and buffer swaps. Header separation does not imply separation
 of shared children; publication, unstable callbacks and mutable arguments still
 invalidate unsupported frames. Length and content write sets share one loop
 traversal within the existing proof budget. Loop assertions can be proved and
-removed even without ensures; unknown optional evidence keeps runtime checks.
+removed during native preparation even without ensures; ordinary checks and
+editor analysis do not run this optional pass. Unknown evidence keeps runtime checks.
 This does not establish comparator laws, ordering or arbitrary-element permutation.
 Count bounds instantiate at each actual symbolic needle, retaining any enclosing
 quantifier ranges and their dependencies. This avoids universal search over

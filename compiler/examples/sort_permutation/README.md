@@ -16,5 +16,6 @@ The library sorts private snapshots; the test exercises those comparison effects
 The proof uses checked source bodies, finite histogram algebra and inductive
 storage frames. No sorting axiom, comparator-purity requirement or increased
 proof budget is used. Numeric loop assertions in the library can be statically
-removed; an unproved assertion retains its runtime behavior.
+removed during native preparation; an unproved assertion retains its runtime
+behavior. Ordinary checks do not run that optional optimization.
 Ordering laws and permutation for arbitrary element types remain separate work.

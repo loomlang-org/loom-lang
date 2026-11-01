@@ -97,7 +97,8 @@ proves entry occurrence counts through unknown effectful comparators. Signed
 histogram invariants compose across private buffer swaps, with publication and
 root separation checked independently. Loop storage effects share one traversal
 within the original work budget. Bodies without ensures can also eliminate
-proved loop assertions; failed optional proofs retain their runtime checks.
+proved loop assertions during native preparation. Ordinary checks and editor
+analysis skip that optional work; failed proofs retain their runtime checks.
 Finite relation proofs also accept a loop-defined partial predicate under
 explicit comparability and transitivity requirements. Relation-specific solver
 scheduling retains both value and successful-evaluation obligations within the

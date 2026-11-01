@@ -1,3 +1,4 @@
+import std.loom.checking.optimize_loop_assertions
 import std.loom.project.load
 import std.loom.project.resolve
 import std.loom.project.is_windows_path
@@ -320,7 +321,7 @@ fn prepare_checked(options Options, project Project, inputs BuildInputs, value s
         input = if options.command == "check" {
             ""
         } else {
-            encode(lower(selected), inputs.targets, bindings)
+            encode(lower(optimize_loop_assertions(selected, inputs.proof_backend)), inputs.targets, bindings)
         }
         entry = selected.entry
         tests = length(selected.tests)

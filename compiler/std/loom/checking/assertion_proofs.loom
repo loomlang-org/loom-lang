@@ -300,6 +300,37 @@ fn proved_helper_contract(context Context, program std.loom.typed.Program, proof
             program.function_identities, evidence.assertions))
 }
 
+// Fresh declarations already supplied their evidence during required checking.
+// Only replayed or erased-family bodies need a new concrete observation pass.
+fn revalidate_assertion_proofs(env Environment, program std.loom.typed.Program) {
+    var index = 0
+    while index < length(program.functions) {
+        let function = get(program.functions, index)
+        if has_assertion(function.body, 2) {
+            var checked = without_assertion_proofs(function)
+            if length(function.postconditions) != 0 {
+                let types = match expanded_invariant_types(env, function) {
+                    Result.Ok(types) => types
+                    Result.Err(_) => env.types
+                }
+                match prove_contract(proof_types(program, types), checked,
+                    get(env.inputs, 0).build.proof_backend, false, continuing_sequence_guarantees(env)) {
+                    Result.Ok(evidence) => {
+                        checked = with_assertion_proofs(checked,
+                            program.function_identities, program.function_identities, evidence.assertions)
+                    }
+                    Result.Err(_) => {
+                        // Required checking already succeeded with the source
+                        // assertion intact. Unknown optional evidence keeps it.
+                    }
+                }
+            }
+            set(program.functions, index, checked)
+        }
+        index = index + 1
+    }
+}
+
 fn leading_assertion(value Expr) Bool {
     if value.kind == ExprKind.Assert {
         return true
@@ -335,51 +366,49 @@ fn loop_assertion_hint(value Expr) Bool {
     false
 }
 
-// Required checking already supplied fresh contracted bodies' evidence.
-// Observe loop hints without ensures too; keep optional work out of other bodies.
-fn revalidate_assertion_proofs(env Environment, program std.loom.typed.Program) {
+// Optional native preparation, after complete required checking. Keep the
+// caller's source IR intact and do no speculative work during ordinary checks.
+// Sequential evidence cannot remove checks in a program with shared workers.
+pub fn optimize_loop_assertions(program std.loom.typed.Program, backend ProofBackend) std.loom.typed.Program {
     var index = 0
     while index < length(program.functions) {
-        let function = get(program.functions, index)
-        if has_assertion(function.body, 2) ||
-        (length(function.postconditions) == 0 && has_assertion(function.body, -1) &&
-            loop_assertion_hint(function.body)) {
-            var checked = without_assertion_proofs(function)
-            if has_assertion(checked.body, -1) || has_assertion(checked.body, 2) {
-                let types = match expanded_invariant_types(env, function) {
-                    Result.Ok(types) => types
-                    Result.Err(_) => env.types
-                }
-                // A private true goal observes the body without adding a
-                // source contract. Only assertion evidence is retained below.
-                let observed = if length(checked.postconditions) == 0 {
-                    with_contracts(checked, checked.preconditions, [Expr {
-                                kind = ExprKind.Bool
-                                ty = 2
-                                text = "true"
-                                index = -1
-                                children = []
-                                arms = []
-                                falls = true
-                                ..checked.body
-                            }])
-                } else {
-                    checked
-                }
-                match prove_contract(proof_types(program, types), observed,
-                    get(env.inputs, 0).build.proof_backend, false, continuing_sequence_guarantees(env)) {
-                    Result.Ok(evidence) => {
-                        checked = with_assertion_proofs(checked,
-                            program.function_identities, program.function_identities, evidence.assertions)
-                    }
-                    Result.Err(_) => {
-                        // Required checking already succeeded with the source
-                        // assertion intact. Unknown optional evidence keeps it.
-                    }
-                }
-            }
-            set(program.functions, index, checked)
+        if worker_expression(get(program.functions, index).body) {
+            return program
         }
         index = index + 1
+    }
+    let functions = new[Function]()
+    index = 0
+    while index < length(program.functions) {
+        var function = get(program.functions, index)
+        if length(function.postconditions) == 0 && has_assertion(function.body, -1) &&
+        loop_assertion_hint(function.body) {
+            // A private true goal observes execution without adding an API
+            // guarantee. Retain only independently checked assertion evidence.
+            let observed = with_contracts(function, function.preconditions, [Expr {
+                        kind = ExprKind.Bool
+                        ty = 2
+                        text = "true"
+                        index = -1
+                        children = []
+                        arms = []
+                        falls = true
+                        ..function.body
+                    }])
+            match prove_contract(program, observed, backend, false, new[InputGuarantee]()) {
+                Result.Ok(evidence) => {
+                    function = with_assertion_proofs(function,
+                        program.function_identities, program.function_identities, evidence.assertions)
+                }
+                Result.Err(_) => {
+                }
+            }
+        }
+        push(functions, function)
+        index = index + 1
+    }
+    std.loom.typed.Program {
+        functions = functions
+        ..program
     }
 }

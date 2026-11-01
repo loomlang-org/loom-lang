@@ -1,3 +1,4 @@
+import std.loom.proof.no_proof_backend
 import std.loom.lowering.lower
 
 test fn loop_assertions_without_ensures_remain_optional_and_require_evidence() {
@@ -17,9 +18,12 @@ test fn loop_assertions_without_ensures_remain_optional_and_require_evidence() {
             }
         }
         """)
-    assert has_assertion(get(program.functions, get(program.exports, 0)).body, 1)
+    assert !has_assertion(get(program.functions, get(program.exports, 0)).body, 1)
+    let optimized = optimize_loop_assertions(program, std.loom.proof.no_proof_backend())
+    assert has_assertion(get(optimized.functions, get(optimized.exports, 0)).body, 1)
+    assert !has_assertion(get(program.functions, get(program.exports, 0)).body, 1)
     assert !has_assertion(get(program.functions, get(program.exports, 1)).body, 1)
-    let lowered = lower(program)
+    let lowered = lower(optimized)
     assert dynamic_count(get(lowered.functions, get(lowered.exports, 0)).body, ExprKind.Assert) == 0
     assert dynamic_count(get(lowered.functions, get(lowered.exports, 1)).body, ExprKind.Assert) == 1
 }
