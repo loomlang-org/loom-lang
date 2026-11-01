@@ -92,6 +92,10 @@ Finite source goals remain intact; histogram strengthening applies to establishe
 facts. Source-library sorting now proves its entry length through unknown
 effectful comparisons, including mutable element graphs. General comparator
 laws and its ordering/permutation proofs remain open.
+Finite relation proofs also accept a loop-defined partial predicate under
+explicit comparability and transitivity requirements. Relation-specific solver
+scheduling retains both value and successful-evaluation obligations within the
+same time limit; it supplies no general termination proof.
 Theory encoding interns exact repeated laws and instantiates count bounds at
 actual symbolic query terms. Binder-dependent terms retain their enclosing
 ranges, including nested ranges and extents, rather than searching unrelated

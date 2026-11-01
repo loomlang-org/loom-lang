@@ -135,5 +135,6 @@ fn smt_relation_chain(writer SmtWriter, identity Int, start Linear, end Linear,
         law = smt_binder(get(writer.quantifiers, outer), law)
     }
     smt_assert(writer, law)
+    set(writer.relation_search, 0, true)
     Result.Ok(true)
 }

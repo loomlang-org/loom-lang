@@ -22,8 +22,16 @@ contract facts. The law helper declarations alone supply no proof.
 Nested `all` calls retain their actual checked callbacks. Rebinding or mutating
 the input cannot reuse an earlier content version's facts.
 
+The step relation has a loop whose result is modeled independently of successful
+evaluation. Its endpoint contract explicitly requires comparability, adjacency
+and transitivity over the input. These are executed source requirements, not
+assumed properties of every step relation or a proof of its loop's termination.
+The endpoint proof keeps both the returned value and call-safety obligations.
+Relation queries defer eager quantified instantiation within the ordinary solver
+time limit; they do not remove premises or retry a timeout as proof.
+
 Reflexivity, successful evaluation and termination remain separate obligations.
-Complex partial-function queries can still exhaust proof search and reject.
+More complex partial-function queries can still exhaust proof search and reject.
 Generic comparator parameters need an explicit purity requirement; this example
 uses closed source relations. The ordering/permutation proof for
 `std.list.sorted` remains open.

@@ -5,6 +5,11 @@ implementation, not a compatibility ledger for previous prototypes.
 
 ## Unreleased
 
+- Defer eager quantified instantiation for finite relation queries, retaining
+  every source premise, value and call-safety obligation under the same solver
+  time limit. Prove endpoints for a loop-defined partial relation with explicit
+  finite requirements; missing adjacency or transitivity still rejects.
+
 - Compose finite adjacent relation contracts under an exact-range transitivity
   premise, including Text length and record lexicographic predicates. Retain
   source scopes and content versions, distinguish nested checked callbacks,

@@ -40,6 +40,7 @@ test fn adjacent_relations_require_transitivity_in_the_same_range() {
     assert contains(query, "(< loom_relation_j (+ 0 (* 1 n8)))")
     assert contains(query, "loom_relation_left") && contains(query, "loom_fn21")
     assert contains(query, "(pk_int (+ 0 (* 1 n-70)))")
+    assert contains(query, "(set-option :smt.qi.eager_threshold 1)")
 }
 
 test fn quantifier_flattening_does_not_capture_a_free_bound_or_assume_nonempty_ranges() {
