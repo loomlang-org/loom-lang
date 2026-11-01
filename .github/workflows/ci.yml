@@ -116,7 +116,8 @@ jobs:
   linux-llvm22:
     name: Linux native compiler (LLVM 22)
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    # Leave room for relocation and packaging after the full cold native gate.
+    timeout-minutes: 75
     env:
       CARGO_TERM_COLOR: always
       LLVM_SYS_221_PREFIX: /usr/lib/llvm-22

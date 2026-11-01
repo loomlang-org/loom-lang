@@ -38,7 +38,12 @@ fn library_sort_preserves_entry_counts_through_unknown_effectful_comparisons() {
     fs::write(&source, program).unwrap();
     success(&check());
     for mode in ["test", "run"] {
-        success(&common::loom(&[mode, package.path().to_str().unwrap()]));
+        success(&common::loom(&[
+            mode,
+            package.path().to_str().unwrap(),
+            "--frontend-cache",
+            cache.to_str().unwrap(),
+        ]));
     }
     let artifact = common::executable(package.path(), "sort-permutation");
     let ir = package.path().join("sort-permutation.ll");
@@ -46,6 +51,8 @@ fn library_sort_preserves_entry_counts_through_unknown_effectful_comparisons() {
     for level in ["0", "2"] {
         success(
             &common::command(&["build", package.path().to_str().unwrap()])
+                .arg("--frontend-cache")
+                .arg(&cache)
                 .arg("--output")
                 .arg(&artifact)
                 .arg("--emit-ir")
@@ -124,12 +131,19 @@ fn record_sort_tracks_nested_and_sibling_columns_without_mixing_them() {
     fs::write(&source, program).unwrap();
     success(&check());
     for mode in ["test", "run"] {
-        success(&common::loom(&[mode, package.path().to_str().unwrap()]));
+        success(&common::loom(&[
+            mode,
+            package.path().to_str().unwrap(),
+            "--frontend-cache",
+            cache.to_str().unwrap(),
+        ]));
     }
     let artifact = common::executable(package.path(), "record-sort");
     for level in ["0", "2"] {
         success(
             &common::command(&["build", package.path().to_str().unwrap()])
+                .arg("--frontend-cache")
+                .arg(&cache)
                 .arg("--output")
                 .arg(&artifact)
                 .env("LOOM_OPT_LEVEL", level)
