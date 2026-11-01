@@ -540,16 +540,17 @@ fn entered_loop(proof Verification, expr Expr, entry State, writes List[Bool], d
     } else {
         loop_postconditions(proof)
     }
-    let observed = loop_histogram_entry(proof, expr, loop_query_views(proof, clauses, entry))
-    let proposed = loop_proposal_entry(proof, body, observed)
-    let targets = loop_storage_targets(proof, expr, observed, writes)?
-    let resized = targets.resized
     // Reuse the existing optional-search budget for all candidate discovery.
     // Actual storage effects, entry and backedges retain the mandatory budget.
     let suggestions = Verification {
         budget = [256]
+        histograms = loop_histogram_enabled(proof, expr)
         ..proof
     }
+    let observed = loop_histogram_entry(suggestions, expr, loop_query_views(proof, clauses, entry))
+    let proposed = loop_proposal_entry(proof, body, observed)
+    let targets = loop_storage_targets(proof, expr, observed, writes)?
+    let resized = targets.resized
     var candidates = match loop_candidates(suggestions, loop_candidate_guard(proof, guard), writes, resized, proposed) {
         Result.Ok(values) => values
         Result.Err(_) => new[LoopCandidate]()

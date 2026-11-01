@@ -77,6 +77,17 @@ fn loop_histogram_root(proof Verification, loop Expr, entry State, local Int) Bo
     }
 }
 
+// Signed prefix transfer search needs an actual indexed copy. Append/scan
+// loops retain their existing count rules without unrelated buffer hypotheses.
+fn loop_histogram_enabled(proof Verification, loop Expr) Bool {
+    if !proof.histograms || !proof.query.backend.enabled {
+        return false
+    }
+    let terms = new[LoopHistogramTerm]()
+    loop_histogram_transfers(proof, get(loop.children, 1), terms, 64, true)
+    length(terms) != 0
+}
+
 fn loop_histogram_entry(proof Verification, loop Expr, entry State) State {
     if !proof.histograms || !proof.query.backend.enabled {
         return entry
@@ -175,8 +186,8 @@ fn loop_histogram_term(terms List[LoopHistogramTerm], receiver Expr, end Expr, f
 
 // Reads and writes suggest prefix conservation. This is never an operation
 // summary: every actual backedge, alias effect and fault still gets checked.
-fn loop_histogram_transfers(proof Verification, value Expr, terms List[LoopHistogramTerm], depth Int) {
-    if depth <= 0 || value.kind == ExprKind.While || length(terms) >= 8 {
+fn loop_histogram_transfers(proof Verification, value Expr, terms List[LoopHistogramTerm], depth Int, nested Bool) {
+    if depth <= 0 || (!nested && value.kind == ExprKind.While) || length(terms) >= 8 {
         return
     }
     if loop_storage_primitive(proof, value) == "list_set" && length(value.children) == 3 {
@@ -188,7 +199,7 @@ fn loop_histogram_transfers(proof Verification, value Expr, terms List[LoopHisto
     }
     var index = 0
     while index < length(value.children) {
-        loop_histogram_transfers(proof, get(value.children, index), terms, depth - 1)
+        loop_histogram_transfers(proof, get(value.children, index), terms, depth - 1, nested)
         index = index + 1
     }
 }
@@ -200,7 +211,7 @@ fn loop_histogram_candidates(proof Verification, loop Expr,
     }
     var index = 0
     let transfers = new[LoopHistogramTerm]()
-    loop_histogram_transfers(proof, get(loop.children, 1), transfers, 64)
+    loop_histogram_transfers(proof, get(loop.children, 1), transfers, 64, false)
     loop_histogram_add(proof, candidates, transfers, entry)
     let roots = new[Expr]()
     index = 0
