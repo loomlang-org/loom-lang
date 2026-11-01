@@ -45,4 +45,11 @@ test fn callback_loop_frames_require_stable_callees_and_complete_publication() {
     // No unmodelled suspension can retain this callback-only frame.
     let suspended = expression(ExprKind.Await, 0, "", -1, [call])
     assert get(loop_callback_targets(proof, suspended, state, writes), 0) == -1
+    // An immutable payload does not make a heap-selected receiver stable.
+    let receiver = expression(ExprKind.Intrinsic, 6, "list_get", -1,
+        [expression(ExprKind.Local, 8, "", 1, []), local(3)])
+    let indirect_store = expression(ExprKind.Intrinsic, 0, "list_set", -1,
+        [receiver, literal("0"), literal("7")])
+    let moving_target = expression(ExprKind.Block, 0, "", -1, [call, indirect_store])
+    assert get(loop_callback_targets(proof, moving_target, state, [false, false, false, true]), 0) == -1
 }

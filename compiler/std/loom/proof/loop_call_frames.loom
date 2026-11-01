@@ -38,6 +38,11 @@ fn loop_callback_graph(proof Verification, value Expr, entry State, writes List[
             !immutable_storage_type(proof.program, get(value.children, length(value.children) - 1).ty, 0) {
                 return false
             }
+            let receiver = get(value.children, 0)
+            if loop_boundary_mentions(receiver, writes, entry) ||
+            !frame_value_expression(receiver, [256], 0) {
+                return false
+            }
         } else if primitive != "list_get" && primitive != "list_len" {
             if value.kind == ExprKind.Call || value.kind == ExprKind.Intrinsic {
                 let operation = proof_operation(value)
