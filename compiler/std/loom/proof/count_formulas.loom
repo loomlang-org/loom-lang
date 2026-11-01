@@ -1,0 +1,109 @@
+// Indicator algebra over a finite prefix: intersection multiplies indicators,
+// complement subtracts from the range, and union subtracts its intersection.
+// Source evaluation checks stay in Expansion; these are mathematical counts.
+fn count_inputs(values List[Expr], selected Int, replacement List[Expr]) List[Expr] {
+    let output = new[Expr]()
+    var index = 0
+    while index < length(values) {
+        if index == selected {
+            var item = 0
+            while item < length(replacement) {
+                push(output, get(replacement, item))
+                item = item + 1
+            }
+        } else {
+            push(output, get(values, index))
+        }
+        index = index + 1
+    }
+    output
+}
+
+fn count_integer(source Expr, value Int) Expr {
+    proof_expr(source, ExprKind.Integer, 1, std.int.to_text(value), -1, [])
+}
+
+fn count_binary(source Expr, operator Text, first Expr, second Expr) Expr {
+    scan_math(source, if operator == "+" {
+            "proof_add"
+        } else {
+            "proof_sub"
+        }, first, second)
+}
+
+fn count_formula(context Expansion, source Expr, conditions List[Expr], end Expr,
+    identity Int, depth Int) Result[Expr, Text] {
+    discard expansion_step(context, depth)?
+    var index = 0
+    while index < length(conditions) {
+        let condition = get(conditions, index)
+        let rest = count_inputs(conditions, index, [])
+        if condition.kind == ExprKind.Bool {
+            if condition.text == "false" {
+                return Result.Ok(count_integer(source, 0))
+            }
+            return count_formula(context, source, rest, end, identity, depth + 1)
+        }
+        if !has_bound(condition, identity) {
+            return Result.Ok(proof_choice(condition,
+                    count_formula(context, source, rest, end, identity, depth + 1)?, count_integer(source, 0)))
+        }
+        if condition.kind == ExprKind.Binary && condition.text == "&&" {
+            return count_formula(context, source, count_inputs(conditions, index, condition.children),
+                end, identity, depth + 1)
+        }
+        if condition.kind == ExprKind.Binary && condition.text == "||" {
+            let first = get(condition.children, 0)
+            let second = get(condition.children, 1)
+            let left = count_formula(context, source, count_inputs(conditions, index, [first]), end, identity, depth + 1)?
+            let right = count_formula(context, source, count_inputs(conditions, index, [second]), end, identity, depth + 1)?
+            let joint = count_formula(context, source, count_inputs(conditions, index, [first, second]), end, identity, depth + 1)?
+            return Result.Ok(count_binary(source, "-", count_binary(source, "+", left, right), joint))
+        }
+        if condition.kind == ExprKind.Unary && condition.text == "!" {
+            let all = count_formula(context, source, rest, end, identity, depth + 1)?
+            let selected = count_formula(context, source,
+                count_inputs(conditions, index, condition.children), end, identity, depth + 1)?
+            return Result.Ok(count_binary(source, "-", all, selected))
+        }
+        if condition.kind == ExprKind.Binary && condition.text == "!=" {
+            let equal = proof_expr(condition, ExprKind.Binary, 2, "==", -1, condition.children)
+            return count_formula(context, source, count_inputs(conditions, index, [proof_not(equal)]),
+                end, identity, depth + 1)
+        }
+        if condition.kind == ExprKind.If && length(condition.children) == 3 {
+            let guard = get(condition.children, 0)
+            if !has_bound(guard, identity) {
+                return Result.Ok(proof_choice(guard,
+                        count_formula(context, source, count_inputs(conditions, index,
+                                [get(condition.children, 1)]), end, identity, depth + 1)?,
+                        count_formula(context, source, count_inputs(conditions, index,
+                                [get(condition.children, 2)]), end, identity, depth + 1)?))
+            }
+            let yes = count_formula(context, source,
+                count_inputs(conditions, index, [guard, get(condition.children, 1)]), end, identity, depth + 1)?
+            let no = count_formula(context, source,
+                count_inputs(conditions, index, [proof_not(guard), get(condition.children, 2)]), end, identity, depth + 1)?
+            return Result.Ok(count_binary(source, "+", yes, no))
+        }
+        if condition.ty == 2 && counted_element(condition, identity) {
+            let equal = proof_expr(condition, ExprKind.Binary, 2, "==", -1, [condition, proof_bool(condition, true)])
+            return count_formula(context, source, count_inputs(conditions, index, [equal]), end, identity, depth + 1)
+        }
+        index = index + 1
+    }
+    if length(conditions) == 0 {
+        // The enclosing scan selected its nonempty range before this algebra.
+        return Result.Ok(end)
+    }
+    let receivers = new[Expr]()
+    let fields = new[BagField]()
+    let needles = new[Expr]()
+    index = 0
+    while index < length(conditions) {
+        discard counted_fields(context, get(conditions, index), identity, receivers, fields, needles, 64)?
+        index = index + 1
+    }
+    normalize_count_fields(fields, needles)
+    Result.Ok(count_value(source, get(receivers, 0), needles, end, fields))
+}

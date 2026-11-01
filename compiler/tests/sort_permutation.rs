@@ -143,3 +143,62 @@ fn complete_record_counts_keep_field_pairings_and_normalize_equivalent_equalitie
     );
     permutation_trial(program, &[equivalent], &invalid, true);
 }
+
+#[test]
+fn boolean_count_algebra_keeps_overlap_complements_and_entry_guards() {
+    let program = include_str!("../examples/predicate_sort_contracts/main.loom");
+    let equivalent = program.replace(
+        "row.id == id || row.label == label",
+        "!(row.id != id && row.label != label)",
+    );
+    let invalid = [
+        program.replace(
+            "    sorted(values, less)",
+            "let changed = std.list.clone(values)\n    if length(changed) > 0 { changed[0] = Row { id = id, label = label } }\n    changed",
+        ),
+        program.replace(
+            "selected(values[index], id, label)",
+            "selected(values[index], id, label) && values[0].id == id",
+        ),
+    ];
+    permutation_trial(program, &[equivalent], &invalid, true);
+
+    let package = tempfile::tempdir().unwrap();
+    let prefix = program.split("pub fn sorted_matching").next().unwrap();
+    fs::write(
+        package.path().join("main.loom"),
+        format!(
+            r#"{prefix}
+fn count_id(values List[Row], id Int) Int {{
+    var index = 0
+    var found = 0
+    while index < length(values) {{
+        if values[index].id == id {{ found = found + 1 }}
+        index = index + 1
+    }}
+    found
+}}
+fn count_label(values List[Row], label Text) Int {{
+    var index = 0
+    var found = 0
+    while index < length(values) {{
+        if values[index].label == label {{ found = found + 1 }}
+        index = index + 1
+    }}
+    found
+}}
+pub fn wrong(values List[Row], id Int, label Text) Int
+requires length(values) <= 1
+ensures result == count_id(values, id) + count_label(values, label) {{
+    count(values, id, label)
+}}
+"#
+        ),
+    )
+    .unwrap();
+    let output = common::loom(&["check", package.path().to_str().unwrap()]);
+    assert!(
+        !output.status.success(),
+        "union counted overlapping matches twice"
+    );
+}
