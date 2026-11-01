@@ -1,0 +1,84 @@
+fn loop_root_extent(local Int, path List[Int], state State) Result[ListExtent, Text] {
+    match loop_local_value(get(state.locals, local), path)? {
+        Value.List(identity) => list_state(identity, state)
+        _ => Result.Err("root separation needs tracked sequence headers")
+    }
+}
+
+fn loop_root_candidates(proof Verification, candidates List[LoopCandidate], entry State) Result[Bool, Text] {
+    let count = length(candidates)
+    var first = 0
+    while first < count && length(candidates) < 64 {
+        match get(candidates, first) {
+            LoopCandidate.Header(local, path, _) => {
+                var second = first + 1
+                while second < count && length(candidates) < 64 {
+                    match get(candidates, second) {
+                        LoopCandidate.Header(target, target_path, _) => {
+                            discard loop_root_candidate(proof, candidates, local, path, target, target_path, entry)?
+                        }
+                        _ => {
+                        }
+                    }
+                    second = second + 1
+                }
+            }
+            _ => {
+            }
+        }
+        first = first + 1
+    }
+    Result.Ok(true)
+}
+
+fn loop_root_candidate(proof Verification, candidates List[LoopCandidate], local Int, path List[Int],
+    target Int, target_path List[Int], entry State) Result[Bool, Text] {
+    var index = 0
+    while index < length(candidates) {
+        match get(candidates, index) {
+            LoopCandidate.RootFrame(first, first_path, second, second_path) => {
+                if (first == local && second == target && same_projection(first_path, path) && same_projection(second_path, target_path)) ||
+                (first == target && second == local && same_projection(first_path, target_path) && same_projection(second_path, path)) {
+                    return Result.Ok(true)
+                }
+            }
+            _ => {
+            }
+        }
+        index = index + 1
+    }
+    if length(candidates) < 64 {
+        discard add_loop_candidate(candidates, LoopCandidate.RootFrame(local, path, target, target_path), entry)?
+    }
+    Result.Ok(true)
+}
+
+// Install a relation between the current loop bindings, including swapped
+// buffers. Entry and actual backedges establish it separately. Rebinding both
+// variables to the same header cannot inherit the earlier separation.
+fn loop_root_view(local Int, path List[Int], target Int, target_path List[Int], state State) Result[State, Text] {
+    let first = loop_root_extent(local, path, state)?
+    let second = loop_root_extent(target, target_path, state)?
+    if first.identity == second.identity {
+        return Result.Err("root separation cannot identify both headers")
+    }
+    let extents = new[ListExtent]()
+    var index = 0
+    while index < length(state.extents) {
+        let extent = get(state.extents, index)
+        var excluded = extent.root_unreachable
+        if extent.identity == first.identity && !storage_identity_member(excluded, second.identity) {
+            excluded = clone(excluded)
+            push(excluded, second.identity)
+        }
+        push(extents, ListExtent {
+                root_unreachable = excluded
+                ..extent
+            })
+        index = index + 1
+    }
+    Result.Ok(State {
+            extents = extents
+            ..state
+        })
+}

@@ -1,0 +1,55 @@
+test fn callback_loop_frames_require_stable_callees_and_complete_publication() {
+    let types = new[Type]()
+    var index = 0
+    while index < 6 {
+        push(types, publication_shape(TypeKind.Int, []))
+        index = index + 1
+    }
+    push(types, publication_shape(TypeKind.List, [1]))
+    push(types, publication_shape(TypeKind.Function, [1, 1, 2]))
+    push(types, publication_shape(TypeKind.List, [6]))
+    let callee = expression(ExprKind.Local, 7, "", 0, [])
+    let call = expression(ExprKind.IndirectCall, 2, "", -1, [callee, literal("1"), literal("2")])
+    let proof = verification(contract_fixture([7, 6, 6], 0, call, [], []),
+        proof_program_with_types(types))
+    let state = with_extent(20, constant(integer(1)), true,
+        with_extent(10, constant(integer(1)), false, State {
+                heap = -1
+                locals = [Value.Opaque(1, []), Value.List(10), Value.List(20), Value.Empty]
+                facts = []
+                extents = []
+                observations = []
+            }))
+    let writes = [false, false, false, false]
+    let targets = loop_callback_targets(proof, call, state, writes)
+    assert storage_identity_member(targets, 10)
+    assert !extent_modified(get(state.extents, 1), state, targets)
+    let captured = assigned(state, 0, Value.Opaque(21, []))
+    assert storage_identity_member(loop_callback_targets(proof, call, captured, writes), 20)
+    assert get(loop_callback_targets(proof, call, state, [true, false, false, false]), 0) == -1
+    let mutable_argument = expression(ExprKind.IndirectCall, 2, "", -1,
+        [callee, expression(ExprKind.Local, 6, "", 2, [])])
+    assert get(loop_callback_targets(proof, mutable_argument, state, writes), 0) == -1
+    let store = expression(ExprKind.Intrinsic, 0, "list_set", -1, [
+            expression(ExprKind.Local, 8, "", 1, []), literal("0"),
+            expression(ExprKind.Local, 6, "", 2, []),
+        ])
+    let bodies = [[store, call], [call, store]]
+    index = 0
+    while index < length(bodies) {
+        let body = get(bodies, index)
+        let block = expression(ExprKind.Block, 0, "", -1, body)
+        assert get(loop_callback_targets(proof, block, state, writes), 0) == -1
+        index = index + 1
+    }
+    // No unmodelled suspension can retain this callback-only frame.
+    let suspended = expression(ExprKind.Await, 0, "", -1, [call])
+    assert get(loop_callback_targets(proof, suspended, state, writes), 0) == -1
+    // An immutable payload does not make a heap-selected receiver stable.
+    let receiver = expression(ExprKind.Intrinsic, 6, "list_get", -1,
+        [expression(ExprKind.Local, 8, "", 1, []), local(3)])
+    let indirect_store = expression(ExprKind.Intrinsic, 0, "list_set", -1,
+        [receiver, literal("0"), literal("7")])
+    let moving_target = expression(ExprKind.Block, 0, "", -1, [call, indirect_store])
+    assert get(loop_callback_targets(proof, moving_target, state, [false, false, false, true]), 0) == -1
+}

@@ -65,6 +65,9 @@ fn loop_header_candidates(proof Verification, candidates List[LoopCandidate], wr
         }
         local = local + 1
     }
+    if proof.histograms {
+        discard loop_root_candidates(proof, candidates, entry)?
+    }
     local = 0
     while local < length(writes) && length(candidates) < 64 {
         if get(writes, local) {
@@ -119,6 +122,9 @@ fn loop_header_count(candidates List[LoopCandidate]) Int {
                 count = count + 1
             }
             LoopCandidate.ElementFrame(_, _, _, _) => {
+                count = count + 1
+            }
+            LoopCandidate.RootFrame(_, _, _, _) => {
                 count = count + 1
             }
             _ => {

@@ -3680,6 +3680,18 @@ The [source-library sorting shape example](examples/list_sort_contracts) derives
 an integer List's entry count through the ordinary `std.list.sorted` body, even
 when comparisons modify the original input. Its constrained result needs no
 second boundary check; general comparator and mutable-element proofs remain open.
+The [integer permutation trial](examples/sort_permutation) proves entry length
+and occurrence counts through that same library body with an unknown effectful
+comparator. Finite histograms support signed conservation equations across
+prefix transfers and buffer swaps. Header separation does not imply separation
+of shared children; publication, unstable callbacks and mutable arguments still
+invalidate unsupported frames. Length and content write sets share one loop
+traversal within the existing proof budget. Loop assertions can be proved and
+removed during native preparation even without ensures; ordinary checks and
+editor analysis do not run this optional pass. Unknown evidence keeps runtime checks.
+Test entry functions retain their assertions for test execution; library callees
+still receive native optimization.
+This does not establish comparator laws, ordering or arbitrary-element permutation.
 Count bounds instantiate at each actual symbolic needle, retaining any enclosing
 quantifier ranges and their dependencies. This avoids universal search over
 unrelated integers without sampling source values or changing source checks.

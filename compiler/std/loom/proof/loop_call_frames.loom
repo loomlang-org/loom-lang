@@ -1,0 +1,99 @@
+// A loop may retain private storage across unknown callbacks only when all
+// possible publication is accounted for. Mutable stores, unstable callees and
+// unmodelled effects fall back to the ordinary whole-heap write set.
+fn loop_callback_graph(proof Verification, value Expr, entry State, writes List[Bool],
+    graph Publication, budget List[Int], depth Int) Bool {
+    if depth >= 32 || !conjunction_step(budget) {
+        return false
+    }
+    if value.kind == ExprKind.IndirectCall {
+        if length(value.children) == 0 {
+            return false
+        }
+        let callee = get(value.children, 0)
+        if loop_boundary_mentions(callee, writes, entry) ||
+        !frame_value_expression(callee, [256], 0) {
+            return false
+        }
+        let function = match pure(callee, entry) {
+            Result.Ok(function) => function
+            _ => {
+                return false
+            }
+        }
+        if !publication_value(proof, callee.ty, function, entry, graph, [256], 0) {
+            return false
+        }
+        var index = 1
+        while index < length(value.children) {
+            if !immutable_storage_type(proof.program, get(value.children, index).ty, 0) {
+                return false
+            }
+            index = index + 1
+        }
+    } else {
+        let primitive = loop_storage_primitive(proof, value)
+        if primitive == "list_set" || primitive == "list_replace" || primitive == "list_push" {
+            if length(value.children) == 0 ||
+            !immutable_storage_type(proof.program, get(value.children, length(value.children) - 1).ty, 0) {
+                return false
+            }
+            let receiver = get(value.children, 0)
+            if loop_boundary_mentions(receiver, writes, entry) ||
+            !frame_value_expression(receiver, [256], 0) {
+                return false
+            }
+        } else if primitive != "list_get" && primitive != "list_len" {
+            if value.kind == ExprKind.Call || value.kind == ExprKind.Intrinsic {
+                let operation = proof_operation(value)
+                if operation.arity < 0 || operation.heap {
+                    return false
+                }
+            } else if !storage_expression(value) || value.kind == ExprKind.Defer ||
+            value.kind == ExprKind.Cleanup || value.kind == ExprKind.List || value.kind == ExprKind.Bytes {
+                return false
+            }
+        }
+    }
+    var index = 0
+    while index < length(value.children) {
+        if !loop_callback_graph(proof, get(value.children, index), entry, writes, graph, budget, depth + 1) {
+            return false
+        }
+        index = index + 1
+    }
+    index = 0
+    while index < length(value.arms) {
+        let body = get(value.arms, index).body
+        var child = 0
+        while child < length(body) {
+            if !loop_callback_graph(proof, get(body, child), entry, writes, graph, budget, depth + 1) {
+                return false
+            }
+            child = child + 1
+        }
+        index = index + 1
+    }
+    true
+}
+
+fn loop_callback_targets(proof Verification, body Expr, entry State, writes List[Bool]) List[Int] {
+    let graph = Publication {
+        identities = []
+        opaque = []
+    }
+    if !loop_callback_graph(proof, body, entry, writes, graph, [512], 0) {
+        return [-1]
+    }
+    let exposed = published_graph(entry, graph)
+    let targets = new[Int]()
+    var index = 0
+    while index < length(exposed.extents) {
+        let extent = get(exposed.extents, index)
+        if !stable_storage(extent) {
+            push(targets, extent.identity)
+        }
+        index = index + 1
+    }
+    targets
+}

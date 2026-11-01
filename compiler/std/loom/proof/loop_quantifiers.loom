@@ -5,6 +5,7 @@ fn loop_solver_fact(value Predicate) Bool {
         Predicate.Application(_, _) => true
         Predicate.Forall(_, _, _, _) => true
         Predicate.BagEqual(_, _, _, _) => true
+        Predicate.BagBalance(_) => true
         Predicate.ArrayPrefix(_, _, _) => true
         Predicate.FloatCompare(_, _, _) => true
         Predicate.IntegerCompare(_, _, _) => true
@@ -26,12 +27,56 @@ fn loop_entails(proof Verification, fact Predicate, state State, extended Bool) 
     if !proof.query.backend.enabled || (!extended && !loop_solver_fact(fact)) {
         return false
     }
+    if extended && loop_linear_context(fact, state.facts) {
+        match loop_linear_bound(proof, fact, state) {
+            Result.Ok(true) => { return true }
+            Result.Ok(false) => {}
+            Result.Err(_) => { return false }
+        }
+    }
     let query = proof_query(proof.query.backend)
     solver_fact(query, fact, state)
     match discharge(query, extended) {
         Result.Ok(value) => value
         Result.Err(_) => false
     }
+}
+
+// Proving from established scalar facts alone avoids unrelated heap search.
+// Required contracts and evaluation checks retain their complete premises.
+fn loop_linear_bound(proof Verification, fact Predicate, state State) Result[Bool, Text] {
+    let facts = new[Predicate]()
+    var index = 0
+    while index < length(state.facts) {
+        let value = get(state.facts, index)
+        match value {
+            Predicate.Compare(_, _) => push(facts, value)
+            Predicate.Constant(_) => push(facts, value)
+            _ => {}
+        }
+        index = index + 1
+    }
+    let query = smt_query([Obligation { facts = facts conclusion = fact }], false)?
+    proof.query.backend.solve(proof.query.backend.context, query)
+}
+
+// Difference constraints do not close a general linear conservation equation.
+// Let the existing arithmetic backend use that context for scalar bounds too;
+// a failed local bound is not a counterexample to the combined linear system.
+fn loop_linear_context(fact Predicate, facts List[Predicate]) Bool {
+    match fact {
+        Predicate.Compare(_, _) => {}
+        _ => { return false }
+    }
+    var index = 0
+    while index < length(facts) {
+        match get(facts, index) {
+            Predicate.Compare(_, value) => if length(value.terms) > 2 { return true }
+            _ => {}
+        }
+        index = index + 1
+    }
+    false
 }
 
 fn loop_query_views(proof Verification, clauses List[Expr], state State) State {
@@ -269,6 +314,15 @@ fn loop_quantified_candidates(proof Verification, clauses List[Expr], candidates
 
 fn quantified_candidate_preserved(proof Verification, candidate LoopCandidate, state State) Bool {
     match candidate {
+        LoopCandidate.Histogram(terms, _) => {
+            match loop_histogram_views(proof, terms, state) {
+            Result.Ok(current) => match loop_predicate(candidate, current) {
+                Result.Ok(fact) => loop_entails(proof, fact, current)
+                Result.Err(_) => loop_holds(Predicate.Constant(false), current)
+            }
+            Result.Err(_) => false
+            }
+        }
         LoopCandidate.Guard(value, extended) => {
             match loop_guard_views(proof, value, state) {
                 Result.Ok(current) => match loop_predicate(candidate, current) {

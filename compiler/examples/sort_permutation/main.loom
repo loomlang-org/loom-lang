@@ -1,0 +1,65 @@
+import std.list.length
+import std.list.sorted
+import std.list.push
+
+fn count(values List[Int], needle Int) Int {
+    var index = 0
+    var found = 0
+    while index < length(values) {
+        if values[index] == needle {
+            found = found + 1
+        }
+        index = index + 1
+    }
+    found
+}
+
+fn same_counts(first List[Int], second List[Int]) Bool {
+    var index = 0
+    while index < length(first) {
+        if count(first, first[index]) != count(second, first[index]) {
+            return false
+        }
+        index = index + 1
+    }
+    true
+}
+
+fn permutation(first List[Int], second List[Int]) Bool {
+    length(first) == length(second) && same_counts(first, second)
+}
+
+pub fn sorted_permutation(values List[Int], less fn(Int, Int) Bool) List[Int]
+ensures permutation(old(values), result) {
+    sorted(values, less)
+}
+
+fn exercise() {
+    assert permutation([], sorted_permutation([], fn(a Int, b Int) Bool {
+                a < b
+            }))
+    assert permutation([7], sorted_permutation([7], fn(a Int, b Int) Bool {
+                a < b
+            }))
+    let values = [3, 1, 2, 1]
+    let arranged = sorted_permutation(values, fn(a Int, b Int) Bool {
+            a < b
+        })
+    assert permutation(values, arranged)
+    let original = [3, 1, 2, 1]
+    let changed = sorted_permutation(original, fn(a Int, b Int) Bool {
+            original[0] = 99
+            std.list.push(original, 42)
+            a < b
+        })
+    assert permutation([3, 1, 2, 1], changed)
+    assert length(original) > 4
+}
+
+fn main() {
+    exercise()
+}
+
+test fn comparison_effects_cannot_change_the_sorted_snapshot() {
+    exercise()
+}

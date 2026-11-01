@@ -34,7 +34,7 @@ test fn retaining_ranges_drops_storage_privacy_and_loop_frames() {
     let retained = expression(ExprKind.Intrinsic, 0, "list_retain_range", -1,
         [local(0), local(0), literal("0"), literal("2")])
     let modified = new[Int]()
-    assert match loop_storage_writes(proof, retained, before, modified, false, 64) {
+    assert match loop_storage_writes(proof, retained, before, modified, [], [-1], 64) {
         Result.Ok(value) => value
         Result.Err(_) => false
     }

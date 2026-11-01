@@ -1,0 +1,26 @@
+test fn finite_histogram_algebra_cancels_only_identical_versions_and_prefixes() {
+    let first = BagTerm {
+        contents = 10
+        size = variable(1)
+        factor = integer(2)
+    }
+    let second = BagTerm {
+        factor = integer(-3)
+        ..first
+    }
+    let third = BagTerm {
+        factor = integer(1)
+        ..first
+    }
+    assert length(balanced_bag_terms([first, second, third])) == 0
+    let changed = BagTerm {
+        contents = 11
+        ..third
+    }
+    assert length(balanced_bag_terms([first, second, changed])) == 2
+    let prefix = BagTerm {
+        size = variable(2)
+        ..third
+    }
+    assert length(balanced_bag_terms([first, second, prefix])) == 2
+}

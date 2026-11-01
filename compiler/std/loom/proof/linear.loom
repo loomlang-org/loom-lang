@@ -132,6 +132,10 @@ fn same_predicates(a List[Predicate], b List[Predicate]) Bool {
 
 fn same(a Predicate, b Predicate) Bool {
     match a {
+        Predicate.BagBalance(terms) => match b {
+            Predicate.BagBalance(other) => same_bag_terms(terms, other)
+            _ => false
+        }
         Predicate.Application(value, domain) => match b {
             Predicate.Application(other, defined) => domain == defined && same_application(value, other)
             _ => false

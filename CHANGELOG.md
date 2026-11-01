@@ -5,6 +5,12 @@ implementation, not a compatibility ledger for previous prototypes.
 
 ## Unreleased
 
+- Prove source-library integer sorting permutation through unknown effectful
+  comparisons. Compose signed finite histogram invariants and checked header
+  separation, account for callback publication, and collect loop storage writes
+  in one traversal within the existing budget. Optionally prove loop assertions
+  in bodies without ensures; unknown evidence retains source checks.
+
 - Defer eager quantified instantiation for finite relation queries, retaining
   every source premise, value and call-safety obligation under the same solver
   time limit. Prove endpoints for a loop-defined partial relation with explicit

@@ -57,6 +57,12 @@ enum ScalarDomain {
     Float
 }
 
+record BagTerm {
+    contents Int
+    size Linear
+    factor Number
+}
+
 // Boolean expressions are indirect because predicates also contain array
 // equations. The other scalar terms retain their ordinary inline representation.
 enum ArrayScalar {
@@ -84,6 +90,7 @@ enum Predicate {
     ArrayWrite(Int, Int, List[Int], Linear, ArrayScalar)
     Forall(Int, Linear, Linear, List[Predicate])
     BagEqual(Int, Linear, Int, Linear)
+    BagBalance(List[BagTerm])
     // Representation-preserving frame over every modeled scalar column in
     // the old valid prefix. This is not source Float numerical equality.
     ArrayPrefix(Int, Int, Linear)
@@ -156,6 +163,8 @@ record ListExtent {
     // Exclusions for every current element graph, not the container header.
     // These metadata lists are read-only; stores replace this inductive evidence.
     element_unreachable List[Int]
+    // Header separation says nothing about shared element graphs.
+    root_unreachable List[Int]
     contents Int
     cells List[ListCell]
 }

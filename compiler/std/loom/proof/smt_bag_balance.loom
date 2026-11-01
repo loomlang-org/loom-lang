@@ -1,0 +1,108 @@
+fn balanced_bag_terms(terms List[BagTerm]) List[BagTerm] {
+    let combined = new[BagTerm]()
+    var index = 0
+    while index < length(terms) {
+        let term = get(terms, index)
+        var found = false
+        var prior = 0
+        while prior < length(combined) && !found {
+            let other = get(combined, prior)
+            if term.contents == other.contents && compare(term.size.constant, other.size.constant) == 0 &&
+            same_terms(term.size.terms, other.size.terms) {
+                set(combined, prior, BagTerm {
+                        factor = sum(term.factor, other.factor)
+                        ..other
+                    })
+                found = true
+            }
+            prior = prior + 1
+        }
+        if !found {
+            push(combined, term)
+        }
+        index = index + 1
+    }
+    let output = new[BagTerm]()
+    index = 0
+    while index < length(combined) {
+        let term = get(combined, index)
+        if compare(term.factor, integer(0)) != 0 &&
+        (length(term.size.terms) != 0 || compare(term.size.constant, integer(0)) != 0) {
+            push(output, term)
+        }
+        index = index + 1
+    }
+    output
+}
+
+fn same_bag_terms(first List[BagTerm], second List[BagTerm]) Bool {
+    if length(first) != length(second) {
+        return false
+    }
+    var index = 0
+    while index < length(first) {
+        let a = get(first, index)
+        let b = get(second, index)
+        if a.contents != b.contents || compare(a.factor, b.factor) != 0 ||
+        compare(a.size.constant, b.size.constant) != 0 || !same_terms(a.size.terms, b.size.terms) {
+            return false
+        }
+        index = index + 1
+    }
+    true
+}
+
+// Whole finite histograms obey the same prefix-extension law as individual
+// occurrence counts. No read, array extent or source evaluation is authorized.
+fn smt_bag_extension(writer SmtWriter, array Text, size Linear) Result[Bool, Text] {
+    let empty = "((as const (Array Int Int)) 0)"
+    smt_assert(writer, concat("(= ", concat(smt_bag(writer, array, constant(integer(0)))?, concat(" ", concat(empty, ")")))))
+    let last = add(size, constant(integer(-1)))
+    let before = smt_bag(writer, array, last)?
+    let item = concat("(select ", concat(array, concat(" ", concat(smt_linear(writer, last)?, ")"))))
+    let next = concat("(store ", concat(before, concat(" ", concat(item,
+                    concat(" (+ (select ", concat(before, concat(" ", concat(item, ") 1))"))))))))
+    let law = concat("(=> (> ", concat(smt_linear(writer, size)?, concat(" 0) (= ",
+                concat(smt_bag(writer, array, size)?, concat(" ", concat(next, "))"))))))
+    smt_assert(writer, bag_bound_scope(law, size))
+    Result.Ok(true)
+}
+
+fn smt_bag_balance(writer SmtWriter, terms List[BagTerm]) Result[Text, Text] {
+    let terms = balanced_bag_terms(terms)
+    let empty = "((as const (Array Int Int)) 0)"
+    var positive = empty
+    var negative = empty
+    var index = 0
+    while index < length(terms) {
+        discard smt_step(writer, 0)?
+        let term = get(terms, index)
+        let array = smt_array(writer, term.contents, [])
+        discard smt_bag_extension(writer, array, term.size)?
+        var part = smt_bag(writer, array, term.size)?
+        let factor = if term.factor.negative {
+            negate(term.factor)
+        } else {
+            term.factor
+        }
+        if compare(factor, integer(1)) != 0 {
+            let coefficient = concat("((as const (Array Int Int)) ", concat(smt_number(factor), ")"))
+            part = concat("((_ map (* (Int Int) Int)) ", concat(part, concat(" ", concat(coefficient, ")"))))
+        }
+        if term.factor.negative {
+            negative = if negative == empty {
+                part
+            } else {
+                concat("((_ map (+ (Int Int) Int)) ", concat(negative, concat(" ", concat(part, ")"))))
+            }
+        } else {
+            positive = if positive == empty {
+                part
+            } else {
+                concat("((_ map (+ (Int Int) Int)) ", concat(positive, concat(" ", concat(part, ")"))))
+            }
+        }
+        index = index + 1
+    }
+    Result.Ok(concat("(= ", concat(positive, concat(" ", concat(negative, ")")))))
+}

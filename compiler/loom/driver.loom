@@ -1,3 +1,4 @@
+import std.loom.checking.optimize_loop_assertions
 import std.loom.project.load
 import std.loom.project.resolve
 import std.loom.project.is_windows_path
@@ -313,7 +314,12 @@ fn prepare_loaded(options Options, loaded Project, inputs BuildInputs) Result[Pr
 
 fn prepare_checked(options Options, project Project, inputs BuildInputs, value std.loom.typed.Program,
     bindings std.loom.binding.Program) Prepared {
-    let selected = select_tests(value, options.test_filter)
+    let optimized = if options.command == "check" {
+        value
+    } else {
+        optimize_loop_assertions(value, inputs.proof_backend)
+    }
+    let selected = select_tests(optimized, options.test_filter)
     Prepared {
         inputs = inputs.files
         targets = inputs.targets
