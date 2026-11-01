@@ -6,7 +6,7 @@ fn support_encoding(start Linear, body Predicate) Text {
                 conclusion = Predicate.And([
                         Predicate.Forall(-7, start, variable(1), [body]),
                         integer_limit(">=", IntegerTerm.Count(bag_column(10),
-                                [IntegerTerm.Linear(variable(1)), IntegerTerm.Linear(variable(2))]), 0),
+                                [PredicateKey.Integer(IntegerTerm.Linear(variable(1))), PredicateKey.Integer(IntegerTerm.Linear(variable(2)))]), 0),
                     ])
             }])
 }
@@ -42,7 +42,7 @@ test fn extended_theories_do_not_retry_a_host_failure() {
     push(query.obligations, Obligation {
             facts = []
             conclusion = integer_limit(">", IntegerTerm.Count(bag_column(10),
-                    [IntegerTerm.Linear(constant(integer(1))), IntegerTerm.Linear(variable(2))]), 0)
+                    [PredicateKey.Integer(IntegerTerm.Linear(constant(integer(1)))), PredicateKey.Integer(IntegerTerm.Linear(variable(2)))]), 0)
         })
     assert match discharge(query) {
         Result.Err(message) => message == "host stopped"
@@ -69,29 +69,36 @@ test fn support_instantiation_preserves_lexical_paths_and_free_names() {
     assert support_scopes_match([outer], [outer, inner])
     assert !support_scopes_match([outer], [other])
     let law = SmtSupportLaw {
+        sort = "Int"
         condition = "(>= loom_support_key 0)"
         quantifiers = [outer]
     }
     let key = SmtSupportKey {
+        sort = "Int"
         value = "n2"
         quantifiers = []
     }
     assert support_no_capture(law, key)
     assert !support_no_capture(law, SmtSupportKey {
+            sort = "Int"
             value = "n-3"
             ..key
         })
     assert support_no_capture(SmtSupportLaw {
+            sort = "Int"
             quantifiers = []
             ..law
         }, SmtSupportKey {
+            sort = "Int"
             value = "n-3"
             quantifiers = [outer]
         })
     assert !support_no_capture(SmtSupportLaw {
+            sort = "Int"
             condition = "(>= loom_support_key n-3)"
             quantifiers = []
         }, SmtSupportKey {
+            sort = "Int"
             value = "n-3"
             quantifiers = [outer]
         })

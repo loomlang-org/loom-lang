@@ -1,20 +1,22 @@
 // Finite histogram algebra: an in-range store removes the old occurrence and
 // adds the new one. These are sequence laws, not trusted application lemmas.
-fn smt_bag_function(writer SmtWriter) {
+fn smt_bag_function(writer SmtWriter, bag SmtBag) {
     var index = 0
     while index < length(writer.names) {
-        if get(writer.names, index) == "loom_bag" {
+        if get(writer.names, index) == bag.function {
             return
         }
         index = index + 1
     }
-    push(writer.names, "loom_bag")
-    smt_append(writer.declarations, "(declare-fun loom_bag ((Array Int Int) Int) (Array Int Int))\n")
+    push(writer.names, bag.function)
+    smt_append(writer.declarations, concat("(declare-fun ", concat(bag.function,
+                concat(" ((Array Int ", concat(bag.sort, concat(") Int) (Array ", concat(bag.sort, " Int))\n")))))))
 }
 
-fn smt_bag(writer SmtWriter, array Text, size Linear) Result[Text, Text] {
-    smt_bag_function(writer)
-    Result.Ok(concat("(loom_bag ", concat(array, concat(" ", concat(smt_linear(writer, size)?, ")")))))
+fn smt_bag(writer SmtWriter, array SmtBag, size Linear) Result[Text, Text] {
+    smt_bag_function(writer, array)
+    Result.Ok(concat("(", concat(array.function, concat(" ", concat(array.array,
+                        concat(" ", concat(smt_linear(writer, size)?, ")")))))))
 }
 
 fn bag_bound_scope(value Text, size Linear) Text {
@@ -58,19 +60,11 @@ fn bag_bound_scope(value Text, sizes List[Linear]) Text {
     std.bytes.to_text(output)
 }
 
-fn smt_count(writer SmtWriter, column BagColumn, inputs List[IntegerTerm], depth Int) Result[Text, Text] {
-    if length(inputs) != 2 {
-        return Result.Err("invalid histogram count operands")
-    }
-    let size = match get(inputs, 0) {
-        IntegerTerm.Linear(size) => size
-        _ => {
-            return Result.Err("histogram count needs a linear extent")
-        }
-    }
-    let array = smt_array(writer, column.contents, column.path)
+fn smt_count(writer SmtWriter, column BagColumn, inputs List[PredicateKey], depth Int) Result[Text, Text] {
+    let size = count_size(inputs)?
+    let array = smt_histogram(writer, column)?
     let bag = smt_bag(writer, array, size)?
-    let needle = smt_integer(writer, get(inputs, 1), depth + 1)?
+    let needle = smt_bag_key(writer, column, bag_needles(inputs), depth + 1)?
     let limit = smt_linear(writer, size)?
     var needs_scope = false
     var index = 0
@@ -107,7 +101,7 @@ fn smt_count(writer SmtWriter, column BagColumn, inputs List[IntegerTerm], depth
     }
     smt_assert(writer, bag_bound_scope(law, size))
     discard smt_count_prefix(writer, array, size, needle, depth + 1)?
-    discard smt_count_presence(writer, column, size, needle, count)?
+    discard smt_count_presence(writer, array, size, needle, count)?
     Result.Ok(concat("(select ", concat(bag, concat(" ", concat(needle, ")")))))
 }
 
@@ -139,16 +133,14 @@ fn count_term_extents(output List[Linear], term IntegerTerm, depth Int) {
             }
         }
         IntegerTerm.Count(_, inputs) => {
-            if length(inputs) == 2 {
-                match get(inputs, 0) {
-                    IntegerTerm.Linear(size) => {
-                        count_extent(output, size)
-                    }
-                    _ => {
-                    }
+            match count_size(inputs) {
+                Result.Ok(size) => {
+                    count_extent(output, size)
                 }
-                count_term_extents(output, get(inputs, 1), depth - 1)
+                Result.Err(_) => {
+                }
             }
+            count_key_extents(output, inputs, depth - 1)
         }
         IntegerTerm.Apply(_, inputs) => {
             var index = 0
@@ -305,9 +297,9 @@ fn count_predicate_list(output List[Linear], values List[Predicate], depth Int) 
     }
 }
 
-fn smt_bag_store(writer SmtWriter, previous Text, stored Text, position Text, value Text, size Linear) Result[Text, Text] {
+fn smt_bag_store(writer SmtWriter, previous SmtBag, stored Text, position Text, value Text, size Linear) Result[Text, Text] {
     let bag = smt_bag(writer, previous, size)?
-    let prior_value = concat("(select ", concat(previous, concat(" ", concat(position, ")"))))
+    let prior_value = concat("(select ", concat(previous.array, concat(" ", concat(position, ")"))))
     let removed = concat("(store ", concat(bag, concat(" ", concat(prior_value,
                     concat(" (- (select ", concat(bag, concat(" ", concat(prior_value, ") 1))"))))))))
     let changed = concat("(store ", concat(removed, concat(" ", concat(value,
@@ -315,7 +307,10 @@ fn smt_bag_store(writer SmtWriter, previous Text, stored Text, position Text, va
     let limit = smt_linear(writer, size)?
     let condition = concat("(and (<= 0 ", concat(position, concat(") (< ", concat(position,
                     concat(" ", concat(limit, "))"))))))
-    let update = concat("(= ", concat(smt_bag(writer, stored, size)?,
+    let update = concat("(= ", concat(smt_bag(writer, SmtBag {
+                    array = stored,
+                    ..previous
+                }, size)?,
             concat(" (ite ", concat(condition, concat(" ", concat(changed, concat(" ", concat(bag, "))"))))))))
     Result.Ok(bag_bound_scope(update, size))
 }

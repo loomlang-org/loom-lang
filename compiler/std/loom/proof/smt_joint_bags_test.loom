@@ -1,0 +1,41 @@
+fn joint_test_column(contents Int) BagColumn {
+    BagColumn {
+        contents = contents
+        fields = [
+            BagField {
+                path = [0],
+                domain = ScalarDomain.Integer
+            },
+            BagField {
+                path = [1],
+                domain = ScalarDomain.Text
+            },
+        ]
+    }
+}
+
+fn joint_test_query(facts List[Predicate]) Text {
+    encoding([Obligation {
+                facts = facts
+                conclusion = Predicate.BagEqual(joint_test_column(10), variable(4), joint_test_column(11), variable(4))
+            }])
+}
+
+test fn joint_histograms_require_all_component_stores_at_the_same_index_and_scope() {
+    let first = Predicate.ArrayWrite(10, 11, [0], variable(1), ArrayScalar.Integer(IntegerTerm.Linear(variable(2))))
+    let second = Predicate.ArrayWrite(10, 11, [1], variable(1), ArrayScalar.Text(TextValue.Literal("next")))
+    let marker = "(loom_key_bag (store ((_ map pk_record)"
+    assert std.text.contains(joint_test_query([first, second]), marker)
+    assert !std.text.contains(joint_test_query([first]), marker)
+    let shifted = Predicate.ArrayWrite(10, 11, [1], variable(3), ArrayScalar.Text(TextValue.Literal("next")))
+    assert !std.text.contains(joint_test_query([first, shifted]), marker)
+    let scoped_query = joint_test_query([
+            Predicate.Forall(-7, constant(integer(0)), variable(4), [
+                    Predicate.ArrayWrite(10, 11, [0], variable(-7), ArrayScalar.Integer(IntegerTerm.Linear(variable(2))))
+                ]),
+            Predicate.Forall(-7, constant(integer(1)), variable(4), [
+                    Predicate.ArrayWrite(10, 11, [1], variable(-7), ArrayScalar.Text(TextValue.Literal("next")))
+                ]),
+        ])
+    assert !std.text.contains(scoped_query, marker)
+}

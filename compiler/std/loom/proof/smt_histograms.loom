@@ -1,0 +1,92 @@
+// One finite-bag algebra, specialized by the mathematical key sort. Scalar
+// integers retain their direct array encoding; joint values reuse immutable keys.
+record SmtBag {
+    array Text
+    sort Text
+    function Text
+}
+
+fn integer_bag(array Text) SmtBag {
+    SmtBag {
+        array = array,
+        sort = "Int",
+        function = "loom_bag"
+    }
+}
+
+fn integer_bag_column(column BagColumn) Bool {
+    length(column.fields) == 1 && get(column.fields, 0).domain == ScalarDomain.Integer
+}
+
+fn smt_histogram(writer SmtWriter, column BagColumn) Result[SmtBag, Text] {
+    var found = false
+    var index = 0
+    while index < length(writer.histograms) && !found {
+        found = same_bag_column(get(writer.histograms, index), column)
+        index = index + 1
+    }
+    if !found {
+        push(writer.histograms, column)
+    }
+    if integer_bag_column(column) {
+        return Result.Ok(integer_bag(smt_array(writer, column.contents, get(column.fields, 0).path)))
+    }
+    if length(column.fields) == 0 {
+        return Result.Err("histogram needs a nonempty scalar key")
+    }
+    smt_predicate_keys(writer)
+    var fields = "((as const (Array Int loom_pks)) pk_nil)"
+    index = length(column.fields)
+    while index > 0 {
+        index = index - 1
+        let field = get(column.fields, index)
+        let array = smt_array(writer, column.contents, field.path, field.domain)
+        let constructor = match field.domain {
+            ScalarDomain.Integer => "pk_int"
+            ScalarDomain.Boolean => "pk_bool"
+            ScalarDomain.Text => "pk_text"
+            ScalarDomain.Float => {
+                return Result.Err("IEEE equality cannot supply a histogram key")
+            }
+        }
+        let key = concat("((_ map ", concat(constructor, concat(") ", concat(array, ")"))))
+        fields = concat("((_ map pk_cons) ", concat(key, concat(" ", concat(fields, ")"))))
+    }
+    Result.Ok(SmtBag {
+            array = concat("((_ map pk_record) ", concat(fields, ")"))
+            sort = "loom_pk"
+            function = "loom_key_bag"
+        })
+}
+
+fn smt_bag_key(writer SmtWriter, column BagColumn, inputs List[PredicateKey], depth Int) Result[Text, Text] {
+    if length(inputs) != length(column.fields) {
+        return Result.Err("histogram key shape differs")
+    }
+    if integer_bag_column(column) {
+        match get(inputs, 0) {
+            PredicateKey.Integer(value) => {
+                return smt_integer(writer, value, depth + 1)
+            }
+            _ => {
+                return Result.Err("integer histogram needs an integer key")
+            }
+        }
+    }
+    smt_predicate_keys(writer)
+    Result.Ok(concat("(pk_record ", concat(smt_key_list(writer, inputs, depth + 1)?, ")")))
+}
+
+fn bag_needles(inputs List[PredicateKey]) List[PredicateKey] {
+    let values = new[PredicateKey]()
+    var index = 1
+    while index < length(inputs) {
+        push(values, get(inputs, index))
+        index = index + 1
+    }
+    values
+}
+
+fn smt_empty_bag(bag SmtBag) Text {
+    concat("((as const (Array ", concat(bag.sort, " Int)) 0)"))
+}

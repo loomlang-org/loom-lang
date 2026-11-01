@@ -3696,6 +3696,15 @@ nested integer fields, independent sibling fields and extraction into a scalar
 List. Histogram identities include the complete inline-field path; entry views,
 prefix frames, count support and copy invariants retain that path. Independent
 column counts do not prove preservation of complete records or field pairings.
+The [complete record trial](examples/value_sort_contracts) instead counts a
+conjunction of `Int`, `Bool` and `Text` field equalities at one sequence index.
+Joint keys retain field associations and normalize conjunction/operand order.
+They reuse the immutable-value encoding and the same finite histogram laws;
+integer keys retain their direct encoding. Component store equations stay
+premises, with matching indices and lexical scopes. The source-library sort
+proves full-row entry permutation through unknown effectful comparators.
+IEEE equality, enum alternatives, mutable descendants and arbitrary equality
+predicates remain outside that count fragment. No runtime histogram is added.
 This does not establish comparator laws, ordering or arbitrary-element permutation.
 Count bounds instantiate at each actual symbolic needle, retaining any enclosing
 quantifier ranges and their dependencies. This avoids universal search over

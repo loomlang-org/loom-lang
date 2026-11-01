@@ -142,14 +142,7 @@ fn same_integer_term(left IntegerTerm, right IntegerTerm, budget List[Int]) Bool
                 if !same_bag_column(identity, other) || length(inputs) != length(values) {
                     return false
                 }
-                var index = 0
-                while index < length(inputs) {
-                    if !same_integer_term(get(inputs, index), get(values, index), budget) {
-                        return false
-                    }
-                    index = index + 1
-                }
-                true
+                same_predicate_keys(inputs, values)
             }
             _ => false
         }

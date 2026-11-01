@@ -2,24 +2,67 @@ fn count_expression(value Expr) Bool {
     value.kind == ExprKind.Intrinsic && value.text == "proof_count" && length(value.children) >= 3
 }
 
-// Trailing literal operands retain the checked inline-field path. They are
-// metadata, not a hypothetical element read or a source access permission.
-fn count_path(value Expr) List[Int] {
-    let path = new[Int]()
-    var index = 3
-    while index < length(value.children) {
-        push(path, get(value.children, index).index)
-        index = index + 1
-    }
-    path
+fn count_column_expression(value Expr) Bool {
+    value.kind == ExprKind.Intrinsic && value.text == "proof_column" && length(value.children) >= 1
 }
 
-fn count_value(source Expr, receiver Expr, needle Expr, end Expr, path List[Int]) Expr {
-    let children = [receiver, needle, end]
+fn bag_domain(ty Int) ScalarDomain {
+    if ty == 1 {
+        return ScalarDomain.Integer
+    }
+    if ty == 2 {
+        return ScalarDomain.Boolean
+    }
+    if ty == 3 {
+        return ScalarDomain.Text
+    }
+    ScalarDomain.Float
+}
+
+fn bag_type(domain ScalarDomain) Int {
+    match domain {
+        ScalarDomain.Integer => 1
+        ScalarDomain.Boolean => 2
+        ScalarDomain.Text => 3
+        ScalarDomain.Float => 5
+    }
+}
+
+// Each descriptor carries one evaluated needle followed by its checked field
+// path. Several descriptors observe the same element, retaining correlation.
+fn count_fields(value Expr) List[BagField] {
+    let fields = new[BagField]()
+    var index = 2
+    while index < length(value.children) {
+        let column = get(value.children, index)
+        let path = new[Int]()
+        var field = 1
+        while field < length(column.children) {
+            push(path, get(column.children, field).index)
+            field = field + 1
+        }
+        push(fields, BagField {
+                path = path,
+                domain = bag_domain(column.ty)
+            })
+        index = index + 1
+    }
+    fields
+}
+
+fn count_value(source Expr, receiver Expr, needles List[Expr], end Expr, fields List[BagField]) Expr {
+    let children = [receiver, end]
     var index = 0
-    while index < length(path) {
-        let field = get(path, index)
-        push(children, proof_expr(source, ExprKind.Integer, 1, std.int.to_text(field), field, []))
+    while index < length(fields) {
+        let field = get(fields, index)
+        let inputs = [get(needles, index)]
+        var part = 0
+        while part < length(field.path) {
+            let selected = get(field.path, part)
+            push(inputs, proof_expr(source, ExprKind.Integer, 1, std.int.to_text(selected), selected, []))
+            part = part + 1
+        }
+        push(children, proof_expr(source, ExprKind.Intrinsic, bag_type(field.domain), "proof_column", -1, inputs))
         index = index + 1
     }
     proof_expr(source, ExprKind.Intrinsic, 1, "proof_count", -1, children)
@@ -62,28 +105,112 @@ fn has_bound(value Expr, identity Int) Bool {
     false
 }
 
-fn counted_scan(context Expansion, source Expr, condition Expr, end Expr, identity Int) Result[Expr, Text] {
-    if condition.kind != ExprKind.Binary || condition.text != "==" || has_bound(end, identity) {
-        return Result.Err("count proof needs a stable prefix and equality scan")
+fn counted_fields(context Expansion, condition Expr, identity Int, receivers List[Expr],
+    fields List[BagField], needles List[Expr], depth Int) Result[Bool, Text] {
+    if depth <= 0 {
+        return Result.Err("count equality depth exhausted")
+    }
+    if condition.kind == ExprKind.Binary && condition.text == "&&" {
+        discard counted_fields(context, get(condition.children, 0), identity, receivers, fields, needles, depth - 1)?
+        return counted_fields(context, get(condition.children, 1), identity, receivers, fields, needles, depth - 1)
+    }
+    if condition.kind != ExprKind.Binary || condition.text != "==" {
+        return Result.Err("count proof needs a conjunction of scalar equalities")
     }
     var read = get(condition.children, 0)
     var needle = get(condition.children, 1)
-    if !list_read_expression(count_read(read)) {
+    if !counted_element(read, identity) {
         read = get(condition.children, 1)
         needle = get(condition.children, 0)
     }
     let element = count_read(read)
-    if !list_read_expression(element) || read.ty != 1 || has_bound(needle, identity) ||
-    !entry_list_type(context.program, get(element.children, 0).ty, 0) ||
+    if !list_read_expression(element) || (read.ty != 1 && read.ty != 2 && read.ty != 3) ||
+    has_bound(needle, identity) || !entry_list_type(context.program, get(element.children, 0).ty, 0) ||
     !bound_expression(get(element.children, 1)) || get(element.children, 1).index != identity {
-        return Result.Err("count proof needs one Int column and a stable needle")
+        return Result.Err("count proof needs a stable scalar needle and one indexed element")
     }
-    Result.Ok(count_value(source, get(element.children, 0), needle, end, count_read_path(read)))
+    let receiver = get(element.children, 0)
+    if length(receivers) == 0 {
+        push(receivers, receiver)
+    }
+    if !exact_expression(receiver, get(receivers, 0)) {
+        return Result.Err("joint count columns must observe the same sequence")
+    }
+    push(fields, BagField {
+            path = count_read_path(read),
+            domain = bag_domain(read.ty)
+        })
+    push(needles, needle)
+    Result.Ok(true)
+}
+
+fn counted_element(value Expr, identity Int) Bool {
+    let element = count_read(value)
+    list_read_expression(element) && bound_expression(get(element.children, 1)) &&
+    get(element.children, 1).index == identity
+}
+
+fn counted_scan(context Expansion, source Expr, condition Expr, end Expr, identity Int) Result[Expr, Text] {
+    if has_bound(end, identity) {
+        return Result.Err("count proof needs a stable prefix")
+    }
+    let receivers = new[Expr]()
+    let fields = new[BagField]()
+    let needles = new[Expr]()
+    discard counted_fields(context, condition, identity, receivers, fields, needles, 64)?
+    normalize_count_fields(fields, needles)
+    Result.Ok(count_value(source, get(receivers, 0), needles, end, fields))
+}
+
+// Conjunction order is not a key identity. Move each needle with its column;
+// the original source evaluation checks remain in the scan's expansion scope.
+fn bag_field_before(first BagField, second BagField) Bool {
+    var index = 0
+    while index < length(first.path) && index < length(second.path) {
+        if get(first.path, index) != get(second.path, index) {
+            return get(first.path, index) < get(second.path, index)
+        }
+        index = index + 1
+    }
+    if length(first.path) != length(second.path) {
+        return length(first.path) < length(second.path)
+    }
+    bag_type(first.domain) < bag_type(second.domain)
+}
+
+fn normalize_count_fields(fields List[BagField], needles List[Expr]) {
+    var index = 1
+    while index < length(fields) {
+        var position = index
+        while position > 0 && bag_field_before(get(fields, position), get(fields, position - 1)) {
+            let field = get(fields, position)
+            let needle = get(needles, position)
+            set(fields, position, get(fields, position - 1))
+            set(needles, position, get(needles, position - 1))
+            set(fields, position - 1, field)
+            set(needles, position - 1, needle)
+            position = position - 1
+        }
+        index = index + 1
+    }
+}
+
+fn count_size(inputs List[PredicateKey]) Result[Linear, Text] {
+    if length(inputs) < 2 {
+        return Result.Err("invalid count operands")
+    }
+    match get(inputs, 0) {
+        PredicateKey.Integer(term) => match term {
+            IntegerTerm.Linear(size) => Result.Ok(size)
+            _ => Result.Err("count proof needs a linear prefix")
+        }
+        _ => Result.Err("count proof needs an integer prefix")
+    }
 }
 
 fn counted_value(expr Expr, state State) Result[Value, Text] {
     let receiver = pure(get(expr.children, 0), state)?
-    let size = list_value_index(pure(get(expr.children, 2), state)?)?
+    let size = list_value_index(pure(get(expr.children, 1), state)?)?
     let contents = match receiver {
         Value.List(identity) => list_state(identity, state)?.contents
         Value.EntryList(_, contents) => contents
@@ -92,13 +219,84 @@ fn counted_value(expr Expr, state State) Result[Value, Text] {
     if contents < 0 {
         return Result.Err("List count proof needs an enabled array backend")
     }
-    let inputs = new[IntegerTerm]()
-    push(inputs, IntegerTerm.Linear(size))
-    push(inputs, integer_term(pure(get(expr.children, 1), state)?)?)
+    let inputs = [PredicateKey.Integer(IntegerTerm.Linear(size))]
+    var index = 2
+    while index < length(expr.children) {
+        push(inputs, predicate_key(pure(get(get(expr.children, index).children, 0), state)?, [512])?)
+        index = index + 1
+    }
     Result.Ok(Value.Nonlinear(IntegerTerm.Count(BagColumn {
                     contents = contents
-                    path = count_path(expr)
+                    fields = count_fields(expr)
                 }, inputs)))
+}
+
+fn selected_bag_column(contents Int, path List[Int], index Linear, bound Int,
+    domain ScalarDomain) Option[BagColumn] {
+    if !same_terms(index.terms, variable(bound).terms) || compare(index.constant, integer(0)) != 0 {
+        return Option.None
+    }
+    Option.Some(BagColumn {
+            contents = contents,
+            fields = [BagField {
+                    path = path,
+                    domain = domain
+                }]
+        })
+}
+
+fn selected_bag_key(key PredicateKey, bound Int) Option[BagColumn] {
+    match key {
+        PredicateKey.Integer(term) => match term {
+            IntegerTerm.Select(contents, path, index) => selected_bag_column(contents, path, index, bound, ScalarDomain.Integer)
+            _ => Option.None
+        }
+        PredicateKey.Boolean(values) => {
+            if length(values) == 1 {
+                match get(values, 0) {
+                    Predicate.Select(contents, path, index) => {
+                        return selected_bag_column(contents, path, index, bound, ScalarDomain.Boolean)
+                    }
+                    _ => {
+                    }
+                }
+            }
+            Option.None
+        }
+        PredicateKey.Text(term) => match term {
+            TextValue.Select(contents, path, index) => selected_bag_column(contents, path, index, bound, ScalarDomain.Text)
+            _ => Option.None
+        }
+        _ => Option.None
+    }
+}
+
+fn bag_needle_column(inputs List[PredicateKey], bound Int) Option[BagColumn] {
+    let fields = new[BagField]()
+    var contents = -1
+    var index = 1
+    while index < length(inputs) {
+        match selected_bag_key(get(inputs, index), bound) {
+            Option.Some(column) => {
+                if contents >= 0 && contents != column.contents {
+                    return Option.None
+                }
+                contents = column.contents
+                push(fields, get(column.fields, 0))
+            }
+            Option.None => {
+                return Option.None
+            }
+        }
+        index = index + 1
+    }
+    if contents < 0 {
+        return Option.None
+    }
+    Option.Some(BagColumn {
+            contents = contents,
+            fields = fields
+        })
 }
 
 // Equal lengths and equal occurrence counts for every element of either input
@@ -118,26 +316,20 @@ fn bag_from_counts(value Predicate) Option[Predicate] {
                     match left {
                         IntegerTerm.Count(before, first) => match right {
                             IntegerTerm.Count(after, second) => {
-                                if length(first) != 2 || length(second) != 2 {
+                                if length(first) != length(second) {
                                     return Option.None
                                 }
-                                let budget = new[Int]()
-                                push(budget, 512)
-                                if !same_integer_term(get(first, 1), get(second, 1), budget) {
-                                    return Option.None
+                                var index = 1
+                                while index < length(first) {
+                                    if !same_predicate_key(get(first, index), get(second, index)) {
+                                        return Option.None
+                                    }
+                                    index = index + 1
                                 }
-                                match get(first, 0) {
-                                    IntegerTerm.Linear(size) => match get(second, 0) {
-                                        IntegerTerm.Linear(count) => match get(first, 1) {
-                                            IntegerTerm.Select(array, path, index) => {
-                                                if !same_terms(index.terms, variable(identity).terms) ||
-                                                compare(index.constant, integer(0)) != 0 {
-                                                    return Option.None
-                                                }
-                                                let column = BagColumn {
-                                                    contents = array
-                                                    path = path
-                                                }
+                                match count_size(first) {
+                                    Result.Ok(size) => match count_size(second) {
+                                        Result.Ok(count) => match bag_needle_column(first, identity) {
+                                            Option.Some(column) => {
                                                 let extent = if same_bag_column(column, before) {
                                                     size
                                                 } else {
@@ -149,13 +341,13 @@ fn bag_from_counts(value Predicate) Option[Predicate] {
                                                 }
                                                 return Option.Some(Predicate.BagEqual(before, size, after, count))
                                             }
-                                            _ => {
+                                            Option.None => {
                                             }
                                         }
-                                        _ => {
+                                        Result.Err(_) => {
                                         }
                                     }
-                                    _ => {
+                                    Result.Err(_) => {
                                     }
                                 }
                             }
@@ -256,10 +448,16 @@ fn pointwise_bag(value Predicate) Option[Predicate] {
                                 compare(left.constant, integer(0)) == 0 && compare(right.constant, integer(0)) == 0 {
                                     return Option.Some(Predicate.BagEqual(BagColumn {
                                                 contents = before
-                                                path = first_path
+                                                fields = [BagField {
+                                                        path = first_path,
+                                                        domain = ScalarDomain.Integer
+                                                    }]
                                             }, end, BagColumn {
                                                 contents = after
-                                                path = second_path
+                                                fields = [BagField {
+                                                        path = second_path,
+                                                        domain = ScalarDomain.Integer
+                                                    }]
                                             }, end))
                                 }
                             }

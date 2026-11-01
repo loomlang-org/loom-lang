@@ -1,7 +1,7 @@
 record LoopHistogramTerm {
     receiver Expr
     end Expr
-    path List[Int]
+    fields List[BagField]
     factor Number
 }
 
@@ -66,25 +66,25 @@ fn loop_histogram_requested(clauses List[Expr]) Bool {
     false
 }
 
-fn loop_histogram_paths(clauses List[Expr]) List[List[Int]] {
-    let paths = new[List[Int]]()
+fn loop_histogram_keys(clauses List[Expr]) List[List[BagField]] {
+    let paths = new[List[BagField]]()
     var index = 0
     while index < length(clauses) {
-        loop_histogram_paths(get(clauses, index), paths, 64)
+        loop_histogram_keys(get(clauses, index), paths, 64)
         index = index + 1
     }
     paths
 }
 
-fn loop_histogram_paths(value Expr, paths List[List[Int]], depth Int) {
+fn loop_histogram_keys(value Expr, paths List[List[BagField]], depth Int) {
     if depth <= 0 {
         return
     }
     if count_expression(value) {
-        let path = count_path(value)
+        let path = count_fields(value)
         var index = 0
         while index < length(paths) {
-            if same_projection(path, get(paths, index)) {
+            if same_bag_fields(path, get(paths, index)) {
                 return
             }
             index = index + 1
@@ -93,33 +93,63 @@ fn loop_histogram_paths(value Expr, paths List[List[Int]], depth Int) {
     }
     var index = 0
     while index < length(value.children) {
-        loop_histogram_paths(get(value.children, index), paths, depth - 1)
+        loop_histogram_keys(get(value.children, index), paths, depth - 1)
         index = index + 1
     }
 }
 
-fn histogram_column(program Program, ty Int, path List[Int], field Int, depth Int) Bool {
+fn histogram_column(program Program, ty Int, path List[Int], domain ScalarDomain, field Int, depth Int) Bool {
     if depth >= 16 || ty < 0 || ty >= length(program.types) {
         return false
     }
     let shape = get(program.types, ty)
     if shape.kind == TypeKind.Refined && length(shape.fields) == 1 {
-        return histogram_column(program, get(shape.fields, 0).ty, path, field, depth + 1)
+        return histogram_column(program, get(shape.fields, 0).ty, path, domain, field, depth + 1)
     }
     if field == length(path) {
-        return ty == 1
+        return (ty == 1 || ty == 2 || ty == 3) && bag_domain(ty) == domain
     }
     if shape.kind != TypeKind.Record && shape.kind != TypeKind.Tuple {
         return false
     }
     let selected = get(path, field)
     selected >= 0 && selected < length(shape.fields) &&
-    histogram_column(program, get(shape.fields, selected).ty, path, field + 1, depth + 1)
+    histogram_column(program, get(shape.fields, selected).ty, path, domain, field + 1, depth + 1)
 }
 
-fn histogram_list_column(program Program, ty Int, path List[Int]) Bool {
-    proof_list_type(program, ty) &&
-    histogram_column(program, get(get(program.types, ty).arguments, 0), path, 0, 0)
+fn histogram_list_column(program Program, ty Int, fields List[BagField]) Bool {
+    if !proof_list_type(program, ty) || length(fields) == 0 {
+        return false
+    }
+    let element = get(get(program.types, ty).arguments, 0)
+    var index = 0
+    while index < length(fields) {
+        let field = get(fields, index)
+        if !histogram_column(program, element, field.path, field.domain, 0, 0) {
+            return false
+        }
+        index = index + 1
+    }
+    true
+}
+
+fn loop_histogram_needles(source Expr, fields List[BagField]) List[Expr] {
+    let values = new[Expr]()
+    var index = 0
+    while index < length(fields) {
+        let domain = get(fields, index).domain
+        push(values, if domain == ScalarDomain.Boolean {
+                proof_bool(source, false)
+            }
+            else if domain == ScalarDomain.Text {
+                proof_expr(source, ExprKind.Text, 3, "", -1, [])
+            }
+            else {
+                proof_expr(source, ExprKind.Integer, 1, "0", -1, [])
+            })
+        index = index + 1
+    }
+    values
 }
 
 fn loop_histogram_root(proof Verification, loop Expr, entry State, local Int) Bool {
@@ -144,9 +174,9 @@ fn loop_histogram_enabled(proof Verification, loop Expr) Bool {
         return false
     }
     var column = 0
-    while column < length(proof.histogram_paths) {
+    while column < length(proof.histogram_keys) {
         let terms = new[LoopHistogramTerm]()
-        loop_histogram_transfers(proof, get(loop.children, 1), terms, get(proof.histogram_paths, column), 64, true)
+        loop_histogram_transfers(proof, get(loop.children, 1), terms, get(proof.histogram_keys, column), 64, true)
         if length(terms) != 0 {
             return true
         }
@@ -191,13 +221,13 @@ fn loop_histogram_entry(proof Verification, loop Expr, entry State) State {
         if loop_histogram_root(proof, loop, entry, index) {
             let receiver = proof_expr(loop, ExprKind.Local, get(proof.function.locals, index).ty, "", index, [])
             var column = 0
-            while column < length(proof.histogram_paths) {
-                let path = get(proof.histogram_paths, column)
+            while column < length(proof.histogram_keys) {
+                let path = get(proof.histogram_keys, column)
                 if histogram_list_column(proof.program, receiver.ty, path) {
                     let term = LoopHistogramTerm {
                         receiver = receiver
                         end = proof_expr(loop, ExprKind.Intrinsic, 1, "list_len", -1, [receiver])
-                        path = path
+                        fields = path
                         factor = integer(1)
                     }
                     match loop_histogram_views(proof, [term], current) {
@@ -222,7 +252,7 @@ fn loop_histogram_views(proof Verification, terms List[LoopHistogramTerm], state
     while index < length(terms) {
         let term = get(terms, index)
         let value = count_value(term.receiver, term.receiver,
-            proof_expr(term.receiver, ExprKind.Integer, 1, "0", -1, []), term.end, term.path)
+            loop_histogram_needles(term.receiver, term.fields), term.end, term.fields)
         current = loop_guard_views(proof, value, current)?
         index = index + 1
     }
@@ -235,7 +265,7 @@ fn loop_histogram_terms(terms List[LoopHistogramTerm], state State) Result[List[
     while index < length(terms) {
         let term = get(terms, index)
         let value = count_value(term.receiver, term.receiver,
-            proof_expr(term.receiver, ExprKind.Integer, 1, "0", -1, []), term.end, term.path)
+            loop_histogram_needles(term.receiver, term.fields), term.end, term.fields)
         match integer_term(counted_value(value, state)?)? {
             IntegerTerm.Count(column, _) => {
                 push(output, BagTerm {
@@ -268,11 +298,11 @@ fn loop_histogram_add(proof Verification, candidates List[LoopCandidate], terms 
     }
 }
 
-fn loop_histogram_term(terms List[LoopHistogramTerm], receiver Expr, end Expr, path List[Int], factor Int) {
+fn loop_histogram_term(terms List[LoopHistogramTerm], receiver Expr, end Expr, path List[BagField], factor Int) {
     var index = 0
     while index < length(terms) {
         let term = get(terms, index)
-        if exact_expression(term.receiver, receiver) && exact_expression(term.end, end) && same_projection(term.path, path) &&
+        if exact_expression(term.receiver, receiver) && exact_expression(term.end, end) && same_bag_fields(term.fields, path) &&
         compare(term.factor, integer(factor)) == 0 {
             return
         }
@@ -281,14 +311,14 @@ fn loop_histogram_term(terms List[LoopHistogramTerm], receiver Expr, end Expr, p
     push(terms, LoopHistogramTerm {
             receiver = receiver
             end = end
-            path = path
+            fields = path
             factor = integer(factor)
         })
 }
 
 // Reads and writes suggest prefix conservation. This is never an operation
 // summary: every actual backedge, alias effect and fault still gets checked.
-fn loop_histogram_transfers(proof Verification, value Expr, terms List[LoopHistogramTerm], path List[Int], depth Int, nested Bool) {
+fn loop_histogram_transfers(proof Verification, value Expr, terms List[LoopHistogramTerm], path List[BagField], depth Int, nested Bool) {
     if depth <= 0 || (!nested && value.kind == ExprKind.While) || length(terms) >= 8 {
         return
     }
@@ -309,10 +339,21 @@ fn loop_histogram_transfers(proof Verification, value Expr, terms List[LoopHisto
             } else {
                 proof_expr(value, ExprKind.Intrinsic, 1, "list_len", -1, [receiver])
             }
-            let source_path = count_read_path(read)
+            let prefix = count_read_path(read)
+            let source_path = new[BagField]()
             var field = 0
             while field < length(path) {
-                push(source_path, get(path, field))
+                let selected = get(path, field)
+                let projected = clone(prefix)
+                var index = 0
+                while index < length(selected.path) {
+                    push(projected, get(selected.path, index))
+                    index = index + 1
+                }
+                push(source_path, BagField {
+                        path = projected,
+                        domain = selected.domain
+                    })
                 field = field + 1
             }
             if histogram_list_column(proof.program, receiver.ty, path) &&
@@ -337,9 +378,9 @@ fn loop_histogram_candidates(proof Verification, loop Expr,
     var index = 0
     var transferred = false
     var column = 0
-    while column < length(proof.histogram_paths) {
+    while column < length(proof.histogram_keys) {
         let transfers = new[LoopHistogramTerm]()
-        loop_histogram_transfers(proof, get(loop.children, 1), transfers, get(proof.histogram_paths, column), 64, false)
+        loop_histogram_transfers(proof, get(loop.children, 1), transfers, get(proof.histogram_keys, column), 64, false)
         loop_histogram_add(proof, candidates, transfers, entry)
         transferred = transferred || length(transfers) != 0
         column = column + 1
@@ -356,13 +397,13 @@ fn loop_histogram_candidates(proof Verification, loop Expr,
                     push(roots, receiver)
                     let size = proof_expr(loop, ExprKind.Intrinsic, 1, "list_len", -1, [receiver])
                     var column = 0
-                    while column < length(proof.histogram_paths) {
-                        let path = get(proof.histogram_paths, column)
+                    while column < length(proof.histogram_keys) {
+                        let path = get(proof.histogram_keys, column)
                         if get(writes, index) && histogram_list_column(proof.program, ty, path) {
                             loop_histogram_add(proof, candidates, [LoopHistogramTerm {
                                         receiver = receiver
                                         end = size
-                                        path = path
+                                        fields = path
                                         factor = integer(1)
                                     }], entry)
                         }
@@ -392,21 +433,21 @@ fn loop_histogram_candidates(proof Verification, loop Expr,
                     let b = get(roots, second)
                     if !get(writes, a.index) && !get(writes, b.index) {
                         var column = 0
-                        while column < length(proof.histogram_paths) {
-                            let path = get(proof.histogram_paths, column)
+                        while column < length(proof.histogram_keys) {
+                            let path = get(proof.histogram_keys, column)
                             if histogram_list_column(proof.program, a.ty, path) &&
                             histogram_list_column(proof.program, b.ty, path) {
                                 loop_histogram_add(proof, candidates, [
                                         LoopHistogramTerm {
                                             receiver = a
                                             end = cut
-                                            path = path
+                                            fields = path
                                             factor = integer(1)
                                         },
                                         LoopHistogramTerm {
                                             receiver = b
                                             end = cut
-                                            path = path
+                                            fields = path
                                             factor = integer(-1)
                                         },
                                     ], entry)

@@ -44,7 +44,7 @@ enum IntegerTerm {
     Linear(Linear)
     Apply(Text, List[IntegerTerm])
     Select(Int, List[Int], Linear)
-    Count(BagColumn, List[IntegerTerm])
+    Count(BagColumn, List[PredicateKey])
     TextLength(TextValue)
     TextByte(TextValue, List[IntegerTerm])
     Function(FunctionApplication)
@@ -57,20 +57,44 @@ enum ScalarDomain {
     Float
 }
 
+record BagField {
+    path List[Int]
+    domain ScalarDomain
+}
+
 record BagColumn {
     contents Int
-    path List[Int]
+    fields List[BagField]
 }
 
 fn bag_column(contents Int) BagColumn {
     BagColumn {
         contents = contents
-        path = []
+        fields = [BagField {
+                path = []
+                domain = ScalarDomain.Integer
+            }]
     }
 }
 
 fn same_bag_column(first BagColumn, second BagColumn) Bool {
-    first.contents == second.contents && same_projection(first.path, second.path)
+    first.contents == second.contents && same_bag_fields(first.fields, second.fields)
+}
+
+fn same_bag_fields(first List[BagField], second List[BagField]) Bool {
+    if length(first) != length(second) {
+        return false
+    }
+    var index = 0
+    while index < length(first) {
+        let a = get(first, index)
+        let b = get(second, index)
+        if a.domain != b.domain || !same_projection(a.path, b.path) {
+            return false
+        }
+        index = index + 1
+    }
+    true
 }
 
 record BagTerm {

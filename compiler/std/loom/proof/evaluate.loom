@@ -199,6 +199,9 @@ fn binary(operator Text, a Value, b Value) Result[Value, Text] {
 }
 
 fn pure(expr Expr, state State) Result[Value, Text] {
+    if count_column_expression(expr) {
+        return pure(get(expr.children, 0), state)
+    }
     if logical_expression(expr) {
         return if expr.text == "proof_defined" {
             Result.Ok(Value.Boolean(operation_safety(get(expr.children, 0), state)?))

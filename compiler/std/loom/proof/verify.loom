@@ -25,7 +25,7 @@ record Verification {
     preservation List[Expr]
     identity_stores Bool
     histograms Bool
-    histogram_paths List[List[Int]]
+    histogram_keys List[List[BagField]]
     protected List[InputGuarantee]
     body_calls List[Int]
     capture_returns Bool
@@ -1085,7 +1085,7 @@ fn contract_verification(program Program, function Function, backend ProofBacken
     Result.Ok(Verification {
             function = expanded
             histograms = loop_histogram_requested(expanded.postconditions)
-            histogram_paths = loop_histogram_paths(expanded.postconditions)
+            histogram_keys = loop_histogram_keys(expanded.postconditions)
             shared = shared
             ..ordinary
         })

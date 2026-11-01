@@ -37,10 +37,7 @@ fn integer_bounds(value IntegerTerm, facts List[Predicate], budget List[Int]) Re
                 high = integer(255)
             })
         IntegerTerm.Count(_, inputs) => {
-            if length(inputs) != 2 {
-                return Result.Err("invalid count operands")
-            }
-            let bounds = integer_bounds(get(inputs, 0), facts, budget)?
+            let bounds = integer_bounds(IntegerTerm.Linear(count_size(inputs)?), facts, budget)?
             Result.Ok(Bounds {
                     low = integer(0)
                     high = if compare(bounds.high, integer(0)) > 0 {

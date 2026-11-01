@@ -118,7 +118,7 @@ fn intrinsic_defined(expr Expr, state State) Result[Bool, Text] {
         discard enum_projection(expr.text, expr.ty, inputs)?
         return Result.Ok(true)
     }
-    if count_expression(expr) {
+    if count_expression(expr) || count_column_expression(expr) {
         return Result.Ok(true)
     }
     if list_read_expression(expr) {

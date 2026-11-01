@@ -93,7 +93,7 @@ fn text_range_index_budget(value IntegerTerm, budget List[Int]) Bool {
         IntegerTerm.TextByte(text, inputs) => text_range_budget(text, budget) &&
         text_range_index_budget(get(inputs, 0), budget)
         IntegerTerm.Apply(_, inputs) => text_range_indices_budget(inputs, budget)
-        IntegerTerm.Count(_, inputs) => text_range_indices_budget(inputs, budget)
+        IntegerTerm.Count(_, inputs) => predicate_key_sizes(inputs, budget)
         _ => true
     }
 }

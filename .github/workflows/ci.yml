@@ -17,7 +17,8 @@ jobs:
   macos-llvm22:
     name: macOS native compiler (LLVM 22)
     runs-on: macos-15
-    timeout-minutes: 60
+    # The cold native gate and source/toolchain trials share this job.
+    timeout-minutes: 90
     env:
       CARGO_TERM_COLOR: always
     steps:

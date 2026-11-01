@@ -54,12 +54,12 @@ fn same_bag_terms(first List[BagTerm], second List[BagTerm]) Bool {
 
 // Whole finite histograms obey the same prefix-extension law as individual
 // occurrence counts. No read, array extent or source evaluation is authorized.
-fn smt_bag_extension(writer SmtWriter, array Text, size Linear) Result[Bool, Text] {
-    let empty = "((as const (Array Int Int)) 0)"
+fn smt_bag_extension(writer SmtWriter, array SmtBag, size Linear) Result[Bool, Text] {
+    let empty = smt_empty_bag(array)
     smt_assert(writer, concat("(= ", concat(smt_bag(writer, array, constant(integer(0)))?, concat(" ", concat(empty, ")")))))
     let last = add(size, constant(integer(-1)))
     let before = smt_bag(writer, array, last)?
-    let item = concat("(select ", concat(array, concat(" ", concat(smt_linear(writer, last)?, ")"))))
+    let item = concat("(select ", concat(array.array, concat(" ", concat(smt_linear(writer, last)?, ")"))))
     let next = concat("(store ", concat(before, concat(" ", concat(item,
                     concat(" (+ (select ", concat(before, concat(" ", concat(item, ") 1))"))))))))
     let law = concat("(=> (> ", concat(smt_linear(writer, size)?, concat(" 0) (= ",
@@ -70,14 +70,21 @@ fn smt_bag_extension(writer SmtWriter, array Text, size Linear) Result[Bool, Tex
 
 fn smt_bag_balance(writer SmtWriter, terms List[BagTerm]) Result[Text, Text] {
     let terms = balanced_bag_terms(terms)
-    let empty = "((as const (Array Int Int)) 0)"
+    if length(terms) == 0 {
+        return Result.Ok("true")
+    }
+    let first = smt_histogram(writer, get(terms, 0).column)?
+    let empty = smt_empty_bag(first)
     var positive = empty
     var negative = empty
     var index = 0
     while index < length(terms) {
         discard smt_step(writer, 0)?
         let term = get(terms, index)
-        let array = smt_array(writer, term.column.contents, term.column.path)
+        let array = smt_histogram(writer, term.column)?
+        if array.sort != first.sort {
+            return Result.Err("histogram balance key sorts differ")
+        }
         discard smt_bag_extension(writer, array, term.size)?
         var part = smt_bag(writer, array, term.size)?
         let factor = if term.factor.negative {
@@ -86,7 +93,7 @@ fn smt_bag_balance(writer SmtWriter, terms List[BagTerm]) Result[Text, Text] {
             term.factor
         }
         if compare(factor, integer(1)) != 0 {
-            let coefficient = concat("((as const (Array Int Int)) ", concat(smt_number(factor), ")"))
+            let coefficient = concat("((as const (Array ", concat(array.sort, concat(" Int)) ", concat(smt_number(factor), ")"))))
             part = concat("((_ map (* (Int Int) Int)) ", concat(part, concat(" ", concat(coefficient, ")"))))
         }
         if term.factor.negative {

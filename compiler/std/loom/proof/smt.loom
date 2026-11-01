@@ -38,6 +38,8 @@ record SmtWriter {
     counts List[Linear]
     columns List[SmtColumn]
     prefixes List[SmtPrefix]
+    histograms List[BagColumn]
+    writes List[SmtWrite]
     assertions std.map.Map[Text, Bool]
     quantifiers List[SmtBinder]
     relation_search List[Bool]
@@ -487,8 +489,8 @@ fn smt_predicate(writer SmtWriter, value Predicate, depth Int) Result[Text, Text
         Predicate.Variable(id) => Result.Ok(smt_name(writer, "b", id, "Bool"))
         Predicate.BagBalance(terms) => smt_bag_balance(writer, terms)
         Predicate.BagEqual(before, size, after, count) => {
-            let first = smt_bag(writer, smt_array(writer, before.contents, before.path), size)?
-            let second = smt_bag(writer, smt_array(writer, after.contents, after.path), count)?
+            let first = smt_bag(writer, smt_histogram(writer, before)?, size)?
+            let second = smt_bag(writer, smt_histogram(writer, after)?, count)?
             Result.Ok(concat("(= ", concat(first, concat(" ", concat(second, ")")))))
         }
         Predicate.IntegerCompare(relation, left, right) => {
@@ -536,6 +538,17 @@ fn smt_predicate(writer SmtWriter, value Predicate, depth Int) Result[Text, Text
             let stored = concat("(store ", concat(previous, concat(" ", concat(position,
                             concat(" ", concat(term, ")"))))))
             let equation = concat("(= ", concat(current, concat(" ", concat(stored, ")"))))
+            if length(writer.counts) != 0 {
+                push(writer.writes, SmtWrite {
+                        before = before,
+                        after = after,
+                        path = path,
+                        index = index,
+                        value = value,
+                        reference = equation,
+                        quantifiers = writer.quantifiers
+                    })
+            }
             if length(writer.counts) == 0 || domain != ScalarDomain.Integer {
                 return Result.Ok(equation)
             }
@@ -544,7 +557,7 @@ fn smt_predicate(writer SmtWriter, value Predicate, depth Int) Result[Text, Text
             var extent = 0
             while extent < length(writer.counts) {
                 smt_append(output, " ")
-                smt_append(output, smt_bag_store(writer, previous, stored, position, term, get(writer.counts, extent))?)
+                smt_append(output, smt_bag_store(writer, integer_bag(previous), stored, position, term, get(writer.counts, extent))?)
                 extent = extent + 1
             }
             smt_append(output, ")")
@@ -610,6 +623,8 @@ fn smt_query(obligations List[Obligation], extended Bool) Result[Text, Text] {
         counts = counts
         columns = new[SmtColumn]()
         prefixes = new[SmtPrefix]()
+        histograms = []
+        writes = []
         assertions = std.map.new[Text, Bool]()
         quantifiers = []
         relation_search = [false]
@@ -646,7 +661,9 @@ fn smt_query(obligations List[Obligation], extended Bool) Result[Text, Text] {
     // out their value laws. This changes search only: retain every obligation,
     // source premise and theory law, with the host's ordinary time budget.
     discard smt_support_instances(writer)?
+    discard smt_histogram_frames(writer)?
     discard smt_prefix_frames(writer)?
+    discard smt_joint_writes(writer)?
     let options = if get(writer.relation_search, 0) {
         "(set-option :smt.qi.eager_threshold 1)\n"
     } else {
