@@ -300,13 +300,22 @@ fn proved_helper_contract(context Context, program std.loom.typed.Program, proof
             program.function_identities, evidence.assertions))
 }
 
-fn loop_assertion_hint(value Expr, inside Bool) Bool {
-    if inside && value.kind == ExprKind.Assert {
+fn leading_assertion(value Expr) Bool {
+    if value.kind == ExprKind.Assert {
+        return true
+    }
+    value.kind == ExprKind.Block && length(value.children) != 0 &&
+    leading_assertion(get(value.children, 0))
+}
+
+fn loop_assertion_hint(value Expr) Bool {
+    if value.kind == ExprKind.While && length(value.children) == 2 &&
+    leading_assertion(get(value.children, 1)) {
         return true
     }
     var index = 0
     while index < length(value.children) {
-        if loop_assertion_hint(get(value.children, index), inside || value.kind == ExprKind.While) {
+        if loop_assertion_hint(get(value.children, index)) {
             return true
         }
         index = index + 1
@@ -316,7 +325,7 @@ fn loop_assertion_hint(value Expr, inside Bool) Bool {
         let body = get(value.arms, index).body
         var item = 0
         while item < length(body) {
-            if loop_assertion_hint(get(body, item), inside) {
+            if loop_assertion_hint(get(body, item)) {
                 return true
             }
             item = item + 1
@@ -334,7 +343,7 @@ fn revalidate_assertion_proofs(env Environment, program std.loom.typed.Program) 
         let function = get(program.functions, index)
         if has_assertion(function.body, 2) ||
         (length(function.postconditions) == 0 && has_assertion(function.body, -1) &&
-            loop_assertion_hint(function.body, false)) {
+            loop_assertion_hint(function.body)) {
             var checked = without_assertion_proofs(function)
             if has_assertion(checked.body, -1) || has_assertion(checked.body, 2) {
                 let types = match expanded_invariant_types(env, function) {
