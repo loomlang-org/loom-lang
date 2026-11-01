@@ -201,4 +201,11 @@ ensures result == count_id(values, id) + count_label(values, label) {{
         !output.status.success(),
         "union counted overlapping matches twice"
     );
+    let source = package.path().join("main.loom");
+    let without_claim = fs::read_to_string(&source).unwrap().replace(
+        "ensures result == count_id(values, id) + count_label(values, label)",
+        "",
+    );
+    fs::write(source, without_claim).unwrap();
+    success(&common::loom(&["check", package.path().to_str().unwrap()]));
 }

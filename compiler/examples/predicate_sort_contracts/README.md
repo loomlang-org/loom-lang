@@ -17,7 +17,7 @@ combines equality and inequality counts under a Boolean parameter;
 `empty_prefix` proves zero for a nonpositive scan bound. The original evaluation
 and access checks remain separate from this mathematical arithmetic.
 
-Atoms use the existing same-index Int/Bool/Text equality keys. Boolean element
+Atoms use the existing same-index Int/Bool/Text equality keys with stable needles. Boolean element
 reads and `!=` reuse those rules. Expansion keeps its existing work and tree
 limits; exhausted reasoning remains unproved. This adds neither arbitrary
 predicate induction nor Float, enum or mutable-graph count keys.
