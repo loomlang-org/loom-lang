@@ -62,6 +62,9 @@ fn intrinsic_operation(primitive Text, ty Int, arity Int) ProofOperation {
     if name == "proof_count" && ty == 1 && arity >= 3 {
         return operation_shape(arity, OperandFlow.Eager, true, true)
     }
+    if name == "proof_column" && arity >= 1 {
+        return operation_shape(arity, OperandFlow.Eager, false, true)
+    }
     if name == "entry_list" && arity == 1 {
         return operation_shape(1, OperandFlow.Eager, true, true)
     }

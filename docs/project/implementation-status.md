@@ -104,6 +104,13 @@ The [record column trial](../../compiler/examples/record_sort_contracts) compose
 entry counts across nested integer fields, separate sibling columns and scalar
 key extraction. Column identities retain complete field paths; independent
 column counts do not imply whole-record permutation or preserve field pairings.
+The [complete record trial](../../compiler/examples/value_sort_contracts) uses
+joint `Int`/`Bool`/`Text` keys to prove full-row entry permutation, retaining
+field associations through unknown effectful comparisons. Equalities must observe
+one indexed element; conjunction and operand order normalize. Generic finite
+histogram laws reuse the existing immutable-value encoding and preserve source
+store premises, indices and scopes. Float, enum and mutable-graph equality remain
+open, as do general comparator laws.
 Finite relation proofs also accept a loop-defined partial predicate under
 explicit comparability and transitivity requirements. Relation-specific solver
 scheduling retains both value and successful-evaluation obligations within the
@@ -424,7 +431,7 @@ supported theories and boundaries. The central rules are:
   distances on the same content version and field column. The conditional
   induction law retains shifted ranges and outer scopes, excluding distinctness
   and IEEE comparisons. A native merge fixture removes its proved loop scans;
-  global comparator laws and standard-library ordering/permutation remain open.
+  global comparator laws and standard-library ordering remain open.
   A conditional finite-induction rule also composes admitted adjacent predicates
   under a transitivity premise for the exact range. Text length and record
   lexicographic relations use ordinary source contracts and nested `all` calls;
@@ -448,7 +455,8 @@ supported theories and boundaries. The central rules are:
   across a package boundary to prove ordering and permutation; native lowering
   removes all eleven split/merge invariant scans. Completed recursive groups
   retain the assertion evidence from their original successful proof. General
-  comparator laws and ordering/permutation proofs for `std.list.sorted` remain open.
+  comparator laws and ordering proofs for `std.list.sorted` remain open;
+  integer and admitted structural-key entry permutations are proved separately.
   Its generic List entry count now composes through the ordinary source body,
   unknown comparison callbacks and checked constrained construction. Element
   exclusions distinguish child graphs from their container headers, retaining

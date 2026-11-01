@@ -3,11 +3,13 @@ import std.text.replace
 record SmtSupportKey {
     value Text
     quantifiers List[SmtBinder]
+    sort Text
 }
 
 record SmtSupportLaw {
     condition Text
     quantifiers List[SmtBinder]
+    sort Text
 }
 
 // Every supported key has an index witness in the finite prefix. A property
@@ -38,12 +40,13 @@ fn smt_support(writer SmtWriter, identity Int, start Linear, end Linear,
             let selected = concat("(select ", concat(array, concat(" ", concat(position, ")"))))
             let property = std.text.replace(condition, selected, "loom_support_key")
             if property != condition && !smt_mentions(property, name) {
-                let bag = smt_bag(writer, array, end)?
+                let bag = smt_bag(writer, integer_bag(array), end)?
                 let count = concat("(select ", concat(bag, " loom_support_key)"))
                 let supported = smt_boolean_pair(">", count, "0")
                 let implication = smt_boolean_pair("=>", supported, property)
                 push(writer.support_laws, SmtSupportLaw {
                         condition = smt_boolean_pair("=>", premise, implication)
+                        sort = "Int"
                         quantifiers = writer.quantifiers
                     })
                 return Result.Ok(true)
@@ -54,7 +57,7 @@ fn smt_support(writer SmtWriter, identity Int, start Linear, end Linear,
     Result.Ok(true)
 }
 
-fn smt_count_presence(writer SmtWriter, column BagColumn, size Linear,
+fn smt_count_presence(writer SmtWriter, array SmtBag, size Linear,
     needle Text, count Text) Result[Bool, Text] {
     if !writer.extended {
         return Result.Ok(true)
@@ -62,15 +65,15 @@ fn smt_count_presence(writer SmtWriter, column BagColumn, size Linear,
     discard smt_step(writer, 0)?
     push(writer.support_keys, SmtSupportKey {
             value = needle
+            sort = array.sort
             quantifiers = writer.quantifiers
         })
     // A matching in-prefix index witnesses a positive count. This supplies no
     // source access/evaluation fact, nor a witness merely from seeing a term.
     let end = smt_linear(writer, size)?
     let value = needle
-    let array = smt_array(writer, column.contents, column.path)
     let index = "loom_occurrence_index"
-    let selected = concat("(select ", concat(array, concat(" ", concat(index, ")"))))
+    let selected = concat("(select ", concat(array.array, concat(" ", concat(index, ")"))))
     let lower = smt_boolean_pair("<=", "0", index)
     let upper = smt_boolean_pair("<", index, end)
     let member = smt_boolean_pair("=", selected, value)
@@ -104,7 +107,7 @@ fn smt_support_instances(writer SmtWriter) Result[Bool, Text] {
         while key_index < length(writer.support_keys) {
             discard smt_step(writer, 0)?
             let key = get(writer.support_keys, key_index)
-            if support_scopes_match(law.quantifiers, key.quantifiers) &&
+            if law.sort == key.sort && support_scopes_match(law.quantifiers, key.quantifiers) &&
             support_no_capture(law, key) {
                 var condition = std.text.replace(law.condition, "loom_support_key", key.value)
                 let binders = if length(law.quantifiers) >= length(key.quantifiers) {

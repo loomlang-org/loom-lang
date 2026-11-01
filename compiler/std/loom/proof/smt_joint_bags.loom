@@ -1,0 +1,179 @@
+record SmtWrite {
+    before Int
+    after Int
+    path List[Int]
+    index Linear
+    value ArrayScalar
+    reference Text
+    quantifiers List[SmtBinder]
+}
+
+// Close the requested key vocabulary across storage-version edges. This adds
+// no facts: partial writes still need all their key columns accounted for.
+fn smt_histogram_frames(writer SmtWriter) Result[Bool, Text] {
+    var selected = 0
+    while selected < length(writer.histograms) {
+        let column = get(writer.histograms, selected)
+        if !integer_bag_column(column) {
+            var index = 0
+            while index < length(writer.prefixes) {
+                discard smt_step(writer, 0)?
+                let frame = get(writer.prefixes, index)
+                if column.contents == frame.before || column.contents == frame.after {
+                    discard smt_histogram(writer, BagColumn {
+                            contents = if column.contents == frame.before {
+                                frame.after
+                            } else {
+                                frame.before
+                            }
+                            ..column
+                        })?
+                }
+                index = index + 1
+            }
+            index = 0
+            while index < length(writer.writes) {
+                discard smt_step(writer, 0)?
+                let write = get(writer.writes, index)
+                if column.contents == write.before || column.contents == write.after {
+                    discard smt_histogram(writer, BagColumn {
+                            contents = if column.contents == write.before {
+                                write.after
+                            } else {
+                                write.before
+                            }
+                            ..column
+                        })?
+                }
+                index = index + 1
+            }
+        }
+        selected = selected + 1
+    }
+    Result.Ok(true)
+}
+
+fn smt_joint_prefix_bags(writer SmtWriter, frame SmtPrefix) Result[Bool, Text] {
+    var selected = 0
+    while selected < length(writer.histograms) {
+        let column = get(writer.histograms, selected)
+        if column.contents == frame.before && !integer_bag_column(column) {
+            let before = smt_histogram(writer, column)?
+            let after = smt_histogram(writer, BagColumn {
+                    contents = frame.after,
+                    ..column
+                })?
+            var index = 0
+            while index < length(writer.counts) {
+                discard smt_step(writer, 0)?
+                let size = get(writer.counts, index)
+                let limit = smt_linear(writer, size)?
+                let extent = smt_linear(writer, frame.size)?
+                let condition = concat("(and ", concat(frame.reference,
+                        concat(" (<= 0 ", concat(limit, concat(") (<= ", concat(limit, concat(" ", concat(extent, "))"))))))))
+                let equal = smt_boolean_pair("=", smt_bag(writer, before, size)?, smt_bag(writer, after, size)?)
+                smt_assert(writer, bag_bound_scope(smt_boolean_pair("=>", condition, equal), [frame.size, size]))
+                index = index + 1
+            }
+        }
+        selected = selected + 1
+    }
+    Result.Ok(true)
+}
+
+fn bag_scalar_key(value ArrayScalar) Result[PredicateKey, Text] {
+    match value {
+        ArrayScalar.Integer(term) => Result.Ok(PredicateKey.Integer(term))
+        ArrayScalar.Boolean(values) => Result.Ok(PredicateKey.Boolean(values))
+        ArrayScalar.Text(term) => Result.Ok(PredicateKey.Text(term))
+        ArrayScalar.Float(_) => Result.Err("IEEE equality cannot supply a histogram key")
+    }
+}
+
+fn joint_write_match(first SmtWrite, second SmtWrite) Bool {
+    first.before == second.before && first.after == second.after &&
+    compare(first.index.constant, second.index.constant) == 0 && same_terms(first.index.terms, second.index.terms) &&
+    length(first.quantifiers) == length(second.quantifiers) && support_scopes_match(first.quantifiers, second.quantifiers)
+}
+
+// Map/store distribution is a theory implication, never permission to write.
+// Every component equation remains a premise, in its original lexical scope.
+fn smt_joint_write(writer SmtWriter, column BagColumn, seed SmtWrite) Result[Bool, Text] {
+    let keys = new[PredicateKey]()
+    var premise = "true"
+    var field = 0
+    while field < length(column.fields) {
+        let selected = get(column.fields, field)
+        var found = false
+        var index = 0
+        while index < length(writer.writes) && !found {
+            discard smt_step(writer, 0)?
+            let write = get(writer.writes, index)
+            if joint_write_match(seed, write) && same_projection(selected.path, write.path) &&
+            selected.domain == scalar_domain(write.value) {
+                push(keys, bag_scalar_key(write.value)?)
+                premise = smt_boolean_pair("and", premise, write.reference)
+                found = true
+            }
+            index = index + 1
+        }
+        if !found {
+            return Result.Ok(true)
+        }
+        field = field + 1
+    }
+    let before = smt_histogram(writer, BagColumn {
+            contents = seed.before,
+            ..column
+        })?
+    let after = smt_histogram(writer, BagColumn {
+            contents = seed.after,
+            ..column
+        })?
+    let position = smt_linear(writer, seed.index)?
+    let value = smt_bag_key(writer, column, keys, 0)?
+    let stored = concat("(store ", concat(before.array, concat(" ", concat(position, concat(" ", concat(value, ")"))))))
+    let equal = smt_boolean_pair("=", after.array, stored)
+    var law = smt_boolean_pair("=>", premise, equal)
+    var index = length(seed.quantifiers)
+    while index > 0 {
+        index = index - 1
+        law = smt_binder(get(seed.quantifiers, index), law)
+    }
+    smt_assert(writer, law)
+    index = 0
+    while index < length(writer.counts) {
+        discard smt_step(writer, 0)?
+        var extension = smt_bag_store(writer, before, stored, position, value, get(writer.counts, index))?
+        var scope = length(seed.quantifiers)
+        while scope > 0 {
+            scope = scope - 1
+            extension = smt_binder(get(seed.quantifiers, scope), extension)
+        }
+        smt_assert(writer, extension)
+        index = index + 1
+    }
+    Result.Ok(true)
+}
+
+fn smt_joint_writes(writer SmtWriter) Result[Bool, Text] {
+    var selected = 0
+    while selected < length(writer.histograms) {
+        let column = get(writer.histograms, selected)
+        if !integer_bag_column(column) {
+            let first = get(column.fields, 0)
+            var index = 0
+            while index < length(writer.writes) {
+                discard smt_step(writer, 0)?
+                let write = get(writer.writes, index)
+                if write.after == column.contents && same_projection(write.path, first.path) &&
+                scalar_domain(write.value) == first.domain {
+                    discard smt_joint_write(writer, column, write)?
+                }
+                index = index + 1
+            }
+        }
+        selected = selected + 1
+    }
+    Result.Ok(true)
+}

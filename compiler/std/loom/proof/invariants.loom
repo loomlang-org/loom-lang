@@ -230,3 +230,20 @@ fn quantified_type_invariants(proof Verification, primitive Text, ty Int,
     }
     Result.Ok(current)
 }
+
+// Count descriptors request only the observed scalar columns, not every field
+// of the enclosing record. Ordinary reads retain their complete checked type.
+fn counted_type_invariants(proof Verification, expr Expr, contents Int, size Linear, state State) Result[State, Text] {
+    if !count_expression(expr) {
+        return quantified_type_invariants(proof, expr.text, expr.ty, contents, size, [], state)
+    }
+    let fields = count_fields(expr)
+    var current = state
+    var index = 0
+    while index < length(fields) {
+        let field = get(fields, index)
+        current = quantified_type_invariants(proof, expr.text, bag_type(field.domain), contents, size, field.path, current)?
+        index = index + 1
+    }
+    Result.Ok(current)
+}

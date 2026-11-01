@@ -8,8 +8,8 @@ fn smt_prefix_bags(writer SmtWriter, frame SmtPrefix) Result[Bool, Text] {
     while column_index < length(writer.columns) {
         let column = get(writer.columns, column_index)
         if column.identity == frame.before && column.domain == ScalarDomain.Integer {
-            let before = smt_array(writer, frame.before, column.path)
-            let after = smt_array(writer, frame.after, column.path)
+            let before = integer_bag(smt_array(writer, frame.before, column.path))
+            let after = integer_bag(smt_array(writer, frame.after, column.path))
             let limit = smt_linear(writer, frame.size)?
             var index = 0
             while index < length(writer.counts) {
@@ -31,5 +31,6 @@ fn smt_prefix_bags(writer SmtWriter, frame SmtPrefix) Result[Bool, Text] {
         }
         column_index = column_index + 1
     }
+    discard smt_joint_prefix_bags(writer, frame)?
     Result.Ok(true)
 }

@@ -26,7 +26,10 @@ test fn finite_histogram_algebra_cancels_only_identical_versions_and_prefixes() 
     let field = BagTerm {
         column = BagColumn {
             contents = 10
-            path = [0, 1]
+            fields = [BagField {
+                    path = [0, 1],
+                    domain = ScalarDomain.Integer
+                }]
         }
         ..third
     }

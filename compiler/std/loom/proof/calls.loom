@@ -70,7 +70,7 @@ fn verification(function Function, program Program, backend ProofBackend) Verifi
         preservation = new[Expr]()
         identity_stores = false
         histograms = loop_histogram_requested(function.postconditions)
-        histogram_paths = loop_histogram_paths(function.postconditions)
+        histogram_keys = loop_histogram_keys(function.postconditions)
         protected = []
         body_calls = new[Int]()
         capture_returns = false

@@ -131,7 +131,11 @@ composes through the library's swapped buffers and unknown effectful comparators
 using finite histogram algebra and separately checked root separation.
 Integer-column conservation also covers nested inline fields, independent
 sibling columns and extraction into scalar Lists. It does not preserve field
-pairings merely from independent column counts. General
+pairings merely from independent column counts. Joint keys now retain those
+pairings for conjunctions of `Int`, `Bool` and `Text` field equalities, proving
+complete immutable-record entry permutation through effectful comparisons.
+Conjunction and equality-operand order normalize; scalar and joint keys share
+the same finite histogram laws. Arbitrary equality predicates, general
 content induction, comparator laws and constrained shared-alias preservation
 remain open.
 
