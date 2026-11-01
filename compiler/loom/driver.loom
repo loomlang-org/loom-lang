@@ -314,14 +314,19 @@ fn prepare_loaded(options Options, loaded Project, inputs BuildInputs) Result[Pr
 
 fn prepare_checked(options Options, project Project, inputs BuildInputs, value std.loom.typed.Program,
     bindings std.loom.binding.Program) Prepared {
-    let selected = select_tests(value, options.test_filter)
+    let optimized = if options.command == "check" {
+        value
+    } else {
+        optimize_loop_assertions(value, inputs.proof_backend)
+    }
+    let selected = select_tests(optimized, options.test_filter)
     Prepared {
         inputs = inputs.files
         targets = inputs.targets
         input = if options.command == "check" {
             ""
         } else {
-            encode(lower(optimize_loop_assertions(selected, inputs.proof_backend)), inputs.targets, bindings)
+            encode(lower(selected), inputs.targets, bindings)
         }
         entry = selected.entry
         tests = length(selected.tests)

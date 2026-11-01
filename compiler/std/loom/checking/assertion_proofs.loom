@@ -370,18 +370,27 @@ fn loop_assertion_hint(value Expr) Bool {
 // caller's source IR intact and do no speculative work during ordinary checks.
 // Sequential evidence cannot remove checks in a program with shared workers.
 pub fn optimize_loop_assertions(program std.loom.typed.Program, backend ProofBackend) std.loom.typed.Program {
+    let tests = new[Bool]()
     var index = 0
     while index < length(program.functions) {
         if worker_expression(get(program.functions, index).body) {
             return program
         }
+        push(tests, false)
+        index = index + 1
+    }
+    index = 0
+    while index < length(program.tests) {
+        set(tests, get(program.tests, index), true)
         index = index + 1
     }
     let functions = new[Function]()
     index = 0
     while index < length(program.functions) {
         var function = get(program.functions, index)
-        if length(function.postconditions) == 0 && has_assertion(function.body, -1) &&
+        // Test assertions belong to test execution, not speculative proofs of
+        // the test implementation. Library callees still receive optimization.
+        if !get(tests, index) && length(function.postconditions) == 0 && has_assertion(function.body, -1) &&
         loop_assertion_hint(function.body) {
             // A private true goal observes execution without adding an API
             // guarantee. Retain only independently checked assertion evidence.

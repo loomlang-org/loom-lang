@@ -26,6 +26,33 @@ test fn loop_assertions_without_ensures_remain_optional_and_require_evidence() {
     let lowered = lower(optimized)
     assert dynamic_count(get(lowered.functions, get(lowered.exports, 0)).body, ExprKind.Assert) == 0
     assert dynamic_count(get(lowered.functions, get(lowered.exports, 1)).body, ExprKind.Assert) == 1
+    let project = fixture_project(source_files("""
+        test fn runtime_assertions() {
+            var index = 0
+            while index < 3 {
+                assert index >= 0
+                index = index + 1
+            }
+        }
+        """))
+    let bound = match bind(project, true) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            assert false
+            return
+        }
+    }
+    let tests = match check(bound) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            assert false
+            return
+        }
+    }
+    assert length(tests.tests) == 1
+    let test_program = optimize_loop_assertions(tests, std.loom.proof.no_proof_backend())
+    let body = get(test_program.functions, get(test_program.tests, 0)).body
+    assert !has_assertion(body, 1) && has_assertion(body, -1)
 }
 
 test fn proved_assertion_operands_stay_in_analysis_and_leave_native_lowering() {

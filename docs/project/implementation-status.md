@@ -99,6 +99,7 @@ root separation checked independently. Loop storage effects share one traversal
 within the original work budget. Bodies without ensures can also eliminate
 proved loop assertions during native preparation. Ordinary checks and editor
 analysis skip that optional work; failed proofs retain their runtime checks.
+Test entry functions keep runtime assertions rather than proving the tests themselves.
 Finite relation proofs also accept a loop-defined partial predicate under
 explicit comparability and transitivity requirements. Relation-specific solver
 scheduling retains both value and successful-evaluation obligations within the
