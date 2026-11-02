@@ -50,7 +50,7 @@ fn refuted_scalar_construction(context Context, value Expr, target Int) Bool {
 // its selected invocation and predicate in a private queue; neither proof helpers
 // nor a second evaluation enter executable code. Unsupported proofs retain the
 // ordinary checked Result boundary, including the separate List isolation check.
-fn construction_proof(context Context, node Node, source Node, expected Int, value Expr, target Int) Result[Bool, Failure] {
+fn construction_proof(context Context, node Node, source Node, expected Int, value Expr, target Int, retained List[Bool]) Result[Bool, Failure] {
     let base = base_type(context.env, target)
     let stage = staging(context, node)?
     // Executable/fact calls retain their selected instance. Non-executable
@@ -121,11 +121,11 @@ fn construction_proof(context Context, node Node, source Node, expected Int, val
     }
     construction_body_proof(stage, node,
         construction_control_finish(control, body),
-        params, locals, premises, target)
+        params, locals, premises, target, retained)
 }
 
 fn construction_body_proof(stage Context, node Node, body Expr, params List[Int],
-    locals List[Local], premises List[Expr], target Int) Result[Bool, Failure] {
+    locals List[Local], premises List[Expr], target Int, retained List[Bool]) Result[Bool, Failure] {
     let base = base_type(stage.env, target)
     let result_local = length(locals)
     push(locals, Local {
@@ -152,7 +152,7 @@ fn construction_body_proof(stage Context, node Node, body Expr, params List[Int]
         runtime_name = ""
         span = node.span
     }
-    Result.Ok(proves_with_input_invariants(stage, program, proof, true, unrestricted_sequence(stage.env, target)))
+    Result.Ok(proves_with_input_invariants(stage, program, proof, true, unrestricted_sequence(stage.env, target), retained))
 }
 
 // Representational weakening retains the input's nominal entry facts. Mutable
@@ -381,7 +381,7 @@ fn construction_premises(context Context, stage Context, node Node, bindings Lis
 }
 
 fn flow_construction_proof(context Context, node Node, value Expr,
-    target Int) Result[Bool, Failure] {
+    target Int, retained List[Bool]) Result[Bool, Failure] {
     let controlled = construction_controlled(value, 0)
     let kind = get(context.env.types, base_type(context.env, target)).kind
     if controlled && (kind == TypeKind.List || kind == TypeKind.Bytes) {
@@ -412,10 +412,10 @@ fn flow_construction_proof(context Context, node Node, value Expr,
     let premises = construction_premises(context, stage, node, bindings, params, locals)
     let body = construction_control_finish(control, input)
     let scope = predicate_context(env, target, locals, 0, true)?
-    construction_body_proof(scope, node, body, params, locals, premises, target)
+    construction_body_proof(scope, node, body, params, locals, premises, target, retained)
 }
 
-fn proved_construction(context Context, node Node, source Node, expected Int, value Expr, target Int) Result[Bool, Failure] {
+fn proved_construction(context Context, node Node, source Node, expected Int, value Expr, target Int, retained List[Bool]) Result[Bool, Failure] {
     // Helper preparation must retain ordinary constructor result types.
     // Recursive construction still needs the actual predicate proof and the
     // same staging budget; entering a proof closure is not such a proof.
@@ -424,7 +424,7 @@ fn proved_construction(context Context, node Node, source Node, expected Int, va
     }
     if value.kind == ExprKind.Record || value.kind == ExprKind.List || value.kind == ExprKind.Variant || construction_view(context.env, value) ||
     (value.kind != ExprKind.Call && value.kind != ExprKind.Await && construction_controlled(value, 0)) {
-        return flow_construction_proof(context, node, value, target)
+        return flow_construction_proof(context, node, value, target, retained)
     }
     // Re-type only a known invocation, never consume an opaque saved Task a
     // second time merely to attempt an optional predicate proof.
@@ -440,9 +440,18 @@ fn proved_construction(context Context, node Node, source Node, expected Int, va
         if refuted_scalar_construction(context, value, target) {
             return Result.Ok(false)
         }
-        return flow_construction_proof(context, node, value, target)
+        return flow_construction_proof(context, node, value, target, retained)
+    }
+    // A result's declared element/field types can establish a predicate for
+    // every possible returned value. Try that independent snapshot before
+    // interpreting a call body; the executable call and its own obligations
+    // remain in the source program and are never replayed by this proof.
+    let inherited = new[Int]()
+    value_invariant_types(context.env, value.ty, new[Int](), inherited, 0)
+    if length(inherited) != 0 && flow_construction_proof(context, node, value, target, retained)? {
+        return Result.Ok(true)
     }
     // Unknown predicate proofs keep the Result boundary, but a source callee's
     // mandatory checking failure must not be hidden as a constructor mismatch.
-    construction_proof(context, node, source, expected, value, target)
+    construction_proof(context, node, source, expected, value, target, retained)
 }

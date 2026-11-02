@@ -559,7 +559,11 @@ fn constrained(context Context, node Node, declaration Int, types List[Node], in
             return Result.Ok(expression(ExprKind.Coerce, target, node, boundary, -1, expressions(value), value.falls))
         }
     }
-    if length(destination.constraint) == 1 && proved_construction(context, node, get(inputs.nodes, 0), hint, value, target)? {
+    let retained = [false]
+    if length(destination.constraint) == 1 && proved_construction(context, node, get(inputs.nodes, 0), hint, value, target, retained)? {
+        if get(retained, 0) {
+            return retained_construction(context, node, value, target, boundary)
+        }
         return Result.Ok(expression(ExprKind.Coerce, target, node, boundary, -1, expressions(value), value.falls))
     }
     let base_kind = get(context.env.types, base).kind
@@ -608,4 +612,32 @@ fn constrained(context Context, node Node, declaration Int, types List[Node], in
     push(branches, expression(ExprKind.Block, output, node, "", -1, expressions(rejected), true))
     let condition = expression(ExprKind.If, output, node, "", -1, branches, true)
     Result.Ok(expression(ExprKind.Block, output, node, boundary, -1, pair(saved, condition), value.falls))
+}
+
+// A scan theorem establishes the normal value but does not erase the original
+// predicate's possible faults, divergence or allocation. Evaluate the input
+// once, keep that pure evaluation, and return the proved type without Result.
+fn retained_construction(context Context, node Node, value Expr, target Int, boundary Text) Result[Expr, Failure] {
+    let base = base_type(context.env, target)
+    let local = length(context.locals)
+    push(context.locals, Local {
+            name = "self",
+            ty = base,
+            mutable = false,
+            is_scoped = false
+        })
+    let saved = expression(ExprKind.Let, 0, node, "", local, expressions(value), value.falls)
+    let reference = atom(ExprKind.Local, base, node, local)
+    if context.env.stage_depth >= 32 {
+        return Result.Err(error(context, node, "type constraint expansion depth exceeded; check for a dependency cycle"))
+    }
+    let env = Environment {
+        expand_data = true,
+        stage_depth = context.env.stage_depth + 1,
+        ..context.env
+    }
+    let predicate = refinement_expression(predicate_context(env, target, context.locals, local, context.emit)?, target)?
+    let evaluated = expression(ExprKind.Discard, 0, node, "", -1, expressions(predicate_at(predicate, node)), true)
+    let refined = expression(ExprKind.Coerce, target, node, "", -1, expressions(reference), true)
+    Result.Ok(expression(ExprKind.Block, target, node, boundary, -1, [saved, evaluated, refined], value.falls))
 }
