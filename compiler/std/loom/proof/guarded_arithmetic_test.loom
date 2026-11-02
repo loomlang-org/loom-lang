@@ -7,6 +7,18 @@ fn arithmetic_scan_fixture(version Int) Predicate {
     Predicate.Forall(-1, constant(integer(1)), variable(3), [Predicate.Or([disabled, ordered])])
 }
 
+test fn arithmetic_cut_planning_skips_only_contexts_without_possible_modular_scans() {
+    let guarded = arithmetic_scan_fixture(777)
+    let plain = Predicate.Forall(-1, constant(integer(1)), variable(3), [interval_order_body(777)])
+    assert cut_possible_scans([guarded], [256])
+    assert cut_possible_scans([Predicate.Or([Predicate.Variable(10), guarded])], [256])
+    assert cut_possible_scans([Predicate.Forall(-9, constant(integer(0)), variable(8), [guarded])], [256])
+    assert !cut_possible_scans([plain], [256])
+    assert !cut_possible_scans([Predicate.FloatCompare("<=", FloatValue.Literal("0.0"), FloatValue.Literal("1.0"))], [256])
+    assert cut_possible_scans([plain], [0])
+    assert !cut_possible_scans([], [0])
+}
+
 test fn saved_comparison_pivots_are_observed_before_unrelated_read_keys_fill_the_existing_limit() {
     let first = Predicate.ArrayRead(777, [], variable(4), ArrayScalar.Integer(IntegerTerm.Linear(variable(77))),
         [Predicate.Constant(true)])

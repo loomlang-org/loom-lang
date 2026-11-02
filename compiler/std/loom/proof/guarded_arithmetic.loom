@@ -716,6 +716,45 @@ fn cut_order(scan ArithmeticScan, condition Predicate, facts List[Predicate]) Op
     }
 }
 
+// A path cut needs a quantified source with a quotient/remainder guard.
+// Rule out other contexts before building read aliases and scalar projections.
+// Exhaustion preserves the ordinary discovery path; this gate adds no query,
+// candidate or fact and leaves every existing discovery limit unchanged.
+fn cut_possible_scan(value Predicate, budget List[Int]) Bool {
+    if !conjunction_step(budget) {
+        return true
+    }
+    match value {
+        Predicate.Forall(_, _, _, values) => {
+            var index = 0
+            while index < length(values) {
+                let child = get(values, index)
+                if cut_division(child) || cut_possible_scan(child, budget) {
+                    return true
+                }
+                index = index + 1
+            }
+            false
+        }
+        Predicate.Not(values) => cut_possible_scans(values, budget)
+        Predicate.And(values) => cut_possible_scans(values, budget)
+        Predicate.Or(values) => cut_possible_scans(values, budget)
+        Predicate.Equal(values) => cut_possible_scans(values, budget)
+        _ => false
+    }
+}
+
+fn cut_possible_scans(values List[Predicate], budget List[Int]) Bool {
+    var index = 0
+    while index < length(values) {
+        if cut_possible_scan(get(values, index), budget) {
+            return true
+        }
+        index = index + 1
+    }
+    false
+}
+
 fn arithmetic_cuts(backend ProofBackend, obligations List[Obligation]) List[Obligation] {
     if !backend.enabled {
         return obligations
@@ -753,6 +792,11 @@ fn arithmetic_cuts(backend ProofBackend, obligations List[Obligation]) List[Obli
                     }
                 }
             }
+        }
+        if !cut_possible_scans(obligation.facts, [256]) {
+            push(output, obligation)
+            obligation_index = obligation_index + 1
+            continue
         }
         let reads = new[ArithmeticRead]()
         cut_reads(obligation.conclusion, [], reads, true, [256])
