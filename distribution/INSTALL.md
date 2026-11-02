@@ -1,6 +1,7 @@
 # Install a local Loom toolchain archive
 
 This archive contains `bin/loom`, the adjacent `lib/loom/loom-native` bridge,
+the Loom-written `lib/loom/loom-change` command,
 `lib/loom/std`, and the core/TLS native archives. Windows uses `.exe`,
 `loom_runtime.lib` and `loom_tls.lib`; Unix uses `libloom_runtime.a` and
 `libloom_tls.a`. Only programs referencing TLS link the TLS provider.
@@ -41,6 +42,7 @@ From any working directory, run the installed compiler by its path:
 /path/to/loom-toolchain/bin/loom init hello
 /path/to/loom-toolchain/bin/loom check hello
 /path/to/loom-toolchain/bin/loom run hello
+/path/to/loom-toolchain/bin/loom change --help
 ```
 
 Use `bin/loom.exe` in those commands on Windows. The compiler locates its own
@@ -49,3 +51,8 @@ the absolute compiler path with `loom.stdRoot` left empty. This is a local
 toolchain archive, with no installer or automatic `PATH` changes. It does not
 promise compatibility with older operating systems or a stable checked-artifact
 format.
+
+`loom change` previews semantic merges, maintains declaration identities and
+applies reviewed results. Git-backed modes need Git; required contract checks
+can need Z3 on `PATH`. Preview does not execute application code. The command
+uses its bundled executable and does not need the native LLVM bridge for analysis.

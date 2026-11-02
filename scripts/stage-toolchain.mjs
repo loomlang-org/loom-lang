@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
+import { verifyChangeCommand } from "./verify-change-command.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
@@ -80,6 +81,9 @@ try {
   run(compiler, ["build", join(root, "compiler/loom"), "--std", join(privateTools, "std"),
     "--native-tool", join(privateTools, `loom-native${suffix}`),
     "--output", join(prefix, `bin/loom${suffix}`)], root, buildEnvironment);
+  console.log("Building the Loom semantic-change command...");
+  run(join(prefix, `bin/loom${suffix}`), ["build", join(root, "tools/change"),
+    "--output", join(privateTools, `loom-change${suffix}`)], root, buildEnvironment);
   const moved = join(temporary, "moved 雪 toolchain");
   await move(prefix, moved);
   prefix = moved;
@@ -103,9 +107,14 @@ try {
     throw new Error("relocated native file tool produced the wrong result");
   }
   run(loom, ["test", join(prefix, "lib/loom/std/net/tls")], app, environment);
+  const change = verifyChangeCommand(loom, join(root, "tools/change/fixtures"),
+    join(temporary, "semantic change"), environment);
   // Check/editor use needs only the frontend and std, not a working LLVM bridge.
   const backend = join(prefix, `lib/loom/loom-native${suffix}`);
   await move(backend, `${backend}.disabled`);
+  if (!run(loom, ["change", ...change.inputs], app, environment).includes(`review token: ${change.token}\n`)) {
+    throw new Error("semantic change required the disabled native backend");
+  }
   run(loom, ["check"], app, environment);
   const proofs = join(temporary, "proofs");
   copyTree(join(root, "compiler/examples/smt_contracts"), proofs);

@@ -13,6 +13,9 @@ fn help_requested(args List[Text]) Bool {
     if command == "--help" || command == "-h" {
         return true
     }
+    if command == "change" {
+        return length(args) == 3 && (get(args, 2) == "--help" || get(args, 2) == "-h")
+    }
     if !driver_mode(command) && command != "init" && command != "fmt" &&
     command != "lex" && command != "parse" {
         return false
@@ -39,6 +42,31 @@ fn help_text(command Text) Text {
 }
 
 fn help_body(command Text) Text {
+    if command == "change" {
+        return """
+            Usage: loom change [arguments]
+
+            Preview checked semantic changes and apply a reviewed result.
+              init NAME DIR                 Initialize declaration identities.
+              scan DIR                      List declaration keys.
+              refresh DIR [choices...]      Update identities; --draft retains ambiguity.
+              BASE LEFT RIGHT               Preview three package snapshots.
+              --module STD BASE LEFT RIGHT  Preview complete module snapshots.
+              --dependencies STD BEFORE AFTER
+                                            Review changed dependency bindings.
+              --git TOOL REPO DIR BASE LEFT RIGHT
+                                            Read pinned Git package snapshots.
+              --git-module SCRATCH STD CACHE TOOL REPO DIR BASE LEFT RIGHT
+                                            Derive module context from Git.
+              --apply TOKEN OUTPUT [inputs...]
+                                            Publish a reviewed directory merge.
+              --apply TOKEN --git-module [inputs...]
+                                            Write a reviewed Git tree.
+
+            Preview does not change sources, identities or Git state. Applying
+            a result rechecks its inputs and token. Unresolved intent rejects.
+            """
+    }
     if command == "init" {
         return """
             Usage: loom init <name>
@@ -135,6 +163,7 @@ fn help_body(command Text) Text {
           run [package]        Build and run the selected package.
           resolve [package]    Resolve dependencies and update loom.lock.
           fmt [paths...]       Format source files.
+          change [arguments]   Review and apply semantic changes.
           lex <files...>       Inspect source tokens.
           parse <files...>     Inspect source declarations.
           emit-checked         Write private bootstrap IR.

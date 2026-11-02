@@ -272,8 +272,8 @@ fn module_lifecycle(staging Text) Result[Text, Text] {
 // Claim a fresh path atomically and leave failed test snapshots intact.
 fn module_test_directory(label Text) Text {
     // A custom --output may leave the package's usual build directory absent.
-    discard create_dir("tools/semantic_change_trial/target")
-    let prefix = concat("tools/semantic_change_trial/target/", concat(label, "-"))
+    discard create_dir("tools/change/target")
+    let prefix = concat("tools/change/target/", concat(label, "-"))
     var sequence = 0
     while true {
         let candidate = concat(prefix, to_text(sequence))

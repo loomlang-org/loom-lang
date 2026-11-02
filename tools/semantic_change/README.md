@@ -3,7 +3,7 @@
 This source library merges explicit declaration identities, not similar names
 or source spans. `merge` handles import-free packages; `merge_with_context` checks
 one package against pinned production/test projects. The
-[CLI trial](../semantic_change_trial/README.md) supplies directory/Git snapshots,
+[`loom change`](../change/README.md) supplies directory/Git snapshots,
 identity maintenance and reviewed application to a new tree.
 
 File presentation uses a per-file three-way join: equal skeletons combine, and

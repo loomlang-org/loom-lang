@@ -66,7 +66,8 @@ target/loom run hello
 
 The [bootstrap script](../scripts/bootstrap.sh) builds the current Rust tool
 and runtime, then Loom stages 1, 2, and 3. It compares stages 2/3 byte-for-byte
-and publishes `target/loom`. On every host, a cold build verifies and decompresses
+and publishes `target/loom`. It also builds the Loom-written semantic-change
+command at `target/debug/loom-change` (`.exe` on Windows). On every host, a cold build verifies and decompresses
 `compiler/bootstrap/stage0.checked.gz`, then compiles that portable checked
 program with the current native bridge. This source-bound stage 0 builds the
 current Loom source directly: no historical Rust frontend or checkpoint chain
@@ -94,6 +95,9 @@ bash scripts/bootstrap.sh --dev
 
 This builds the native tool/runtime, compiles one new Loom compiler, and
 publishes `target/loom`, using LLVM O1 for this development rebuild.
+It leaves companion tools for an explicit rebuild when needed:
+`target/loom build tools/change --output target/debug/loom-change` (append `.exe`
+to both executables on Windows).
 `LOOM_BOOTSTRAP_COMPILER` overrides the preceding
 compiler; a missing installed compiler uses the portable checked seed. This
 short path does not compare stages. The no-argument command retains the full
@@ -121,6 +125,12 @@ checkout; it is not a release package or stable compiler-artifact ABI.
 lists the selected command's options without loading source or locating tools.
 `-h` is equivalent. A flag consumed as an option value is not help, and
 `loom run [package] -- --help` forwards `--help` to the application.
+
+`loom change` delegates to the toolchain's Loom-written semantic-change command.
+It previews changes, maintains declaration identities and applies a reviewed
+merge to a new directory or Git tree. Streams, arguments and exit status pass
+through; the analysis command needs no native LLVM bridge. See the
+[change guide](../tools/change/README.md) for directory and Git workflows.
 
 `loom test --no-run` produces the native test executable without running it;
 `--output` optionally selects its path. Both forms of source tests and normal

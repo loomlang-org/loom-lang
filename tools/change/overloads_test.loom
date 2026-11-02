@@ -46,7 +46,7 @@ fn remove_trial(directory Text) {
 }
 
 fn overload_lifecycle(staging Text, renamed Bool) Result[Text, Text] {
-    let fixtures = "tools/semantic_change_trial/fixtures/overloads"
+    let fixtures = "tools/change/fixtures/overloads"
     let base = path(staging, "base")
     let left = path(staging, "left")
     let right = path(staging, "right")
@@ -122,11 +122,11 @@ fn overload_lifecycle(staging Text, renamed Bool) Result[Text, Text] {
 }
 
 test fn same_file_overload_moves_edits_and_apply_preserve_identity() {
-    let staging = concat("tools/semantic_change_trial/target/overloads-", to_text(monotonic_ns()))
+    let staging = concat("tools/change/target/overloads-", to_text(monotonic_ns()))
     assert successful(overload_lifecycle(staging, false)) == "overload lifecycle completed"
 }
 
 test fn selected_overload_rename_move_edit_and_apply_preserve_identity() {
-    let staging = concat("tools/semantic_change_trial/target/overload-rename-", to_text(monotonic_ns()))
+    let staging = concat("tools/change/target/overload-rename-", to_text(monotonic_ns()))
     assert successful(overload_lifecycle(staging, true)) == "overload lifecycle completed"
 }

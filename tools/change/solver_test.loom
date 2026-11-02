@@ -63,6 +63,6 @@ fn solver_lifecycle(staging Text) Result[Text, Text] {
 }
 
 test fn solver_backed_rename_move_and_edit_survive_review_and_apply() {
-    let staging = concat("tools/semantic_change_trial/target/solver-", to_text(monotonic_ns()))
+    let staging = concat("tools/change/target/solver-", to_text(monotonic_ns()))
     assert successful(solver_lifecycle(staging)) == "solver lifecycle completed"
 }

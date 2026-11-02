@@ -107,6 +107,13 @@ if ! $development && ! cmp -s "$target_root/loom-stage2$exe_suffix" "$target_roo
     printf 'Bootstrap failed: Loom stages 2 and 3 differ.\n' >&2
     exit 1
 fi
+if ! $development; then
+    printf 'Building the Loom semantic-change command...\n'
+    LOOM_OPT_LEVEL=2 "$previous" build "$repo_root/tools/change" \
+        --std "$repo_root/compiler/std" \
+        --native-tool "$target_root/debug/loom-native$exe_suffix" \
+        --output "$target_root/debug/loom-change$exe_suffix"
+fi
 if [[ -d "$target_root/loom$exe_suffix" ]]; then
     printf 'Cannot publish the compiler over a directory: %s\n' "$target_root/loom$exe_suffix" >&2
     exit 1

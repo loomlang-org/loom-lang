@@ -1,0 +1,36 @@
+import std.process.run
+
+// The installed command owns semantic-change policy. Resolve it alongside
+// this compiler's native tools, never from the package or ambient PATH.
+fn change_tool(invoked Text) Result[Text, Text] {
+    let tools = match discovered_tools(invoked) {
+        Result.Ok(value) => value,
+        Result.Err(_) => {
+            return Result.Err("cannot locate loom-change; invoke Loom by path from a complete toolchain or bootstrap checkout")
+        }
+    }
+    let directory = executable_directory(tools.native_tool)
+    let name = if is_windows_path(directory) {
+        "loom-change.exe"
+    } else {
+        "loom-change"
+    }
+    let executable = join_path(directory, name)
+    if !tool_file(executable) {
+        return Result.Err("cannot find loom-change; install the complete toolchain or rebuild the checkout's tools/change companion")
+    }
+    Result.Ok(executable)
+}
+
+fn change_execute(args List[Text]) Result[Int, Text] {
+    let command = [change_tool(get(args, 0))?]
+    var index = 2
+    while index < length(args) {
+        push(command, get(args, index))
+        index = index + 1
+    }
+    match std.process.run(command) {
+        Result.Ok(code) => Result.Ok(code),
+        Result.Err(_) => Result.Err("cannot run the toolchain's loom-change command")
+    }
+}

@@ -7,6 +7,7 @@ import { constants, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, re
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { verifyChangeCommand } from "./verify-change-command.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
@@ -23,7 +24,7 @@ if (existsSync(archive) || existsSync(checksum)) throw new Error("archive or che
 const suffix = process.platform === "win32" ? ".exe" : "";
 const runtimeName = process.platform === "win32" ? "loom_runtime.lib" : "libloom_runtime.a";
 const tlsName = process.platform === "win32" ? "loom_tls.lib" : "libloom_tls.a";
-for (const input of ["LICENSE", `bin/loom${suffix}`, `lib/loom/loom-native${suffix}`,
+for (const input of ["LICENSE", `bin/loom${suffix}`, `lib/loom/loom-native${suffix}`, `lib/loom/loom-change${suffix}`,
   `lib/loom/${runtimeName}`, `lib/loom/${tlsName}`, "lib/loom/std"]) {
   if (!existsSync(join(stage, input))) throw new Error(`incomplete staged toolchain: missing ${input}`);
 }
@@ -174,6 +175,8 @@ try {
     throw new Error("extracted archive produced incorrect native output");
   }
   run(loom, ["test", join(installed, "lib/loom/std/net/tls")], application, environment);
+  verifyChangeCommand(loom, join(root, "tools/change/fixtures"),
+    join(temporary, "semantic change"), environment);
 
   mkdirSync(dirname(archive), { recursive: true });
   copyFileSync(temporaryArchive, archive, constants.COPYFILE_EXCL);

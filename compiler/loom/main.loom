@@ -30,7 +30,7 @@ fn inspect(text Text, parse_mode Bool) Result[Text, Diagnostic] {
 fn main() {
     let args = arguments()
     if length(args) < 2 {
-        report("usage: loom <init|check|build|test|run|resolve|fmt> [package] [--std path]")
+        report("usage: loom <init|check|build|test|run|resolve|fmt|change> [arguments]")
         exit_code(2)
         return
     }
@@ -41,6 +41,18 @@ fn main() {
     }
     if mode == "--version" {
         discard write_text("loom source compiler (development)\n")
+        return
+    }
+    if mode == "change" {
+        match change_execute(args) {
+            Result.Ok(code) => {
+                exit_code(code)
+            }
+            Result.Err(message) => {
+                report(message)
+                exit_code(1)
+            }
+        }
         return
     }
     if mode == "init" {

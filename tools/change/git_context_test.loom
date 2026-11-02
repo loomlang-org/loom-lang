@@ -24,7 +24,7 @@ fn git_fixture_commit(repository Text, parent Text) Result[Text, Text] {
 fn git_context_lifecycle(staging Text) Result[Text, Text] {
     let repository = path(staging, "repository")
     let directory = path(staging, "context")
-    let fixture = "tools/semantic_change_trial/fixtures/project"
+    let fixture = "tools/change/fixtures/project"
     let baseline = read(fixture)?
     discard create_dir(repository)
     discard create_dir(directory)
@@ -39,9 +39,9 @@ fn git_context_lifecycle(staging Text) Result[Text, Text] {
     discard git("git", repository, ["init", "--template="])?
     discard git_fixture_package(repository, baseline)?
     let base = git_fixture_commit(repository, "")?
-    discard git_fixture_package(repository, read("tools/semantic_change_trial/fixtures/project_left")?)?
+    discard git_fixture_package(repository, read("tools/change/fixtures/project_left")?)?
     let left = git_fixture_commit(repository, base)?
-    discard git_fixture_package(repository, read("tools/semantic_change_trial/fixtures/project_right")?)?
+    discard git_fixture_package(repository, read("tools/change/fixtures/project_right")?)?
     let right = git_fixture_commit(repository, base)?
     discard git("git", repository, ["update-ref", "HEAD", right])?
     let before = git("git", repository, ["status", "--porcelain=v1"])?
