@@ -20,6 +20,66 @@ fn capture_cell_program() Program {
     proof_program_with_types(types)
 }
 
+test fn publication_follows_current_capture_cells_and_keeps_unknown_payloads_opaque() {
+    let program = capture_cell_program()
+    push(program.types, publication_shape(TypeKind.List, [1]))
+    push(program.types, Type {
+            arguments = [7]
+            fields = [Field {
+                    name = "value"
+                    ty = 7
+                }]
+            ..get(program.types, 6)
+        })
+    let store = expression(ExprKind.FrameStore, 0, "", 0,
+        [expression(ExprKind.Local, 8, "", 0, []), expression(ExprKind.Local, 7, "", 1, [])])
+    let proof = verification(contract_fixture([8, 7], 0, store, [], []), program)
+    let base = fixed_capture_cell(10,
+        with_extent(30, constant(integer(1)), true,
+            with_extent(20, constant(integer(1)), true,
+                State {
+                    heap = -1
+                    locals = [Value.List(10), Value.List(30)]
+                    facts = []
+                    extents = []
+                    observations = []
+                })))
+    let state = match remember_element(10, constant(integer(0)), Value.List(20), base) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            assert false
+            return
+        }
+    }
+    let graph = Publication {
+        identities = []
+        opaque = []
+    }
+    assert publication_value(proof, 8, Value.List(10), state, graph, [256], 0)
+    assert storage_identity_member(graph.identities, 10) && storage_identity_member(graph.identities, 20)
+    assert !storage_identity_member(graph.identities, 30) && length(graph.opaque) == 0
+    let changed = match execute_cell_store(proof, store, state, 64) {
+        Result.Ok(values) => get(values, 0).state
+        Result.Err(_) => {
+            assert false
+            return
+        }
+    }
+    let rebound = Publication {
+        identities = []
+        opaque = []
+    }
+    assert publication_value(proof, 8, Value.List(10), changed, rebound, [256], 0)
+    assert storage_identity_member(rebound.identities, 10) && storage_identity_member(rebound.identities, 30)
+    assert !storage_identity_member(rebound.identities, 20)
+    let unknown = Publication {
+        identities = []
+        opaque = []
+    }
+    assert publication_value(proof, 8, Value.List(10), base, unknown, [256], 0)
+    assert storage_identity_member(unknown.identities, 10) && length(unknown.opaque) == 1
+}
+
 test fn capture_value_snapshots_require_coherence_and_keep_past_values() {
     let proof = verification(contract_fixture([], 1, literal("0"), [], []), capture_cell_program())
     let shape = expression(ExprKind.Intrinsic, 6, "proof_cell_value", -1, [local(0)])

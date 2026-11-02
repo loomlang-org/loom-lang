@@ -64,7 +64,11 @@ fn publication_value(proof Verification, ty Int, value Value, state State,
         return publication_value(proof, get(shape.fields, 0).ty, value,
             state, graph, budget, depth + 1, opaque_only)
     }
-    if (shape.kind == TypeKind.List && length(shape.arguments) == 1) || shape.kind == TypeKind.Bytes {
+    if (shape.kind == TypeKind.List && length(shape.arguments) == 1) || shape.kind == TypeKind.Bytes ||
+    capture_cell_shape(shape) {
+        // A captured binding is tracked as fixed one-slot mutable storage.
+        // Follow its current payload with the same coverage/publication rules
+        // as a List; an unknown payload retains an opaque reachable frontier.
         // Tracked headers keep their graph roots. Unknown elements are exposed
         // when read, not merely because their container is returned.
         if opaque_only {
@@ -123,7 +127,11 @@ fn publication_value(proof Verification, ty Int, value Value, state State,
             _ => false
         }
     }
-    if shape.kind == TypeKind.Record || shape.kind == TypeKind.Tuple {
+    // Closure environment slots are stable only after the existing checked
+    // write-footprint gate succeeds. Mutable captured payloads remain graphs
+    // and cells; a Frame label alone supplies no field-stability evidence.
+    if shape.kind == TypeKind.Record || shape.kind == TypeKind.Tuple ||
+    (shape.kind == TypeKind.Frame && frame_input(proof, ty)) {
         return match value {
             Value.Record(fields) => {
                 if length(fields) != length(shape.fields) {

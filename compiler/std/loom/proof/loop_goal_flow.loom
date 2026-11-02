@@ -1,0 +1,281 @@
+// Parent candidates can suggest useful predicates inside nested loops. These
+// are shapes for discovery, not facts or independently checked guarantees.
+fn add_loop_goal(values List[Expr], value Expr) {
+    if length(values) >= 32 {
+        return
+    }
+    var index = 0
+    while index < length(values) {
+        if exact_expression(get(values, index), value) {
+            return
+        }
+        index = index + 1
+    }
+    push(values, value)
+}
+
+fn loop_goal_candidate(candidate LoopCandidate) Bool {
+    match candidate {
+        LoopCandidate.Goal(_, _) => true
+        _ => false
+    }
+}
+
+fn loop_goal_nested(value Expr, budget List[Int]) Bool {
+    if !conjunction_step(budget) {
+        return true
+    }
+    if function_layout(value) {
+        return false
+    }
+    if value.kind == ExprKind.While {
+        return true
+    }
+    var index = 0
+    while index < length(value.children) {
+        if loop_goal_nested(get(value.children, index), budget) {
+            return true
+        }
+        index = index + 1
+    }
+    index = 0
+    while index < length(value.arms) {
+        let body = get(value.arms, index).body
+        var item = 0
+        while item < length(body) {
+            if loop_goal_nested(get(body, item), budget) {
+                return true
+            }
+            item = item + 1
+        }
+        index = index + 1
+    }
+    false
+}
+
+fn loop_goal_jump(value Expr) Bool {
+    loop_goal_jump(value, [256], 0)
+}
+
+fn loop_goal_jump(value Expr, budget List[Int], depth Int) Bool {
+    if depth >= 64 || !conjunction_step(budget) {
+        return true
+    }
+    if function_layout(value) {
+        return false
+    }
+    if value.kind == ExprKind.Return || value.kind == ExprKind.Break || value.kind == ExprKind.Continue {
+        return true
+    }
+    var index = 0
+    while index < length(value.children) {
+        if loop_goal_jump(get(value.children, index), budget, depth + 1) {
+            return true
+        }
+        index = index + 1
+    }
+    index = 0
+    while index < length(value.arms) {
+        let body = get(value.arms, index).body
+        var item = 0
+        while item < length(body) {
+            if loop_goal_jump(get(body, item), budget, depth + 1) {
+                return true
+            }
+            item = item + 1
+        }
+        index = index + 1
+    }
+    false
+}
+
+// Caller-goal discovery need not guess that an entered loop's moving test
+// cursor stays at its initial boundary. Declining a guess supplies no fact.
+// Explicit assertions, ordinary callee contracts and loops with jumps retain
+// their existing candidates and validation.
+fn loop_goal_counter_candidates(proof Verification, guard Expr, body Expr,
+    candidates List[LoopCandidate]) List[LoopCandidate] {
+    if length(proof.loop_goals.values) == 0 || loop_goal_jump(body) || guard.kind != ExprKind.Binary ||
+    length(guard.children) != 2 || get(guard.children, 0).kind != ExprKind.Local {
+        return candidates
+    }
+    let cursor = get(guard.children, 0).index
+    let discard_relation = if guard.text == "<" || guard.text == "<=" {
+        "<="
+    } else {
+        if guard.text == ">" || guard.text == ">=" {
+            ">="
+        } else {
+            ""
+        }
+    }
+    if discard_relation == "" {
+        return candidates
+    }
+    let retained = new[LoopCandidate]()
+    var index = 0
+    while index < length(candidates) {
+        let candidate = get(candidates, index)
+        let skip = match candidate {
+            LoopCandidate.Entry(local, path, relation, _) =>
+            local == cursor && length(path) == 0 && relation == discard_relation
+            _ => false
+        }
+        if !skip {
+            push(retained, candidate)
+        }
+        index = index + 1
+    }
+    retained
+}
+
+fn loop_iteration_goals(proof Verification, candidates List[LoopCandidate]) Verification {
+    if length(proof.preservation) != 0 || get(proof.loop_goals.remaining, 0) <= 0 {
+        return proof
+    }
+    let values = new[Expr]()
+    var index = 0
+    while index < length(candidates) && length(values) < 32 {
+        match get(candidates, index) {
+            LoopCandidate.Goal(value, _) => add_loop_goal(values, value)
+            _ => {
+            }
+        }
+        index = index + 1
+    }
+    if length(values) == 0 {
+        index = 0
+        while index < length(proof.loop_goals.values) && length(values) < 32 {
+            add_loop_goal(values, get(proof.loop_goals.values, index))
+            index = index + 1
+        }
+    }
+    Verification {
+        loop_goals = LoopGoals {
+            values = values
+            ..proof.loop_goals
+        }
+        ..proof
+    }
+}
+
+// A following assignment describes a possible goal before that assignment.
+// Preserve the original hints too. Unknown effects supply no substitution;
+// every resulting candidate still needs ordinary induction validation.
+fn loop_goal_value(value Expr, budget List[Int]) Result[Expr, Text] {
+    if !conjunction_step(budget) {
+        return Result.Err("optional loop suffix shape unavailable")
+    }
+    if value.kind == ExprKind.Block {
+        if length(value.children) != 1 {
+            return Result.Err("optional loop suffix needs one expression")
+        }
+        return loop_goal_value(get(value.children, 0), budget)
+    }
+    let children = new[Expr]()
+    var index = 0
+    while index < length(value.children) {
+        push(children, loop_goal_value(get(value.children, index), budget)?)
+        index = index + 1
+    }
+    Result.Ok(proof_expr(value, value.kind, value.ty, value.text, value.index, children))
+}
+
+// Expose independently guarded universal clauses after a scalar phase choice.
+// These equivalent shapes are still hints: entry and backedges validate each
+// candidate, and no source evaluation or safety obligation is removed.
+fn loop_goal_clauses(value Expr, budget List[Int]) Result[Expr, Text] {
+    if !conjunction_step(budget) {
+        return Result.Err("optional loop clause shape unavailable")
+    }
+    if quantified_expression(value) && value.text != "proof_scan_checks" {
+        let body = get(value.children, 2)
+        if body.kind == ExprKind.Binary && body.text == "&&" && length(body.children) == 2 {
+            let left = quantified_value(value, value.index, get(value.children, 0),
+                get(value.children, 1), get(body.children, 0))
+            let right = quantified_value(value, value.index, get(value.children, 0),
+                get(value.children, 1), get(body.children, 1))
+            return Result.Ok(proof_and(loop_goal_clauses(left, budget)?, loop_goal_clauses(right, budget)?))
+        }
+        if body.kind == ExprKind.Binary && body.text == "||" && length(body.children) == 2 {
+            var side = 0
+            while side < 2 {
+                let scalar = get(body.children, side)
+                if !has_bound(scalar, value.index) && entry_guard_expression(scalar) && !contains_application(scalar) {
+                    let rest = quantified_value(value, value.index, get(value.children, 0),
+                        get(value.children, 1), get(body.children, 1 - side))
+                    return Result.Ok(proof_expr(value, ExprKind.Binary, 2, "||", -1,
+                            [scalar, loop_goal_clauses(rest, budget)?]))
+                }
+                side = side + 1
+            }
+        }
+    }
+    let children = new[Expr]()
+    var index = 0
+    while index < length(value.children) {
+        push(children, loop_goal_clauses(get(value.children, index), budget)?)
+        index = index + 1
+    }
+    Result.Ok(proof_expr(value, value.kind, value.ty, value.text, value.index, children))
+}
+
+fn loop_suffix_goals(proof Verification, body List[Expr], start Int) Verification {
+    if length(proof.loop_goals.values) == 0 || get(proof.loop_goals.remaining, 0) <= 0 {
+        return proof
+    }
+    let values = new[Expr]()
+    var goal = 0
+    while goal < length(proof.loop_goals.values) && length(values) < 32 {
+        let original = get(proof.loop_goals.values, goal)
+        var value = original
+        var index = length(body)
+        var changed = false
+        while index > start {
+            index = index - 1
+            let assignment = get(body, index)
+            if (assignment.kind == ExprKind.Let || assignment.kind == ExprKind.Assign) &&
+            length(assignment.children) == 1 && scan_mentions(value, assignment.index) {
+                let replacement = get(assignment.children, 0)
+                if !loop_call_free(replacement) || assertion_local_write(replacement) || !bounded_contract(replacement) {
+                    break
+                }
+                let projected = match loop_goal_value(replacement, [256]) {
+                    Result.Ok(value) => value
+                    Result.Err(_) => {
+                        break
+                    }
+                }
+                let next = loop_replace_result(value, assignment.index, projected)
+                if !bounded_contract(next) {
+                    break
+                }
+                value = next
+                changed = true
+            }
+        }
+        if changed {
+            match normalized_predicate(value) {
+                Result.Ok(value) => match loop_goal_clauses(value, [256]) {
+                    Result.Ok(clauses) => add_loop_goal(values, clauses)
+                    Result.Err(_) => add_loop_goal(values, value)
+                }
+                Result.Err(_) => {
+                }
+            }
+        }
+        goal = goal + 1
+    }
+    goal = 0
+    while goal < length(proof.loop_goals.values) && length(values) < 32 {
+        add_loop_goal(values, get(proof.loop_goals.values, goal))
+        goal = goal + 1
+    }
+    Verification {
+        loop_goals = LoopGoals {
+            values = values
+            ..proof.loop_goals
+        }
+        ..proof
+    }
+}

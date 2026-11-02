@@ -1,0 +1,456 @@
+// Cache checked syntax, never values, assumptions, successful checks or outcomes.
+// Repeated calls still observe their own evaluated arguments and current heap.
+record CallTemplate {
+    value Expr
+    checks List[Evaluation]
+    binders Int
+}
+
+record CallTemplateEntry {
+    target Int
+    template Option[CallTemplate]
+}
+
+record ExpressionTemplateEntry {
+    source Expr
+    callbacks List[Int]
+    template CallTemplate
+}
+
+fn expression_template_source(value Expr, budget List[Int]) Bool {
+    if !conjunction_step(budget) || bound_expression(value) || quantified_expression(value) ||
+    logical_expression(value) || observation_expression(value) || entry_observation_expression(value) ||
+    function_layout(value) || predicate_application(value) || fresh_cell_initialization(value) ||
+    function_cell_snapshot(value) || type_guard_expression(value) {
+        return false
+    }
+    var index = 0
+    while index < length(value.children) {
+        if !expression_template_source(get(value.children, index), budget) {
+            return false
+        }
+        index = index + 1
+    }
+    true
+}
+
+fn expression_template_results(proof Verification, template CallTemplate, state State, boundary Int) Option[List[Outcome]] {
+    let offset = get(proof.fresh, 0)
+    set(proof.fresh, 0, offset + template.binders)
+    let checks = new[Evaluation]()
+    var index = 0
+    while index < length(template.checks) {
+        let check = get(template.checks, index)
+        push(checks, Evaluation {
+                guard = call_template_at(check.guard, 0, offset)
+                value = call_template_at(check.value, 0, offset)
+                required = check.required
+                universal = check.universal
+            })
+        index = index + 1
+    }
+    match call_template_logical(proof, call_template_at(template.value, 0, offset), checks, state, boundary) {
+        Result.Ok(value) => value
+        Result.Err(_) => Option.None
+    }
+}
+
+fn call_template_expression(value Expr, parameters Int, binders Int, budget List[Int]) Bool {
+    if !conjunction_step(budget) || length(value.arms) != 0 {
+        return false
+    }
+    if value.kind == ExprKind.Local {
+        return value.index >= 0 && value.index < parameters && length(value.children) == 0
+    }
+    if bound_expression(value) || quantified_expression(value) {
+        if value.index >= 0 || value.index < -binders {
+            return false
+        }
+    } else if value.kind != ExprKind.Integer && value.kind != ExprKind.Float &&
+    value.kind != ExprKind.Bool && value.kind != ExprKind.Text &&
+    value.kind != ExprKind.Unary && value.kind != ExprKind.Binary &&
+    value.kind != ExprKind.If && value.kind != ExprKind.Coerce && value.kind != ExprKind.Intrinsic {
+        return false
+    }
+    // Shared and entry observations need their invocation's own identities.
+    // Opaque applications and captures retain the ordinary expansion path.
+    if observation_expression(value) || entry_observation_expression(value) || predicate_application(value) ||
+    fresh_cell_initialization(value) || function_cell_snapshot(value) || function_layout(value) || type_guard_expression(value) {
+        return false
+    }
+    var index = 0
+    while index < length(value.children) {
+        if !call_template_expression(get(value.children, index), parameters, binders, budget) {
+            return false
+        }
+        index = index + 1
+    }
+    true
+}
+
+fn prepare_call_template(proof Verification, call Expr, function Function) Option[CallTemplate] {
+    let references = new[ExpansionBinding]()
+    let inputs = new[Expr]()
+    var index = 0
+    while index < length(function.params) {
+        let reference = proof_expr(call, ExprKind.Local, get(function.params, index), "", index, [])
+        push(references, ExpansionBinding {
+                local = index
+                value = reference
+            })
+        push(inputs, reference)
+        index = index + 1
+    }
+    // Preparing reusable syntax is optional. A failed preparation spends no
+    // mandatory budget and leaves the original call expansion available.
+    let budget = [256]
+    let binders = [0]
+    let context = Expansion {
+        program = proof.program
+        list_lengths = false
+        budget = budget
+        active = []
+        checks = []
+        observations = []
+        origins = []
+        binders = binders
+    }
+    let prepared = proof_expr(call, ExprKind.Call, call.ty, call.text, call.index, inputs)
+    let value = match expanded_call(context, prepared, proof_bool(call, true), references, function.locals, false, 0, 0) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            return Option.None
+        }
+    }
+    let count = get(binders, 0)
+    let validation = [4096]
+    if !bounded_contract(value) || !call_template_expression(value, length(function.params), count, validation) {
+        return Option.None
+    }
+    index = 0
+    while index < length(context.checks) {
+        let check = get(context.checks, index)
+        if !call_template_expression(check.guard, length(function.params), count, validation) ||
+        !call_template_expression(check.value, length(function.params), count, validation) {
+            return Option.None
+        }
+        index = index + 1
+    }
+    let cost = 256 - get(budget, 0)
+    if get(proof.budget, 0) < cost {
+        return Option.None
+    }
+    // The first expansion retains its actual cost; later calls reuse its
+    // checked structure. No proof search or solver budget is enlarged.
+    set(proof.budget, 0, get(proof.budget, 0) - cost)
+    Option.Some(CallTemplate {
+            value = value
+            checks = context.checks
+            binders = count
+        })
+}
+
+fn call_template_at(value Expr, boundary Int, offset Int) Expr {
+    var identity = value.index
+    if value.kind == ExprKind.Local {
+        identity = identity + boundary
+    } else if bound_expression(value) || quantified_expression(value) {
+        identity = identity - offset
+    }
+    let children = new[Expr]()
+    var index = 0
+    while index < length(value.children) {
+        push(children, call_template_at(get(value.children, index), boundary, offset))
+        index = index + 1
+    }
+    proof_expr(value, value.kind, value.ty, value.text, identity, children)
+}
+
+fn call_template_stable(value Expr, state State, budget List[Int]) Bool {
+    if !conjunction_step(budget) || quantified_expression(value) || cell_read_expression(value) ||
+    observation_expression(value) || entry_observation_expression(value) || predicate_application(value) {
+        return false
+    }
+    if list_read_expression(value) || list_length_expression(value) {
+        match pure(get(value.children, 0), state) {
+            Result.Ok(Value.List(identity)) => match list_state(identity, state) {
+                Result.Ok(extent) => if !stable_storage(extent) {
+                    return false
+                }
+                Result.Err(_) => {
+                    return false
+                }
+            }
+            _ => {
+                return false
+            }
+        }
+    }
+    var index = 0
+    while index < length(value.children) {
+        if !call_template_stable(get(value.children, index), state, budget) {
+            return false
+        }
+        index = index + 1
+    }
+    true
+}
+
+// A checked pure predicate over stable versions has one Boolean value. Keep
+// successful runtime bounds/assertions as guarded normal-return facts, rather
+// than splitting the same source branch at every short-circuit operand. Partial
+// evaluations and scans retain the ordinary executor and all their checks.
+fn call_template_logical(proof Verification, value Expr, checks List[Evaluation],
+    state State, boundary Int) Result[Option[List[Outcome]], Text] {
+    if proof.shared || !proof.query.backend.enabled {
+        return Result.Ok(Option.None)
+    }
+    let budget = [256]
+    if !call_template_expression(value, length(state.locals), get(proof.fresh, 0), budget) ||
+    !call_template_stable(value, state, budget) {
+        return Result.Ok(Option.None)
+    }
+    var index = 0
+    while index < length(checks) {
+        let check = get(checks, index)
+        if !check.required || check.universal || !total_scalar(check.value) ||
+        !call_template_expression(check.guard, length(state.locals), get(proof.fresh, 0), budget) ||
+        !call_template_expression(check.value, length(state.locals), get(proof.fresh, 0), budget) ||
+        !call_template_stable(check.guard, state, budget) || !call_template_stable(check.value, state, budget) {
+            return Result.Ok(Option.None)
+        }
+        index = index + 1
+    }
+    let expression = match normalized_predicate(value) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            return Result.Ok(Option.None)
+        }
+    }
+    var current = quantified_views(proof, expression, state, true, 256)?
+    index = 0
+    while index < length(checks) {
+        let check = get(checks, index)
+        let condition = match normalized_predicate(guarded_value(check.guard, check.value)) {
+            Result.Ok(value) => value
+            Result.Err(_) => {
+                return Result.Ok(Option.None)
+            }
+        }
+        current = quantified_views(proof, condition, current, true, 256)?
+        current = assume(current, boolean(pure(condition, current)?)?)
+        index = index + 1
+    }
+    let observed = pure(expression, current)?
+    Result.Ok(Option.Some(if unreachable(proof, current) {
+                []
+            } else {
+                outcomes(caller_state(current, boundary), observed)
+            }))
+}
+
+// The same private, checked Boolean fragment can occur directly in a caller
+// goal's source condition. Expand actual callback snapshots before eligibility;
+// unknown effects keep ordinary execution. Successful expansion pays its real
+// cost from the unchanged work budget, and no outcome/value is cached.
+fn expression_template_call(proof Verification, value Expr, state State) Option[List[Outcome]] {
+    if length(proof.loop_goals.values) == 0 || proof.shared || !proof.query.backend.enabled ||
+    value.kind != ExprKind.Binary || (value.text != "&&" && value.text != "||") ||
+    !expression_template_source(value, [256]) {
+        return Option.None
+    }
+    // callback_reference appends captured snapshots. Keep that invocation's
+    // private slots out of the caller, including on optional-preflight failure.
+    let boundary = length(state.locals)
+    let snapshot = call_scope(state, [])
+    let references = new[ExpansionBinding]()
+    let callbacks = new[Int]()
+    var reusable = true
+    var index = 0
+    while index < length(proof.function.locals) && index < boundary {
+        let reference = proof_expr(value, ExprKind.Local, get(proof.function.locals, index).ty, "", index, [])
+        let actual = callback_reference(proof.program, reference, get(snapshot.locals, index), snapshot)
+        push(references, ExpansionBinding {
+                local = index
+                value = actual
+            })
+        if scan_mentions(value, index) && actual.kind != ExprKind.Local {
+            if actual.kind == ExprKind.FunctionRef {
+                push(callbacks, index)
+                push(callbacks, actual.index)
+            } else {
+                reusable = false
+            }
+        }
+        index = index + 1
+    }
+    if reusable {
+        index = 0
+        while index < length(proof.expression_templates) {
+            let previous = get(proof.expression_templates, index)
+            if exact_expression(previous.source, value) && same_projection(previous.callbacks, callbacks) {
+                if get(proof.budget, 0) <= 0 {
+                    return Option.None
+                }
+                match expression_template_results(proof, previous.template, snapshot, boundary) {
+                    Option.Some(paths) => {
+                        set(proof.budget, 0, get(proof.budget, 0) - 1)
+                        return Option.Some(paths)
+                    }
+                    Option.None => {
+                        return Option.None
+                    }
+                }
+            }
+            index = index + 1
+        }
+    }
+    let budget = [256]
+    let binders = [0]
+    let context = Expansion {
+        program = proof.program
+        list_lengths = false
+        budget = budget
+        active = []
+        checks = []
+        observations = []
+        origins = []
+        binders = binders
+    }
+    let prepared = match expanded(context, value, proof_bool(value, true), references,
+        proof.function.locals, false, 0, 0) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            return Option.None
+        }
+    }
+    let cost = 256 - get(budget, 0)
+    if get(proof.budget, 0) < cost || !bounded_contract(prepared) {
+        return Option.None
+    }
+    let validation = [256]
+    if !call_template_expression(prepared, length(snapshot.locals), get(binders, 0), validation) {
+        return Option.None
+    }
+    index = 0
+    while index < length(context.checks) {
+        let check = get(context.checks, index)
+        if !call_template_expression(check.guard, length(snapshot.locals), get(binders, 0), validation) ||
+        !call_template_expression(check.value, length(snapshot.locals), get(binders, 0), validation) {
+            return Option.None
+        }
+        index = index + 1
+    }
+    let template = CallTemplate {
+        value = prepared
+        checks = context.checks
+        binders = get(binders, 0)
+    }
+    // A callback can retain its target while its captures change. Reuse only
+    // syntax independent of the newly appended capture snapshot slots.
+    let uncaptured = [256]
+    reusable = reusable && call_template_expression(prepared, boundary, get(binders, 0), uncaptured)
+    index = 0
+    while reusable && index < length(context.checks) {
+        let check = get(context.checks, index)
+        reusable = call_template_expression(check.guard, boundary, get(binders, 0), uncaptured) &&
+        call_template_expression(check.value, boundary, get(binders, 0), uncaptured)
+        index = index + 1
+    }
+    match expression_template_results(proof, template, snapshot, boundary) {
+        Option.Some(paths) => {
+            set(proof.budget, 0, get(proof.budget, 0) - cost)
+            if reusable && length(proof.expression_templates) < 8 {
+                push(proof.expression_templates, ExpressionTemplateEntry {
+                        source = value
+                        callbacks = callbacks
+                        template = template
+                    })
+            }
+            Option.Some(paths)
+        }
+        _ => Option.None
+    }
+}
+
+fn call_template_call(proof Verification, call Expr, function Function, state State,
+    boundary Int, depth Int) Result[Option[List[Outcome]], Text] {
+    if function.result != 2 {
+        return Result.Ok(Option.None)
+    }
+    // Primitive argument values were already captured by eager call evaluation.
+    // A shared graph or capture still needs the original observation protocol.
+    if proof.shared {
+        var parameter = 0
+        while parameter < length(function.params) {
+            if !scalar_type(get(function.params, parameter)) {
+                return Result.Ok(Option.None)
+            }
+            parameter = parameter + 1
+        }
+    }
+    var template Option[CallTemplate] = Option.None
+    var found = false
+    var index = 0
+    while index < length(proof.call_templates) {
+        let previous = get(proof.call_templates, index)
+        if previous.target == call.index {
+            template = previous.template
+            found = true
+            break
+        }
+        index = index + 1
+    }
+    if !found {
+        if length(proof.call_templates) >= 8 || !pure_function_body(proof.program, call.index) {
+            return Result.Ok(Option.None)
+        }
+        template = prepare_call_template(proof, call, function)
+        push(proof.call_templates, CallTemplateEntry {
+                target = call.index
+                template = template
+            })
+    }
+    let prepared = match template {
+        Option.Some(value) => value
+        Option.None => {
+            return Result.Ok(Option.None)
+        }
+    }
+    // Even identical calls receive distinct lexical binders. Formal parameters
+    // become this invocation's saved argument slots, not reread expressions.
+    let offset = get(proof.fresh, 0)
+    set(proof.fresh, 0, offset + prepared.binders)
+    let checks = new[Evaluation]()
+    index = 0
+    while index < length(prepared.checks) {
+        let check = get(prepared.checks, index)
+        push(checks, Evaluation {
+                guard = call_template_at(check.guard, boundary, offset)
+                value = call_template_at(check.value, boundary, offset)
+                required = check.required
+                universal = check.universal
+            })
+        index = index + 1
+    }
+    let context = Expansion {
+        program = proof.program
+        list_lengths = false
+        budget = proof.budget
+        active = []
+        checks = checks
+        observations = []
+        origins = []
+        binders = proof.fresh
+    }
+    let value = call_template_at(prepared.value, boundary, offset)
+    match call_template_logical(proof, value, checks, state, boundary) {
+        Result.Ok(Option.Some(results)) => {
+            return Result.Ok(Option.Some(results))
+        }
+        _ => {
+            // Optional algebra commits no facts/obligations on failure.
+        }
+    }
+    Result.Ok(Option.Some(call_results(proof, value, context, state, boundary, depth)?))
+}

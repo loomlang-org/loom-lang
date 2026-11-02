@@ -18,6 +18,36 @@ fn frame_input_program(owner Int) Program {
     program
 }
 
+test fn publication_tracks_stable_environment_payloads_and_rejects_written_frame_slots() {
+    let program = frame_input_program(42)
+    let body = literal("0")
+    let proof = verification(contract_fixture([], 0, body, [], []), program)
+    let state = with_extent(20, constant(integer(1)), true,
+        State {
+            heap = -1
+            locals = []
+            facts = []
+            extents = []
+            observations = []
+        })
+    let captured = Value.Record([Value.Number(constant(integer(1))), Value.List(20)])
+    let graph = Publication {
+        identities = []
+        opaque = []
+    }
+    assert publication_value(proof, 8, captured, state, graph, [256], 0)
+    assert length(graph.identities) == 1 && get(graph.identities, 0) == 20 && length(graph.opaque) == 0
+    let frame = expression(ExprKind.Local, 8, "", 0, [])
+    let store = expression(ExprKind.FrameStore, 0, "", 0, [frame, literal("2")])
+    let changed = verification(contract_fixture([8], 0, store, [], []), program)
+    let unknown = Publication {
+        identities = []
+        opaque = []
+    }
+    assert !publication_value(changed, 8, captured, state, unknown, [256], 0)
+    assert length(unknown.identities) == 0 && length(unknown.opaque) == 0
+}
+
 test fn opaque_callables_require_immutable_captures_and_the_actual_frame_footprint() {
     let program = frame_input_program(42)
     assert !predicate_immutable_type(program, 8, 0)

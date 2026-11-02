@@ -68,3 +68,28 @@ fn loop_boundaries(value Expr, writes List[Bool], entry State, boundaries List[E
         index = index + 1
     }
 }
+
+// A loop that writes the next output cell has a concrete prefix frontier.
+// Prefer those actual store indices for caller hints over unrelated read
+// cursors and speculative +/-1 cuts. This selects guesses, never facts.
+fn loop_transfer_boundaries(proof Verification, value Expr, writes List[Bool],
+    entry State, boundaries List[Expr], depth Int) {
+    if depth <= 0 || length(boundaries) >= 32 || function_layout(value) || value.kind == ExprKind.While {
+        return
+    }
+    if loop_storage_primitive(proof, value) == "list_set" && length(value.children) == 3 {
+        let index = get(value.children, 1)
+        if loop_call_free(index) && loop_boundary_mentions(index, writes, entry) {
+            match pure(index, entry) {
+                Result.Ok(Value.Number(_)) => loop_boundary_add(boundaries, index)
+                _ => {
+                }
+            }
+        }
+    }
+    var index = 0
+    while index < length(value.children) {
+        loop_transfer_boundaries(proof, get(value.children, index), writes, entry, boundaries, depth - 1)
+        index = index + 1
+    }
+}

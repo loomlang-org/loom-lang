@@ -31,6 +31,8 @@ fn smt_binder(value SmtBinder, condition Text) Text {
 record SmtWriter {
     extended Bool
     guarded_order Bool
+    abstract_remainder Bool
+    abstracted List[Bool]
     support_keys List[SmtSupportKey]
     support_laws List[SmtSupportLaw]
     declarations Bytes
@@ -431,6 +433,16 @@ fn smt_integer(writer SmtWriter, value IntegerTerm, depth Int) Result[Text, Text
             }
             let first = smt_integer(writer, get(inputs, 0), depth + 1)?
             let second = smt_integer(writer, get(inputs, 1), depth + 1)?
+            if operator == "%" && writer.abstract_remainder {
+                if !get(writer.abstracted, 0) {
+                    set(writer.abstracted, 0, true)
+                    smt_append(writer.declarations, "(declare-fun loom_integer_remainder (Int Int) Int)\n")
+                }
+                // Any concrete remainder interpretation is a model of this
+                // weaker function theory. Unsat here therefore proves the
+                // original obligation; no arithmetic law is assumed.
+                return Result.Ok(concat("(loom_integer_remainder ", concat(first, concat(" ", concat(second, ")")))))
+            }
             if integer_division(operator) {
                 return Result.Ok(smt_truncated_division(operator, first, second))
             }
@@ -608,6 +620,27 @@ fn smt_query(obligations List[Obligation], extended Bool) Result[Text, Text] {
 }
 
 fn smt_query(obligations List[Obligation], extended Bool, guarded_order Bool) Result[Text, Text] {
+    let encoded = smt_encoding(obligations, extended, guarded_order, false)?
+    Result.Ok(encoded.text)
+}
+
+record SmtEncoding {
+    text Text
+    abstracted Bool
+}
+
+fn smt_encoding(obligations List[Obligation], extended Bool, guarded_order Bool,
+    abstract_remainder Bool) Result[SmtEncoding, Text] {
+    smt_encoding(obligations, extended, guarded_order, abstract_remainder, false)
+}
+
+fn smt_arithmetic_query(obligations List[Obligation]) Result[Text, Text] {
+    let encoded = smt_encoding(obligations, false, false, false, true)?
+    Result.Ok(encoded.text)
+}
+
+fn smt_encoding(obligations List[Obligation], extended Bool, guarded_order Bool,
+    abstract_remainder Bool, scalar_normalization Bool) Result[SmtEncoding, Text] {
     let budget = new[Int]()
     push(budget, 65536)
     let counts = new[Linear]()
@@ -621,6 +654,8 @@ fn smt_query(obligations List[Obligation], extended Bool, guarded_order Bool) Re
     let writer = SmtWriter {
         extended = extended
         guarded_order = guarded_order
+        abstract_remainder = abstract_remainder
+        abstracted = [false]
         support_keys = []
         support_laws = []
         declarations = std.bytes.new()
@@ -675,6 +710,16 @@ fn smt_query(obligations List[Obligation], extended Bool, guarded_order Bool) Re
     } else {
         ""
     }
-    smt_append(body, ")))\n(check-sat-using (then simplify solve-eqs simplify (or-else split-clause skip) solve-eqs simplify aig simplify default))\n")
-    Result.Ok(concat(options, concat(std.bytes.to_text(writer.declarations), std.bytes.to_text(body))))
+    smt_append(body, if scalar_normalization {
+            // Open existential counterexample witnesses before arithmetic
+            // substitution, so their interval bounds participate in rewriting.
+            // This is the same obligation and the same host time limit.
+            ")))\n(check-sat-using (then simplify snf simplify solve-eqs simplify smt))\n"
+        } else {
+            ")))\n(check-sat-using (then simplify solve-eqs simplify (or-else split-clause skip) solve-eqs simplify aig simplify default))\n"
+        })
+    Result.Ok(SmtEncoding {
+            text = concat(options, concat(std.bytes.to_text(writer.declarations), std.bytes.to_text(body)))
+            abstracted = get(writer.abstracted, 0)
+        })
 }

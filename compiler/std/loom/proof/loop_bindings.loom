@@ -1,0 +1,131 @@
+record LoopBindingCopy {
+    target Int
+    source Int
+}
+
+fn loop_binding_copies(value Expr, copies List[LoopBindingCopy], budget List[Int]) {
+    if !conjunction_step(budget) || length(copies) >= 64 || function_layout(value) ||
+    value.kind == ExprKind.If || value.kind == ExprKind.Match || value.kind == ExprKind.While {
+        return
+    }
+    if (value.kind == ExprKind.Assign || value.kind == ExprKind.Let) && length(value.children) == 1 {
+        var source = get(value.children, 0)
+        while source.kind == ExprKind.Coerce && length(source.children) == 1 && conjunction_step(budget) {
+            source = get(source.children, 0)
+        }
+        if source.kind == ExprKind.Local {
+            push(copies, LoopBindingCopy {
+                    target = value.index
+                    source = source.index
+                })
+        }
+    }
+    var index = 0
+    while index < length(value.children) {
+        loop_binding_copies(get(value.children, index), copies, budget)
+        index = index + 1
+    }
+}
+
+fn loop_binding_origins(local Int, copies List[LoopBindingCopy], entry State) List[Int] {
+    let pending = [local]
+    let identities = new[Int]()
+    var index = 0
+    while index < length(pending) && index < 64 {
+        let current = get(pending, index)
+        if current >= 0 && current < length(entry.locals) {
+            match get(entry.locals, current) {
+                Value.List(identity) => if !storage_identity_member(identities, identity) {
+                    push(identities, identity)
+                }
+                _ => {
+                }
+            }
+        }
+        var edge = 0
+        while edge < length(copies) && length(pending) < 64 {
+            let copy = get(copies, edge)
+            if copy.target == current && !storage_identity_member(pending, copy.source) {
+                push(pending, copy.source)
+            }
+            edge = edge + 1
+        }
+        index = index + 1
+    }
+    identities
+}
+
+// Copies between loop bindings can expose several entry headers. Decline a
+// fixed-header guess and incompatible entry exclusions before expensive goal
+// checks; weaken birth bounds to those origins. This is proposal quality only:
+// no alias, exclusion or allocation fact is established by this traversal.
+// Current-root separation remains a separate entry/all-backedge candidate.
+fn loop_binding_candidates(proof Verification, body Expr, candidates List[LoopCandidate], entry State) List[LoopCandidate] {
+    if length(proof.loop_goals.values) == 0 || loop_goal_jump(body) {
+        return candidates
+    }
+    let copies = new[LoopBindingCopy]()
+    loop_binding_copies(body, copies, [256])
+    let retained = new[LoopCandidate]()
+    var index = 0
+    while index < length(candidates) {
+        let candidate = get(candidates, index)
+        let local = match candidate {
+            LoopCandidate.Header(local, path, _) => if length(path) == 0 {
+                local
+            } else {
+                -1
+            }
+            LoopCandidate.Unreachable(local, path, _) => if length(path) == 0 {
+                local
+            } else {
+                -1
+            }
+            LoopCandidate.Born(local, path, _) => if length(path) == 0 {
+                local
+            } else {
+                -1
+            }
+            _ => -1
+        }
+        let origins = if local >= 0 {
+            loop_binding_origins(local, copies, entry)
+        } else {
+            new[Int]()
+        }
+        if length(origins) < 2 {
+            push(retained, candidate)
+        } else {
+            match candidate {
+                LoopCandidate.Header(_, _, _) => {
+                }
+                LoopCandidate.Unreachable(_, _, excluded) => if !storage_identity_member(origins, excluded) {
+                    push(retained, candidate)
+                }
+                LoopCandidate.Born(local, path, initial) => {
+                    var floor = initial
+                    var origin = 0
+                    while origin < length(origins) {
+                        let extent = match list_state(get(origins, origin), entry) {
+                            Result.Ok(value) => value
+                            Result.Err(_) => {
+                                floor = -1
+                                break
+                            }
+                        }
+                        if extent.birth_floor < floor {
+                            floor = extent.birth_floor
+                        }
+                        origin = origin + 1
+                    }
+                    if floor >= 0 {
+                        push(retained, LoopCandidate.Born(local, path, floor))
+                    }
+                }
+                _ => push(retained, candidate)
+            }
+        }
+        index = index + 1
+    }
+    retained
+}

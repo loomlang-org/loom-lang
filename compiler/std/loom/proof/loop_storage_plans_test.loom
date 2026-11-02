@@ -1,0 +1,48 @@
+test fn cached_storage_syntax_resolves_changed_receivers_and_callback_targets() {
+    let program = atomic_pair_program()
+    push(program.types, publication_shape(TypeKind.Function, [1, 1, 2]))
+    let receiver = expression(ExprKind.Local, 6, "", 0, [])
+    let callback = expression(ExprKind.IndirectCall, 2, "", -1,
+        [expression(ExprKind.Local, 8, "", 1, []), literal("1"), literal("2")])
+    let body = expression(ExprKind.Block, 0, "", -1,
+        [expression(ExprKind.Intrinsic, 0, "list_set", -1,
+                [receiver, literal("0"), literal("7")]), callback])
+    let proof = verification(contract_fixture([6, 8], 0, body, [], []), program)
+    let state = with_extent(20, constant(integer(1)), true,
+        with_extent(10, constant(integer(1)), true,
+            State {
+                heap = -1
+                locals = [Value.List(10), Value.Opaque(1, [])]
+                facts = []
+                extents = []
+                observations = []
+            }))
+    let first = new[Int]()
+    let first_resized = new[Int]()
+    let initial_facts = length(state.facts)
+    let initial_work = get(proof.budget, 0)
+    assert match loop_storage_writes(proof, body, state, first_resized, first, [30], 64) {
+        Result.Ok(_) => true
+        Result.Err(_) => false
+    }
+    let prepared_work = get(proof.budget, 0)
+    assert length(first) == 2 && get(first, 0) == 10 && get(first, 1) == 30
+    assert length(first_resized) == 1 && get(first_resized, 0) == 30
+    let second = new[Int]()
+    let second_resized = new[Int]()
+    assert match loop_storage_writes(proof, body, assigned(state, 0, Value.List(20)),
+        second_resized, second, [40], 64) {
+        Result.Ok(_) => true
+        Result.Err(_) => false
+    }
+    assert length(second) == 2 && get(second, 0) == 20 && get(second, 1) == 40
+    assert length(second_resized) == 1 && get(second_resized, 0) == 40
+    assert length(proof.loop_storage_plans) == 1
+    assert initial_work - prepared_work > prepared_work - get(proof.budget, 0)
+    assert length(state.facts) == initial_facts && length(proof.query.obligations) == 0
+    assert match loop_storage_sites(proof, body, 1) {
+        Result.Err(_) => true
+        Result.Ok(_) => false
+    }
+    assert length(proof.loop_storage_plans) == 1
+}

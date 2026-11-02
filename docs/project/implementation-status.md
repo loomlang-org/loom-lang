@@ -94,7 +94,22 @@ now composes entry-state order/count contracts across a package boundary.
 Finite source goals remain intact; histogram strengthening applies to established
 facts. Source-library sorting now proves its entry length through unknown
 effectful comparisons, including mutable element graphs. General comparator
-laws and general ordering/permutation proofs remain open.
+laws remain open.
+The [source-library integer trial](../../compiler/examples/std_sort_contracts)
+now proves adjacent order and complete entry occurrence counts together for
+`std.list.sorted(values, fn(left Int, right Int) Bool { left < right })`.
+Caller predicates suggest segmented, prefix and remaining-input relations;
+entry and every backedge must establish them before they can reach an exit.
+Private scalar helpers expose the clipped merge bounds and width update without
+adding array scans. Checked closure-environment slots retain publication of
+their current mutable captures; a frame tag alone supplies no stability proof.
+Syntax reuse always resolves fresh arguments, receivers, captures and storage
+versions. Count conservation and scalar remainder queries omit unrelated
+premises within the existing query allowances, expansion limits and solver
+timeout. Unknown and changing comparator order still rejects. Cold/warm checks,
+equivalent and invalid source edits, native tests and GC-stressed O0/O2 execution
+exercise the combined contract. Proof-only predicates do not reach native code;
+all six sorting loop assertions are removed.
 The [integer permutation trial](../../compiler/examples/sort_permutation)
 proves entry occurrence counts through unknown effectful comparators. Signed
 histogram invariants compose across private buffer swaps, with publication and
@@ -463,8 +478,9 @@ supported theories and boundaries. The central rules are:
   across a package boundary to prove ordering and permutation; native lowering
   removes all eleven split/merge invariant scans. Completed recursive groups
   retain the assertion evidence from their original successful proof. General
-  comparator laws and ordering proofs for `std.list.sorted` remain open;
-  integer and admitted structural-key entry permutations are proved separately.
+  comparator laws remain open. The source-library integer trial also combines
+  ordering for the checked `Int` less-than callback with entry permutation;
+  admitted structural-key entry permutations retain their independent proofs.
   Its generic List entry count now composes through the ordinary source body,
   unknown comparison callbacks and checked constrained construction. Element
   exclusions distinguish child graphs from their container headers, retaining

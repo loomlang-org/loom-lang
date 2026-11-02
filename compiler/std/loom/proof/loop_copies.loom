@@ -1,0 +1,55 @@
+// An observed source column can suggest pointwise copy conservation for an
+// actual append-from-cursor loop. The fresh destination starts empty. Neither
+// a library name nor matching syntax establishes this relation: entry and all
+// actual stores/backedges still have to prove the proposed equality.
+fn loop_copy_candidates(proof Verification, value Expr, candidates List[LoopCandidate],
+    writes List[Bool], entry State) {
+    if !conjunction_step(proof.budget) || !proof.query.backend.enabled ||
+    length(candidates) >= 64 || value.kind == ExprKind.While || function_layout(value) {
+        return
+    }
+    if loop_storage_primitive(proof, value) == "list_push" && length(value.children) == 2 {
+        let receiver = get(value.children, 0)
+        let read = get(value.children, 1)
+        if receiver.ty >= 0 && receiver.ty < length(proof.program.types) &&
+        loop_storage_primitive(proof, read) == "list_get" && length(read.children) == 2 {
+            let shape = get(proof.program.types, receiver.ty)
+            let cursor = get(read.children, 1)
+            if shape.kind == TypeKind.List && length(shape.arguments) == 1 && cursor.kind == ExprKind.Local &&
+            cursor.index >= 0 && cursor.index < length(writes) && get(writes, cursor.index) {
+                let target = match pure(receiver, entry) {
+                    Result.Ok(Value.List(identity)) => identity
+                    _ => -1
+                }
+                let source = match pure(get(read.children, 0), entry) {
+                    Result.Ok(Value.List(identity)) => identity
+                    _ => -1
+                }
+                if target >= 0 && source >= 0 && target != source {
+                    match list_state(source, entry) {
+                        Result.Ok(before) => if before.contents >= 0 {
+                            let zero = proof_expr(value, ExprKind.Integer, 1, "0", -1, [])
+                            let size = proof_expr(value, ExprKind.Intrinsic, 1, "list_len", -1, [receiver])
+                            let limit = proof_expr(value, ExprKind.Binary, 2, "==", -1, [size, cursor])
+                            let identity = -1 - array_identity(proof)
+                            let bound = proof_expr(value, ExprKind.Intrinsic, 1, "proof_bound", identity, [])
+                            let current = proof_expr(read, ExprKind.Intrinsic, get(shape.arguments, 0), "list_get", -1,
+                                [receiver, bound])
+                            let previous = proof_expr(read, ExprKind.Intrinsic, read.ty, "list_get", -1,
+                                [get(read.children, 0), bound])
+                            loop_prefix_columns(proof, candidates, current, previous, zero, cursor,
+                                identity, limit, proof_bool(value, true), entry, 16)
+                        }
+                        _ => {
+                        }
+                    }
+                }
+            }
+        }
+    }
+    var index = 0
+    while index < length(value.children) {
+        loop_copy_candidates(proof, get(value.children, index), candidates, writes, entry)
+        index = index + 1
+    }
+}

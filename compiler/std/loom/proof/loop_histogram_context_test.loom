@@ -1,0 +1,25 @@
+test fn histogram_context_weakens_order_premises_without_losing_count_or_copy_frames() {
+    let order = arithmetic_scan_fixture(777)
+    let bag = Predicate.BagEqual(bag_column(10), variable(2), bag_column(11), variable(2))
+    let frame = Predicate.ArrayPrefix(10, 11, variable(2))
+    let pointwise = Predicate.Forall(-1, constant(integer(0)), variable(2),
+        [Predicate.IntegerCompare("==", IntegerTerm.Select(10, [], variable(-1)),
+                IntegerTerm.Select(11, [], variable(-1)))])
+    let counted = Predicate.Forall(-1, constant(integer(0)), variable(2), [bag])
+    let negated = Predicate.Not([order])
+    let state = State {
+        heap = -1
+        locals = []
+        facts = [Predicate.And([bag, order]), frame, pointwise, counted, negated]
+        extents = []
+        observations = []
+    }
+    let context = loop_histogram_context(state)
+    assert length(context.facts) == 5 && same(get(context.facts, 0), bag)
+    assert same(get(context.facts, 1), frame) && same(get(context.facts, 2), pointwise)
+    assert same(get(context.facts, 3), counted) && same(get(context.facts, 4), negated)
+    assert length(state.facts) == 5 && same(get(state.facts, 0), Predicate.And([bag, order]))
+    let exhausted = new[Predicate]()
+    loop_histogram_fact(bag, exhausted, [0])
+    assert length(exhausted) == 0
+}

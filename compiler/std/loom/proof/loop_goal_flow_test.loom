@@ -1,0 +1,267 @@
+test fn caller_goal_hints_keep_noncount_conjuncts_without_dropping_count_contracts() {
+    let count = expression(ExprKind.Intrinsic, 1, "proof_count", -1,
+        [local(1), literal("0"), local(0)])
+    let counted = operation("==", count, literal("0"))
+    let read = expression(ExprKind.Intrinsic, 1, "list_get", -1, [local(1), literal("0")])
+    let relation = operation(">=", read, literal("0"))
+    let clause = operation("&&", counted, relation)
+    let proof = verification(contract_fixture([1], 1, local(0), [], [clause]), empty_proof_program())
+    let hints = call_loop_goals(proof, 1, 5)
+    assert length(hints) == 1
+    assert exact_expression(get(hints, 0), operation(">=",
+            expression(ExprKind.Intrinsic, 1, "list_get", -1, [local(5), literal("0")]), literal("0")))
+    assert length(proof.function.postconditions) == 1
+    assert exact_expression(get(proof.function.postconditions, 0), clause)
+    assert length(proof.query.obligations) == 0 && get(proof.loop_goals.remaining, 0) == 8
+}
+
+test fn loop_suffix_hints_follow_rebinding_without_adding_contracts_or_facts() {
+    let goal = operation("<=", local(0), local(3))
+    let function = contract_fixture([1, 1, 1, 1], 1, local(0), [], [])
+    let original = verification(function, empty_proof_program())
+    let proof = Verification {
+        loop_goals = LoopGoals {
+            values = [goal]
+            remaining = [8]
+        }
+        ..original
+    }
+    let body = [expression(ExprKind.Let, 0, "", 2, [local(0)]),
+        expression(ExprKind.Assign, 0, "", 0, [local(1)]),
+        expression(ExprKind.Assign, 0, "", 1, [local(2)]),
+        expression(ExprKind.Assign, 0, "", 3, [operation("*", local(3), literal("2"))])]
+    let hints = loop_suffix_goals(proof, body, 0)
+    assert length(hints.loop_goals.values) == 2
+    assert exact_expression(get(hints.loop_goals.values, 0),
+        operation("<=", local(1), operation("*", local(3), literal("2"))))
+    assert exact_expression(get(hints.loop_goals.values, 1), goal)
+    assert length(hints.function.preconditions) == 0 && length(hints.function.postconditions) == 0
+    assert get(hints.loop_goals.remaining, 0) == 8
+    assert length(proof.loop_goals.values) == 1
+}
+
+test fn failed_loop_goal_batches_preserve_the_shared_query_limit_and_establish_no_facts() {
+    let calls = [0]
+    let original = verification(contract_fixture([1, 1], 2,
+            proof_bool(local(0), true), [], []), empty_proof_program(), ProofBackend {
+            enabled = true
+            context = ""
+            solve = fn(context Text, query Text) Result[Bool, Text] {
+                set(calls, 0, get(calls, 0) + 1)
+                Result.Ok(false)
+            }
+        })
+    let product = operation("*", local(0), local(1))
+    let first = operation("==", product, literal("0"))
+    let second = operation("==", product, literal("1"))
+    let state = State {
+        heap = -1
+        locals = [Value.Number(variable(0)), Value.Number(variable(1))]
+        facts = []
+        extents = []
+        observations = []
+    }
+    let candidates = [LoopCandidate.Goal(first, original.loop_goals.remaining),
+        LoopCandidate.Goal(second, original.loop_goals.remaining)]
+    assert !loop_goal_batch(original, candidates, state)
+    assert get(calls, 0) == 1 && get(original.loop_goals.remaining, 0) == 7
+    assert length(state.facts) == 0 && length(original.query.obligations) == 0
+    assert !loop_goal_batch(original, [get(candidates, 0)], state)
+    assert get(calls, 0) == 1 && get(original.loop_goals.remaining, 0) == 7
+    set(original.loop_goals.remaining, 0, 0)
+    assert !loop_goal_batch(original, candidates, state) && get(calls, 0) == 1
+}
+
+test fn loop_suffix_hints_unwrap_scalar_branch_blocks_before_choice_normalization() {
+    let goal = operation("<=", local(0), local(2))
+    let original = verification(contract_fixture([1, 1, 1], 1, local(0), [], []), empty_proof_program())
+    let proof = Verification {
+        loop_goals = LoopGoals {
+            values = [goal]
+            remaining = [8]
+        }
+        ..original
+    }
+    let update = expression(ExprKind.If, 1, "", -1,
+        [operation(">=", local(2), literal("4")),
+            expression(ExprKind.Block, 1, "", -1, [literal("8")]),
+            expression(ExprKind.Block, 1, "", -1, [operation("*", local(2), literal("2"))])])
+    let hints = loop_suffix_goals(proof,
+        [expression(ExprKind.Assign, 0, "", 0, [local(1)]),
+            expression(ExprKind.Assign, 0, "", 2, [update])], 0)
+    assert length(hints.loop_goals.values) == 2
+    let projected = get(hints.loop_goals.values, 0)
+    assert !has_choice(projected) && !scan_mentions(projected, 0) && scan_mentions(projected, 1)
+    assert exact_expression(get(hints.loop_goals.values, 1), goal)
+    assert get(proof.loop_goals.remaining, 0) == 8
+}
+
+test fn loop_goal_clauses_keep_binder_dependent_guards_inside_each_universal() {
+    let bound = expression(ExprKind.Intrinsic, 1, "proof_bound", -1, [])
+    let phase = operation(">", local(0), literal("4"))
+    let edge = operation("==", operation("%", bound, local(0)), literal("0"))
+    let point = operation(">=", bound, literal("1"))
+    let left = operation("||", phase, operation("||", edge, point))
+    let right = operation("||", proof_not(phase), point)
+    let all = quantified_value(bound, -1, literal("1"), local(1), operation("&&", left, right))
+    let clauses = match loop_goal_clauses(all, [256]) {
+        Result.Ok(value) => value
+        Result.Err(_) => all
+    }
+    assert clauses.kind == ExprKind.Binary && clauses.text == "&&"
+    assert exact_expression(get(clauses.children, 0), operation("||", phase,
+            quantified_value(bound, -1, literal("1"), local(1), operation("||", edge, point))))
+    assert exact_expression(get(clauses.children, 1), operation("||", proof_not(phase),
+            quantified_value(bound, -1, literal("1"), local(1), point)))
+    assert match loop_goal_clauses(all, [0]) {
+        Result.Err(_) => true
+        _ => false
+    }
+}
+
+test fn unit_division_and_true_quantifiers_keep_definedness_separate() {
+    let term = add(variable(4), constant(integer(7)))
+    assert match numeric("%", term, constant(integer(1))) {
+        Result.Ok(Value.Number(value)) => length(value.terms) == 0 && compare(value.constant, integer(0)) == 0
+        _ => false
+    }
+    assert match numeric("/", term, constant(integer(1))) {
+        Result.Ok(Value.Number(value)) => same_terms(term.terms, value.terms) && compare(term.constant, value.constant) == 0
+        _ => false
+    }
+    assert match numeric("/", constant(integer(-9223372036854775808)), constant(integer(-1))) {
+        Result.Err(_) => true
+        _ => false
+    }
+    let state = State {
+        heap = -1
+        locals = [Value.Number(variable(0))]
+        facts = []
+        extents = []
+        observations = []
+    }
+    let source = literal("0")
+    let yes = proof_bool(source, true)
+    let all = quantified_value(source, -1, source, local(0), yes)
+    assert match quantified_predicate(all, state) {
+        Result.Ok(Predicate.Constant(true)) => true
+        _ => false
+    }
+    let bound = expression(ExprKind.Intrinsic, 1, "proof_bound", -1, [])
+    let nested = quantified_value(source, -1, source, local(0),
+        operation("||", operation(">", bound, source), yes))
+    assert match quantified_predicate(nested, state) {
+        Result.Ok(Predicate.Constant(true)) => true
+        _ => false
+    }
+    let unsafe = quantified_value(source, -1, source, operation("/", literal("1"), source), yes)
+    assert match quantified_predicate(unsafe, state) {
+        Result.Err(_) => true
+        _ => false
+    }
+    assert match quantified_defined(unsafe, state) {
+        Result.Err(_) => true
+        _ => false
+    }
+}
+
+test fn caller_quantified_candidates_keep_the_scalar_branch_guard() {
+    let enabled = expression(ExprKind.Local, 2, "", 0, [])
+    let bound = expression(ExprKind.Intrinsic, 1, "proof_bound", -1, [])
+    // The relation is false on [0, 1). Only the enabled branch makes this
+    // goal true initially; it must fail after that branch becomes false.
+    let all = quantified_value(bound, -1, literal("0"), literal("1"),
+        operation("<", bound, literal("0")))
+    let goal = operation("||", enabled, all)
+    let original = verification(contract_fixture([2], 2, enabled, [], []), empty_proof_program())
+    let proof = Verification {
+        goal_candidates = true
+        ..original
+    }
+    let entry = State {
+        heap = -1
+        locals = [Value.Boolean(Predicate.Constant(true))]
+        facts = []
+        extents = []
+        observations = []
+    }
+    let candidates = new[LoopCandidate]()
+    loop_quantified_clauses(proof, goal, candidates, [], entry, 64)
+    assert length(candidates) == 1
+    loop_quantified_clauses(proof, goal, candidates, [], entry, 64)
+    assert length(candidates) == 1
+    let candidate = get(candidates, 0)
+    assert match candidate {
+        LoopCandidate.Goal(value, _) => exact_expression(value, goal)
+        _ => false
+    }
+    assert quantified_candidate_preserved(proof, candidate, entry)
+    let disabled = State {
+        locals = [Value.Boolean(Predicate.Constant(false))]
+        ..entry
+    }
+    assert !quantified_candidate_preserved(proof, candidate, disabled)
+    assert length(entry.facts) == 0 && length(proof.function.postconditions) == 0
+    assert get(proof.loop_goals.remaining, 0) == 8
+}
+
+test fn caller_entry_discovery_observes_current_arrays_without_solver_queries() {
+    let calls = [0]
+    let backend = ProofBackend {
+        enabled = true
+        context = ""
+        solve = fn(context Text, query Text) Result[Bool, Text] {
+            calls[0] = calls[0] + 1
+            Result.Err("entry discovery must stay local")
+        }
+    }
+    let bound = expression(ExprKind.Intrinsic, 1, "proof_bound", -1, [])
+    let input = expression(ExprKind.Local, 6, "", 0, [])
+    let read = expression(ExprKind.Intrinsic, 1, "list_get", -1, [input, bound])
+    let condition = operation(">=", read, literal("0"))
+    let all = quantified_value(bound, -1, literal("0"), literal("1"), condition)
+    let original = verification(contract_fixture([6], 0, bound, [], []), empty_proof_program(), backend)
+    let proof = Verification {
+        goal_candidates = true
+        ..original
+    }
+    let state = State {
+        heap = -1
+        locals = [Value.List(10)]
+        facts = []
+        extents = []
+        observations = []
+    }
+    let entry = with_extent(10, constant(integer(1)), true, state)
+    let candidates = new[LoopCandidate]()
+    let before = get(proof.fresh, 0)
+    propose_quantified(proof, candidates, all, entry)
+    assert length(candidates) == 0 && calls[0] == 0
+    assert get(proof.fresh, 0) > before
+    let vacuous = quantified_value(bound, -1, literal("0"), literal("1"),
+        operation("||", condition, proof_bool(bound, true)))
+    propose_quantified(proof, candidates, vacuous, entry)
+    assert length(candidates) == 1 && calls[0] == 0
+    assert length(proof.query.obligations) == 0 && get(entry.extents, 0).contents < 0
+    assert length(proof.function.postconditions) == 0 && get(proof.loop_goals.remaining, 0) == 8
+}
+
+test fn nested_goal_hints_prioritize_parent_candidates_without_assuming_them() {
+    let original = operation("<", local(0), local(1))
+    let candidate = operation("<=", local(0), local(1))
+    let base = verification(contract_fixture([1, 1], 0, original, [], []), empty_proof_program())
+    let proof = Verification {
+        loop_goals = LoopGoals {
+            values = [original]
+            remaining = [8]
+        }
+        ..base
+    }
+    let iteration = loop_iteration_goals(proof, [LoopCandidate.Goal(candidate, proof.loop_goals.remaining)])
+    assert length(iteration.loop_goals.values) == 1
+    assert exact_expression(get(iteration.loop_goals.values, 0), candidate)
+    let fallback = loop_iteration_goals(proof, [])
+    assert length(fallback.loop_goals.values) == 1 && exact_expression(get(fallback.loop_goals.values, 0), original)
+    assert length(iteration.function.preconditions) == 0 && length(iteration.function.postconditions) == 0
+    assert length(iteration.query.obligations) == 0 && get(proof.loop_goals.remaining, 0) == 8
+}

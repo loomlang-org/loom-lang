@@ -1,3 +1,50 @@
+test fn callback_loop_frames_allow_closed_readonly_data_helpers_and_check_argument_effects() {
+    let program = atomic_pair_program()
+    let shape = publication_shape(TypeKind.Record, [])
+    push(program.types, Type {
+            fields = [Field {
+                    name = "value"
+                    ty = 1
+                }]
+            ..shape
+        })
+    let returned = expression(ExprKind.Record, 8, "", -1,
+        [expression(ExprKind.Field, 1, "value", 0, [local(0)])])
+    let helper = contract_fixture([1], 8, returned, [], [])
+    push(program.functions, helper)
+    push(program.functions, Function {
+            runtime_name = "unknown_effect"
+            ..contract_fixture([1], 1, local(0), [], [])
+        })
+    push(program.functions, contract_fixture([6], 1, literal("0"), [], []))
+    push(program.functions, contract_fixture([], 6,
+            expression(ExprKind.List, 6, "", -1, [literal("1")]), [], []))
+    push(program.functions, Function {
+            is_async = true
+            ..helper
+        })
+    let call = helper_call(0, 8, [literal("1")])
+    let proof = verification(contract_fixture([], 8, call, [], []), program)
+    let state = State {
+        heap = -1
+        locals = []
+        facts = []
+        extents = []
+        observations = []
+    }
+    let graph = Publication {
+        identities = []
+        opaque = []
+    }
+    assert loop_callback_graph(proof, call, state, [], graph, [512], 0)
+    assert !loop_callback_graph(proof, helper_call(0, 8,
+            [helper_call(1, 1, [literal("1")])]), state, [], graph, [512], 0)
+    assert !loop_closed_readonly_call(proof, helper_call(1, 1, [literal("1")]))
+    assert !loop_closed_readonly_call(proof, helper_call(2, 1, [literal("1")]))
+    assert !loop_closed_readonly_call(proof, helper_call(3, 6, []))
+    assert !loop_closed_readonly_call(proof, helper_call(4, 8, [literal("1")]))
+}
+
 test fn callback_loop_frames_require_stable_callees_and_complete_publication() {
     let types = new[Type]()
     var index = 0

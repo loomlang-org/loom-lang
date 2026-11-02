@@ -12,17 +12,29 @@ import std.result.Result
 import std.option.Option
 import std.text.concat
 
+record LoopGoals {
+    values List[Expr]
+    remaining List[Int]
+}
+
 record Verification {
     function Function
     program Program
     fresh List[Int]
     budget List[Int]
     loop_plans List[LoopPlan]
+    loop_storage_plans List[LoopStoragePlan]
+    call_templates List[CallTemplateEntry]
+    expression_templates List[ExpressionTemplateEntry]
+    summary_templates List[SummaryTemplateEntry]
     fact_check List[FactCheck]
     loop_control Option[LoopControl]
     query ProofQuery
     shared Bool
     preservation List[Expr]
+    loop_goals LoopGoals
+    goal_candidates Bool
+    defer_loop_goals Bool
     identity_stores Bool
     histograms Bool
     typed_scans Bool
@@ -320,9 +332,10 @@ fn block(proof Verification, expr Expr, state State, depth Int) Result[List[Outc
     var index = 0
     while index < length(expr.children) {
         let next = new[Outcome]()
+        let current = loop_suffix_goals(proof, expr.children, index + 1)
         var path = 0
         while path < length(states) {
-            discard append(next, execute(proof, get(expr.children, index), get(states, path).state, depth - 1)?)?
+            discard append(next, execute(current, get(expr.children, index), get(states, path).state, depth - 1)?)?
             path = path + 1
         }
         states = next
@@ -563,6 +576,13 @@ fn execute_expression(proof Verification, expr Expr, state State, depth Int) Res
         return loop_jump(proof, expr, state)
     }
     if expr.kind == ExprKind.Unary || expr.kind == ExprKind.Binary {
+        match expression_template_call(proof, expr, state) {
+            Option.Some(paths) => {
+                return Result.Ok(paths)
+            }
+            Option.None => {
+            }
+        }
         return operation(proof, expr, state, depth)
     }
     if expr.kind == ExprKind.Coerce {

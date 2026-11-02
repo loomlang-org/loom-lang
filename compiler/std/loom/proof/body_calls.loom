@@ -147,6 +147,29 @@ fn source_body_call(proof Verification, target Int, function Function, input Cal
             })
         index = index + 1
     }
+    let suggest = get(proof.loop_goals.remaining, 0) > 0 && function.result != 0 && function.result == proof.function.result &&
+    proof.function.result_local >= 0 &&
+    (length(proof.function.postconditions) != 0 || length(proof.loop_goals.values) != 0) &&
+    (goal_result_call(proof.function.body, target, 64) || goal_return_call(proof.function.body, target, 64))
+    let result_slot = if function.result_local >= 0 {
+        boundary + function.result_local
+    } else {
+        length(locals)
+    }
+    let goals = if suggest {
+        call_loop_goals(proof, function.result, result_slot)
+    } else {
+        new[Expr]()
+    }
+    if length(goals) != 0 && function.result_local < 0 {
+        push(locals, Local {
+                name = "result"
+                ty = function.result
+                mutable = false
+                is_scoped = false
+            })
+        push(values, Value.Empty)
+    }
     let preconditions = new[Expr]()
     index = 0
     while index < length(function.preconditions) {
@@ -163,13 +186,21 @@ fn source_body_call(proof Verification, target Int, function Function, input Cal
             preconditions = preconditions
             postconditions = new[Expr]()
             result_cleanup = new[Expr]()
-            result_local = -1
+            result_local = if length(goals) == 0 {
+                -1
+            } else {
+                result_slot
+            }
             body = call_body_at(function.body, boundary, 256)?
             runtime_name = ""
             span = function.span
         }, proof.fresh)?
     let frame = Verification {
         function = scope
+        loop_goals = LoopGoals {
+            values = goals
+            ..proof.loop_goals
+        }
         assertions = Option.None
         loop_control = Option.None
         body_calls = calls
@@ -200,4 +231,127 @@ fn source_body_call(proof Verification, target Int, function Function, input Cal
         index = index + 1
     }
     Result.Ok(output)
+}
+
+// Optional caller goals are templates, never callee guarantees or store
+// obligations. Local indices remain in the caller prefix; only the typed
+// result placeholder is renamed into this invocation's own scope.
+fn call_loop_goals(proof Verification, result_type Int, result_slot Int) List[Expr] {
+    let output = new[Expr]()
+    if result_type == 0 || result_type != proof.function.result ||
+    result_slot < 0 || proof.function.result_local < 0 {
+        return output
+    }
+    let reference = proof_expr(proof.function.body, ExprKind.Local, result_type, "", result_slot, [])
+    let budget = [256]
+    var group = 0
+    while group < 2 {
+        let values = if group == 0 {
+            proof.function.postconditions
+        } else {
+            proof.loop_goals.values
+        }
+        var index = 0
+        while index < length(values) && length(output) < 32 {
+            let value = get(values, index)
+            call_loop_goal(output, value, proof.function.result_local, reference, budget)
+            index = index + 1
+        }
+        group = group + 1
+    }
+    output
+}
+
+// Count relations already use the independently checked histogram candidates.
+// Scalar extent and evaluation checks need no element-flow discovery either.
+// Replaying nested loops for those relations consumes the finite expansion
+// budget without a content candidate. Declining these optional hints never
+// removes a required postcondition or any of its evaluation checks.
+fn call_loop_goal(output List[Expr], value Expr, result_local Int, reference Expr, budget List[Int]) {
+    if length(output) >= 32 || !conjunction_step(budget) {
+        return
+    }
+    if value.kind == ExprKind.Binary && value.text == "&&" && length(value.children) == 2 {
+        call_loop_goal(output, get(value.children, 0), result_local, reference, budget)
+        call_loop_goal(output, get(value.children, 1), result_local, reference, budget)
+    } else if mentions_result(value, result_local) && contains_list_read(value) && !loop_counted_relation(value) {
+        push(output, loop_replace_result(value, result_local, reference))
+    }
+}
+
+// Only calls whose values can directly flow to a return need this optional
+// search. In particular, an allocation before a transforming loop should not
+// be asked to establish that loop's final content predicate.
+fn goal_result_call(value Expr, target Int, depth Int) Bool {
+    if depth <= 0 || function_layout(value) {
+        return false
+    }
+    if value.kind == ExprKind.Call {
+        return value.index == target
+    }
+    if value.kind == ExprKind.IndirectCall {
+        return true
+    }
+    if (value.kind == ExprKind.Coerce || value.kind == ExprKind.Return) && length(value.children) == 1 {
+        return goal_result_call(get(value.children, 0), target, depth - 1)
+    }
+    if value.kind == ExprKind.Block && length(value.children) != 0 {
+        var end = length(value.children) - 1
+        var tail = get(value.children, end)
+        // Follow only adjacent, immutable local forwarding. Crossing another
+        // statement would require effect/alias reasoning, not this cheap hint.
+        while end > 0 && tail.kind == ExprKind.Local {
+            let binding = get(value.children, end - 1)
+            if binding.kind != ExprKind.Let || binding.index != tail.index || length(binding.children) != 1 {
+                break
+            }
+            tail = get(binding.children, 0)
+            end = end - 1
+        }
+        return goal_result_call(tail, target, depth - 1)
+    }
+    if value.kind == ExprKind.If && length(value.children) == 3 {
+        return goal_result_call(get(value.children, 1), target, depth - 1) ||
+        goal_result_call(get(value.children, 2), target, depth - 1)
+    }
+    if value.kind == ExprKind.Match {
+        var arm = 0
+        while arm < length(value.arms) {
+            let body = get(value.arms, arm).body
+            if length(body) != 0 && goal_result_call(get(body, length(body) - 1), target, depth - 1) {
+                return true
+            }
+            arm = arm + 1
+        }
+    }
+    false
+}
+
+fn goal_return_call(value Expr, target Int, depth Int) Bool {
+    if depth <= 0 || function_layout(value) {
+        return false
+    }
+    if value.kind == ExprKind.Return {
+        return goal_result_call(value, target, depth)
+    }
+    var index = 0
+    while index < length(value.children) {
+        if goal_return_call(get(value.children, index), target, depth - 1) {
+            return true
+        }
+        index = index + 1
+    }
+    var arm = 0
+    while arm < length(value.arms) {
+        let body = get(value.arms, arm).body
+        index = 0
+        while index < length(body) {
+            if goal_return_call(get(body, index), target, depth - 1) {
+                return true
+            }
+            index = index + 1
+        }
+        arm = arm + 1
+    }
+    false
 }

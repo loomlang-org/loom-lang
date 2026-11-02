@@ -1,0 +1,45 @@
+// Prefix conservation does not need an independently checked adjacent-order
+// invariant. In particular its modular guard can introduce nonlinear quantified
+// arithmetic into an otherwise finite histogram query. Removing that premise
+// asks for a stronger proof of the same conservation goal; it adds no fact and
+// uses the same single optional query. Required checks keep the complete state.
+fn loop_histogram_fact(value Predicate, output List[Predicate], budget List[Int]) {
+    if !conjunction_step(budget) {
+        return
+    }
+    match value {
+        Predicate.And(values) => {
+            var index = 0
+            while index < length(values) {
+                loop_histogram_fact(get(values, index), output, budget)
+                index = index + 1
+            }
+        }
+        Predicate.Forall(identity, _, _, body) => {
+            if length(body) == 1 {
+                match guarded_order_step(identity, get(body, 0), false, [256], 0) {
+                    Option.Some(_) => {
+                        return
+                    }
+                    Option.None => {
+                    }
+                }
+            }
+            push(output, value)
+        }
+        _ => push(output, value)
+    }
+}
+
+fn loop_histogram_context(state State) State {
+    let facts = new[Predicate]()
+    var index = 0
+    while index < length(state.facts) {
+        loop_histogram_fact(get(state.facts, index), facts, [256])
+        index = index + 1
+    }
+    State {
+        facts = facts
+        ..state
+    }
+}

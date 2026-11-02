@@ -59,6 +59,7 @@ fn loop_candidate_views(proof Verification, candidates List[LoopCandidate], stat
             loop_root_view(local, path, target, target_path, current)
             LoopCandidate.Histogram(terms, _) => loop_histogram_views(proof, terms, current)
             LoopCandidate.Guard(value, _) => loop_guard_views(proof, value, current)
+            LoopCandidate.Goal(value, _) => loop_guard_views(proof, value, current)
             LoopCandidate.ElementFrame(local, path, target, target_path) =>
             loop_element_view(local, path, target, target_path, current)
             _ => Result.Ok(current)
@@ -69,9 +70,11 @@ fn loop_candidate_views(proof Verification, candidates List[LoopCandidate], stat
                     current = next
                     push(available, candidate)
                 }
-                Result.Err(_) => {}
+                Result.Err(_) => {
+                }
             }
-            Result.Err(_) => {}
+            Result.Err(_) => {
+            }
         }
         index = index + 1
     }

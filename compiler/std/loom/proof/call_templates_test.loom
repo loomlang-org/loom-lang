@@ -1,0 +1,306 @@
+test fn call_template_binding_keeps_formal_locals_separate_from_lexical_cursors() {
+    let source = literal("0")
+    let outer = proof_expr(source, ExprKind.Intrinsic, 1, "proof_bound", -1, [])
+    let inner = proof_expr(source, ExprKind.Intrinsic, 1, "proof_bound", -2, [])
+    let condition = operation("<=", operation("+", local(0), outer), inner)
+    let nested = quantified_value(source, -2, outer, local(1), condition)
+    let value = quantified_value(source, -1, literal("0"), local(1), nested)
+    assert call_template_expression(value, 2, 2, [256])
+    let first = call_template_at(value, 7, 20)
+    let second = call_template_at(value, 11, 30)
+    assert first.index == -21 && second.index == -31
+    let first_inner = get(first.children, 2)
+    let second_inner = get(second.children, 2)
+    assert first_inner.index == -22 && second_inner.index == -32
+    assert get(first.children, 1).index == 8
+    assert get(second.children, 1).index == 12
+    assert get(first_inner.children, 0).index == -21
+    assert get(second_inner.children, 0).index == -31
+    // Entry observations and a free source local cannot enter a schema.
+    assert !call_template_expression(local(2), 2, 2, [256])
+    assert !call_template_expression(outer, 2, 0, [256])
+    assert !call_template_expression(value, 2, 2, [0])
+}
+
+test fn shared_primitive_call_templates_recompute_from_each_saved_argument_tuple() {
+    let comparison = operation("<", local(0), local(1))
+    let helper = contract_fixture([1, 1], 2, comparison, [], [])
+    let reverse = contract_fixture([1, 1], 2, operation(">", local(0), local(1)), [], [])
+    let caller = contract_fixture([], 2, proof_bool(comparison, true), [], [])
+    let program = Program {
+        function_identities = [-1, -1]
+        ..proof_helpers([helper, reverse])
+    }
+    assert !predicate_function(program, 0)
+    assert pure_function_body(program, 0)
+    let proof = Verification {
+        shared = true
+        ..verification(caller, program)
+    }
+    let call = helper_call(0, 2, [literal("1"), literal("2")])
+    let state = State {
+        heap = -1
+        locals = [Value.Number(constant(integer(1))), Value.Number(constant(integer(2)))]
+        facts = []
+        extents = []
+        observations = []
+    }
+    let first = match call_template_call(proof, call, helper, state, 0, 64) {
+        Result.Ok(Option.Some(values)) => values
+        _ => {
+            assert false
+            new[Outcome]()
+        }
+    }
+    assert length(proof.call_templates) == 1
+    assert match get(first, 0).value {
+        Value.Boolean(value) => holds(value, state.facts)
+        _ => false
+    }
+    let changed = State {
+        locals = [get(state.locals, 1), get(state.locals, 0)]
+        ..state
+    }
+    let second = match call_template_call(proof, call, helper, changed, 0, 64) {
+        Result.Ok(Option.Some(values)) => values
+        _ => {
+            assert false
+            new[Outcome]()
+        }
+    }
+    assert length(proof.call_templates) == 1
+    assert match get(second, 0).value {
+        Value.Boolean(value) => !holds(value, state.facts)
+        _ => false
+    }
+    let opposite = match call_template_call(proof, helper_call(1, 2, [literal("1"), literal("2")]),
+        reverse, state, 0, 64) {
+        Result.Ok(Option.Some(values)) => values
+        _ => {
+            assert false
+            new[Outcome]()
+        }
+    }
+    assert length(proof.call_templates) == 2
+    assert match get(opposite, 0).value {
+        Value.Boolean(value) => !holds(value, state.facts)
+        _ => false
+    }
+}
+
+test fn stable_boolean_templates_keep_guarded_checks_and_reobserve_after_a_write() {
+    let input = expression(ExprKind.Local, 6, "", 0, [])
+    let left = local(1)
+    let right = local(2)
+    let first = expression(ExprKind.Intrinsic, 1, "list_get", -1, [input, left])
+    let second = expression(ExprKind.Intrinsic, 1, "list_get", -1, [input, right])
+    let size = literal("4")
+    let skipped = operation(">=", right, size)
+    let value = operation("||", skipped, operation("<=", first, second))
+    let guard = proof_not(skipped)
+    let checks = [Evaluation {
+            guard = guard
+            value = operation("&&", operation(">=", left, literal("0")), operation("<", left, size))
+            required = true
+            universal = false
+        }, Evaluation {
+            guard = guard
+            value = operation("&&", operation(">=", right, literal("0")), operation("<", right, size))
+            required = true
+            universal = false
+        }]
+    let calls = [0]
+    let backend = ProofBackend {
+        enabled = true
+        context = ""
+        solve = fn(context Text, query Text) Result[Bool, Text] {
+            calls[0] = calls[0] + 1
+            Result.Err("logical value needs no solver")
+        }
+    }
+    let proof = verification(contract_fixture([6, 1, 1], 2, value, [], []), empty_proof_program(), backend)
+    let state = State {
+        heap = -1
+        locals = [Value.List(10), Value.Number(variable(1)), Value.Number(variable(2))]
+        facts = []
+        extents = []
+        observations = []
+    }
+    let entry = with_extent(10, constant(integer(4)), true, state)
+    let paths = match call_template_logical(proof, value, checks, entry, 3) {
+        Result.Ok(Option.Some(paths)) => paths
+        _ => new[Outcome]()
+    }
+    assert length(paths) == 1 && calls[0] == 0
+    let before = get(paths, 0)
+    assert !loop_holds(Predicate.Compare("<", add(variable(2), constant(integer(-4)))), before.state)
+    let extent = get(before.state.extents, 0)
+    let changed = match array_write(proof, extent, constant(integer(0)), Value.Number(constant(integer(7))), before.state) {
+        Result.Ok(current) => current
+        Result.Err(_) => before.state
+    }
+    let following = match call_template_logical(proof, value, checks, changed, 3) {
+        Result.Ok(Option.Some(paths)) => paths
+        _ => new[Outcome]()
+    }
+    assert length(following) == 1
+    assert match before.value {
+        Value.Boolean(first) => match get(following, 0).value {
+            Value.Boolean(second) => !same(first, second)
+            _ => false
+        }
+        _ => false
+    }
+    assert match call_template_logical(proof, value, checks, published_storage(entry), 3) {
+        Result.Ok(Option.None) => true
+        _ => false
+    }
+    let partial = [Evaluation {
+            guard = guard
+            value = first
+            required = false
+            universal = false
+        }]
+    assert match call_template_logical(proof, value, partial, entry, 3) {
+        Result.Ok(Option.None) => true
+        _ => false
+    }
+    assert calls[0] == 0 && length(proof.query.obligations) == 0
+}
+
+test fn expression_syntax_cache_keys_actual_callback_targets_and_charges_reuse() {
+    let first = contract_fixture([1, 1], 2, operation("<", local(0), local(1)), [], [])
+    let second = contract_fixture([1, 1], 2, operation(">", local(0), local(1)), [], [])
+    let callback = expression(ExprKind.Local, 6, "", 0, [])
+    let call = expression(ExprKind.IndirectCall, 2, "", -1, [callback, literal("1"), literal("2")])
+    let condition = operation("&&", proof_bool(call, true), call)
+    let base = verification(contract_fixture([6], 2, condition, [], []), proof_helpers([first, second]),
+        ProofBackend {
+            enabled = true
+            context = ""
+            solve = failed_solver
+        })
+    let proof = Verification {
+        loop_goals = LoopGoals {
+            values = [proof_bool(condition, true)]
+            remaining = [8]
+        }
+        ..base
+    }
+    let entry = State {
+        heap = -1
+        locals = [Value.Function(0, []), Value.Empty]
+        facts = []
+        extents = []
+        observations = []
+    }
+    let ascending = match expression_template_call(proof, condition, entry) {
+        Option.Some(paths) => paths
+        Option.None => new[Outcome]()
+    }
+    assert length(ascending) == 1 && length(proof.expression_templates) == 1
+    assert match get(ascending, 0).value {
+        Value.Boolean(value) => loop_holds(value, get(ascending, 0).state)
+        _ => false
+    }
+    let changed = assigned(entry, 0, Value.Function(1, []))
+    let descending = match expression_template_call(proof, condition, changed) {
+        Option.Some(paths) => paths
+        Option.None => new[Outcome]()
+    }
+    assert length(descending) == 1 && length(proof.expression_templates) == 2
+    assert match get(descending, 0).value {
+        Value.Boolean(value) => loop_holds(not(value), get(descending, 0).state)
+        _ => false
+    }
+    let remaining = get(proof.budget, 0)
+    assert match expression_template_call(proof, condition, entry) {
+        Option.Some(paths) => length(paths) == 1
+        Option.None => false
+    }
+    assert get(proof.budget, 0) == remaining - 1 && length(proof.expression_templates) == 2
+    assert length(proof.query.obligations) == 0 && get(proof.loop_goals.remaining, 0) == 8
+    let bound = expression(ExprKind.Intrinsic, 1, "proof_bound", -1, [])
+    assert !expression_template_source(operation("&&", operation(">", bound, literal("0")), proof_bool(bound, true)), [256])
+}
+
+test fn expression_capture_snapshots_do_not_escape_or_freeze_observable_captures() {
+    let types = new[Type]()
+    var index = 0
+    while index < 6 {
+        push(types, publication_shape(TypeKind.Int, []))
+        index = index + 1
+    }
+    push(types, publication_shape(TypeKind.Record, []))
+    push(types, publication_shape(TypeKind.Function, [1, 1, 2]))
+    let empty = contract_fixture([6, 1, 1], 2, operation("<", local(1), local(2)), [], [])
+    let partial = contract_fixture([6, 1, 1], 2,
+        operation(">", operation("/", local(1), literal("0")), literal("0")), [], [])
+    let captured = contract_fixture([1, 1, 1], 2, operation("<", local(1), local(0)), [], [])
+    let program = Program {
+        types = types
+        ..proof_helpers([empty, partial, captured])
+    }
+    let callback = expression(ExprKind.Local, 7, "", 0, [])
+    let call = expression(ExprKind.IndirectCall, 2, "", -1, [callback, literal("1"), literal("2")])
+    let condition = operation("&&", proof_bool(call, true), call)
+    let base = verification(contract_fixture([7], 2, condition, [], []), program,
+        ProofBackend {
+            enabled = true
+            context = ""
+            solve = failed_solver
+        })
+    let proof = Verification {
+        loop_goals = LoopGoals {
+            values = [proof_bool(condition, true)]
+            remaining = [8]
+        }
+        ..base
+    }
+    let entry = State {
+        heap = -1
+        locals = [Value.Function(0, [Value.Record([])]), Value.Empty]
+        facts = []
+        extents = []
+        observations = []
+    }
+    let first = match expression_template_call(proof, condition, entry) {
+        Option.Some(paths) => paths
+        Option.None => new[Outcome]()
+    }
+    assert length(first) == 1 && length(get(first, 0).state.locals) == 2
+    assert length(entry.locals) == 2 && length(proof.expression_templates) == 1
+    let remaining = get(proof.budget, 0)
+    assert match expression_template_call(proof, condition, entry) {
+        Option.Some(paths) => length(paths) == 1 && length(get(paths, 0).state.locals) == 2
+        Option.None => false
+    }
+    assert length(entry.locals) == 2 && get(proof.budget, 0) == remaining - 1
+    let failed = assigned(entry, 0, Value.Function(1, [Value.Record([])]))
+    assert match expression_template_call(proof, condition, failed) {
+        Option.None => true
+        _ => false
+    }
+    assert length(failed.locals) == 2 && length(proof.expression_templates) == 1
+    let positive = assigned(entry, 0, Value.Function(2, [Value.Number(constant(integer(3)))]))
+    let negative = assigned(entry, 0, Value.Function(2, [Value.Number(constant(integer(0)))]))
+    let first_capture = match expression_template_call(proof, condition, positive) {
+        Option.Some(paths) => paths
+        Option.None => new[Outcome]()
+    }
+    let second_capture = match expression_template_call(proof, condition, negative) {
+        Option.Some(paths) => paths
+        Option.None => new[Outcome]()
+    }
+    assert length(first_capture) == 1 && length(second_capture) == 1
+    assert match get(first_capture, 0).value {
+        Value.Boolean(value) => loop_holds(value, get(first_capture, 0).state)
+        _ => false
+    }
+    assert match get(second_capture, 0).value {
+        Value.Boolean(value) => loop_holds(not(value), get(second_capture, 0).state)
+        _ => false
+    }
+    assert length(positive.locals) == 2 && length(negative.locals) == 2
+    assert length(proof.expression_templates) == 1 && length(proof.query.obligations) == 0
+}

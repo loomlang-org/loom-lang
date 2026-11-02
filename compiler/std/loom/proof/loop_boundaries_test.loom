@@ -29,3 +29,22 @@ test fn quantified_loop_cuts_follow_actual_affine_expressions_without_sampling_o
     loop_boundaries(field, [true], inline, projected, 64)
     assert exact_expression(get(projected, 0), field)
 }
+
+test fn caller_prefix_frontiers_use_actual_store_indices_and_skip_nested_loops() {
+    let write = expression(ExprKind.Intrinsic, 0, "list_set", -1, [local(0), local(1), local(2)])
+    let nested = expression(ExprKind.While, 0, "", -1, [operation("<", local(2), literal("10")),
+            expression(ExprKind.Intrinsic, 0, "list_set", -1, [local(0), local(2), literal("0")])])
+    let body = expression(ExprKind.Block, 0, "", -1, [write, nested])
+    let state = State {
+        heap = -1
+        locals = [Value.Empty, Value.Number(variable(1)), Value.Number(variable(2))]
+        facts = []
+        extents = []
+        observations = []
+    }
+    let proof = verification(contract_fixture([6, 1, 1], 0, body, [], []), empty_proof_program())
+    let boundaries = new[Expr]()
+    loop_transfer_boundaries(proof, body, [false, true, true], state, boundaries, 64)
+    assert length(boundaries) == 1 && exact_expression(get(boundaries, 0), local(1))
+    assert length(state.facts) == 0 && length(proof.function.postconditions) == 0
+}

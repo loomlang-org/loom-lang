@@ -1,0 +1,167 @@
+// Adjacent result relations may hold inside growing segments before they hold
+// on the whole List. This proposes a guarded relation; no segment is ordered
+// until the ordinary entry and every backedge check establish that candidate.
+fn loop_segment_periodic(value Expr, identity Int, budget List[Int]) Bool {
+    if !conjunction_step(budget) {
+        return false
+    }
+    if value.kind == ExprKind.Binary && value.text == "%" && length(value.children) == 2 &&
+    has_bound(get(value.children, 0), identity) && !has_bound(get(value.children, 1), identity) {
+        return true
+    }
+    var index = 0
+    while index < length(value.children) {
+        if loop_segment_periodic(get(value.children, index), identity, budget) {
+            return true
+        }
+        index = index + 1
+    }
+    false
+}
+
+fn loop_segment_unit_motion(local Int, paths List[LoopTranslation]) Bool {
+    var index = 0
+    while index < length(paths) {
+        let path = get(paths, index)
+        if local >= 0 && local < length(path.known) && get(path.known, local) {
+            let value = get(path.values, local)
+            if compare(value, integer(1)) == 0 || compare(value, integer(-1)) == 0 {
+                return true
+            }
+        }
+        index = index + 1
+    }
+    false
+}
+
+fn loop_segment_alignment(proof Verification, value Expr, candidates List[LoopCandidate],
+    writes List[Bool], paths List[LoopTranslation], entry State, guard Expr, budget List[Int]) {
+    let body = get(value.children, 2)
+    if body.kind != ExprKind.Binary || body.text != "||" || length(body.children) != 2 {
+        return
+    }
+    var side = 0
+    while side < 2 {
+        let disabled = get(body.children, side)
+        if has_bound(disabled, value.index) && entry_guard_expression(disabled) && !contains_application(disabled) &&
+        !entry_guard_expression(get(body.children, 1 - side)) && loop_segment_periodic(disabled, value.index, budget) {
+            var local = 0
+            while local < length(writes) && length(candidates) < 64 {
+                if get(writes, local) && !scan_mentions(disabled, local) && !loop_segment_unit_motion(local, paths) {
+                    match get(entry.locals, local) {
+                        Value.Number(_) => {
+                            let cursor = proof_expr(value, ExprKind.Local, 1, "", local, [])
+                            let before = proof_expr(value, ExprKind.Binary, 2, "<", -1,
+                                [cursor, get(value.children, 0)])
+                            let after = proof_expr(value, ExprKind.Binary, 2, ">=", -1,
+                                [cursor, get(value.children, 1)])
+                            let outside = proof_expr(value, ExprKind.Binary, 2, "||", -1, [before, after])
+                            let aligned = proof_expr(value, ExprKind.Binary, 2, "||", -1,
+                                [outside, loop_replace_bound(disabled, value.index, cursor)])
+                            propose_quantified(proof, candidates, guarded_value(guard, aligned), entry)
+                        }
+                        _ => {
+                        }
+                    }
+                }
+                local = local + 1
+            }
+        }
+        side = side + 1
+    }
+}
+
+fn loop_segmented_clause(proof Verification, value Expr, candidates List[LoopCandidate],
+    writes List[Bool], paths List[LoopTranslation], entry State, budget List[Int]) Bool {
+    let added = [false]
+    loop_segmented_clause(proof, value, candidates, writes, paths, entry, budget, proof_bool(value, true), added)
+    get(added, 0)
+}
+
+fn loop_segmented_clause(proof Verification, value Expr, candidates List[LoopCandidate],
+    writes List[Bool], paths List[LoopTranslation], entry State, budget List[Int], guard Expr, added List[Bool]) {
+    if !conjunction_step(budget) || length(candidates) >= 64 ||
+    (value.kind == ExprKind.Intrinsic && value.text == "proof_scan_checks") {
+        return
+    }
+    if quantified_expression(value) && value.text != "proof_scan_checks" {
+        loop_segment_alignment(proof, value, candidates, writes, paths, entry, guard, budget)
+        let viewed = match loop_guard_views(proof, value, entry) {
+            Result.Ok(current) => current
+            Result.Err(_) => entry
+        }
+        let adjacent = match pure(value, viewed) {
+            Result.Ok(Value.Boolean(Predicate.Forall(identity, _, _, conditions))) =>
+            length(conditions) == 1 && match guarded_order_step(identity, get(conditions, 0), false, [256], 0) {
+                Option.Some(_) => true
+                Option.None => false
+            }
+            _ => false
+        }
+        if adjacent {
+            var local = 0
+            while local < length(writes) && length(candidates) < 64 {
+                if get(writes, local) {
+                    let singleton = match get(entry.locals, local) {
+                        Value.Number(term) => length(term.terms) == 0 && compare(term.constant, integer(1)) == 0
+                        _ => false
+                    }
+                    if singleton {
+                        let cursor = proof_expr(value, ExprKind.Intrinsic, 1, "proof_bound", value.index, [])
+                        let width = proof_expr(value, ExprKind.Local, 1, "", local, [])
+                        let remainder = proof_expr(value, ExprKind.Binary, 1, "%", -1, [cursor, width])
+                        let boundary = proof_expr(value, ExprKind.Binary, 2, "==", -1,
+                            [remainder, proof_expr(value, ExprKind.Integer, 1, "0", -1, [])])
+                        let condition = proof_expr(value, ExprKind.Binary, 2, "||", -1,
+                            [boundary, get(value.children, 2)])
+                        let before = length(candidates)
+                        propose_quantified(proof, candidates, guarded_value(guard, quantified_value(value, value.index,
+                                    get(value.children, 0), get(value.children, 1), condition)), entry)
+                        if length(candidates) > before {
+                            set(added, 0, true)
+                        }
+                    }
+                }
+                local = local + 1
+            }
+        }
+    }
+    if value.kind == ExprKind.Binary && value.text == "||" && length(value.children) == 2 {
+        var side = 0
+        while side < 2 {
+            let scalar = get(value.children, side)
+            if entry_guard_expression(scalar) && !contains_application(scalar) {
+                loop_segmented_clause(proof, get(value.children, 1 - side), candidates,
+                    writes, paths, entry, budget, proof_and(guard, proof_not(scalar)), added)
+                return
+            }
+            side = side + 1
+        }
+    }
+    var index = 0
+    while index < length(value.children) {
+        loop_segmented_clause(proof, get(value.children, index), candidates, writes, paths, entry, budget, guard, added)
+        index = index + 1
+    }
+}
+
+fn loop_segmented_candidates(proof Verification, values List[Expr], candidates List[LoopCandidate],
+    writes List[Bool], paths List[LoopTranslation], loop Expr, entry State) Bool {
+    let budget = [256]
+    let stores = new[LoopTailStore]()
+    loop_tail_stores(proof, get(loop.children, 1), get(loop.children, 1), stores, budget)
+    var index = 0
+    while index < length(values) && length(stores) != 0 && get(budget, 0) > 0 {
+        let value = get(values, index)
+        loop_tail_clause(proof, value, stores, candidates, entry, proof_bool(value, true), budget)
+        index = index + 1
+    }
+    index = 0
+    var segmented = false
+    while index < length(values) && get(proof.loop_goals.remaining, 0) > 0 {
+        let added = loop_segmented_clause(proof, get(values, index), candidates, writes, paths, entry, budget)
+        segmented = segmented || added
+        index = index + 1
+    }
+    segmented
+}

@@ -1,0 +1,80 @@
+import std.text.concat
+
+fn scan_template_checked(body Text) Bool {
+    let source = concat("""
+        import std.list.length
+        fn above(values List[Int], minimum Int) Bool {
+            var index = 0
+            while index < length(values) {
+                if values[index] < minimum { return false }
+                index = index + 1
+            }
+            true
+        }
+        """, body)
+    match guarded_order_checked(source) {
+        Result.Ok(_) => true
+        Result.Err(_) => false
+    }
+}
+
+test fn scan_templates_rebind_arguments_and_preserve_independent_invocations() {
+    assert scan_template_checked("""
+        pub fn repeated(values List[Int]) Bool
+        requires above(values, 0)
+        ensures result {
+            let first = above(values, 0)
+            let second = above(values, 0)
+            first && second
+        }
+        """)
+    // The second predicate has a different parameter. [0] refutes it.
+    assert !scan_template_checked("""
+        pub fn wrong(values List[Int]) Bool
+        requires above(values, 0)
+        ensures result {
+            let first = above(values, 0)
+            let second = above(values, 1)
+            first && second
+        }
+        """)
+}
+
+test fn scan_templates_observe_stores_after_a_previous_call() {
+    assert !scan_template_checked("""
+        pub fn wrong(values List[Int]) Bool
+        requires length(values) == 1 && above(values, 0)
+        ensures result {
+            let first = above(values, 0)
+            values[0] = -1
+            let second = above(values, 0)
+            first && second
+        }
+        """)
+    assert scan_template_checked("""
+        pub fn repaired(values List[Int]) Bool
+        requires length(values) == 1 && above(values, 0)
+        ensures result {
+            let first = above(values, 0)
+            values[0] = 2
+            let second = above(values, 1)
+            first && second
+        }
+        """)
+}
+
+test fn scan_templates_keep_eager_argument_writes_before_the_scan() {
+    assert !scan_template_checked("""
+        fn change(values List[Int]) Int {
+            values[0] = -1
+            0
+        }
+        pub fn wrong(values List[Int]) Bool
+        requires length(values) == 1 && above(values, 0)
+        ensures result {
+            let first = above(values, 0)
+            let second = above(values, change(values))
+            first && second
+        }
+        """)
+}

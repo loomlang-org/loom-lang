@@ -1,0 +1,140 @@
+fn arithmetic_scan_fixture(version Int) Predicate {
+    let bound = IntegerTerm.Linear(variable(-1))
+    let remainder = IntegerTerm.Apply("%", [bound, IntegerTerm.Linear(variable(2))])
+    let disabled = Predicate.IntegerCompare("==", remainder, IntegerTerm.Linear(constant(integer(0))))
+    let ordered = Predicate.IntegerCompare("<=", IntegerTerm.Select(version, [],
+            add(variable(-1), constant(integer(-1)))), IntegerTerm.Select(version, [], variable(-1)))
+    Predicate.Forall(-1, constant(integer(1)), variable(3), [Predicate.Or([disabled, ordered])])
+}
+
+test fn saved_comparison_pivots_are_observed_before_unrelated_read_keys_fill_the_existing_limit() {
+    let first = Predicate.ArrayRead(777, [], variable(4), ArrayScalar.Integer(IntegerTerm.Linear(variable(77))),
+        [Predicate.Constant(true)])
+    let facts = [first]
+    var index = 0
+    while index < 20 {
+        push(facts, Predicate.ArrayRead(100 + index, [], constant(integer(0)),
+                ArrayScalar.Integer(IntegerTerm.Linear(variable(100 + index))), [Predicate.Constant(true)]))
+        index = index + 1
+    }
+    push(facts, Predicate.ArrayRead(777, [], variable(5), ArrayScalar.Integer(IntegerTerm.Linear(variable(78))),
+            [Predicate.Constant(true)]))
+    push(facts, Predicate.Or([Predicate.Variable(10), Predicate.Compare("<", add(variable(78), scale(variable(77), integer(-1))))]))
+    push(facts, Predicate.ArrayRead(777, [], variable(5), ArrayScalar.Integer(IntegerTerm.Linear(variable(79))),
+            [Predicate.Constant(true)]))
+    let goal = Predicate.Forall(-9, variable(4), variable(6),
+        [Predicate.IntegerCompare("<=", IntegerTerm.Linear(variable(79)), IntegerTerm.Select(777, [], variable(-9)))])
+    let reads = new[ArithmeticRead]()
+    cut_goal_reads(goal, facts, reads)
+    assert length(reads) == 2 && get(reads, 0).version == 777 && get(reads, 1).version == 777
+    assert cut_same_linear(get(reads, 0).index, variable(5))
+    assert cut_same_linear(get(reads, 1).index, variable(4))
+}
+
+test fn proved_scan_guards_establish_plain_order_only_inside_an_unconditional_source_scan() {
+    let source = arithmetic_scan_fixture(777)
+    let scans = new[ArithmeticScan]()
+    cut_scans([source], [], scans, [512])
+    let scan = get(scans, 0)
+    let guard = Predicate.Forall(-1, constant(integer(2)), variable(5), [scan.guard])
+    let contained = Predicate.Compare("<=", add(variable(5), scale(variable(3), integer(-1))))
+    let expected = Predicate.Forall(-1, constant(integer(2)), variable(5), [interval_order_body(777)])
+    assert match cut_order(scan, guard, [source, guard, contained]) {
+        Option.Some(value) => same(value, expected)
+        Option.None => false
+    }
+    assert match cut_order(scan, guard, [source, contained]) {
+        Option.None => true
+        _ => false
+    }
+    assert match cut_order(scan, guard, [source, guard]) {
+        Option.None => true
+        _ => false
+    }
+    assert match cut_order(scan, guard, [Predicate.Or([Predicate.Variable(7), source]), guard, contained]) {
+        Option.None => true
+        _ => false
+    }
+    assert match cut_order(scan, guard, [arithmetic_scan_fixture(778), guard, contained]) {
+        Option.None => true
+        _ => false
+    }
+}
+
+test fn arithmetic_scans_prioritize_columns_with_two_current_observations() {
+    let facts = new[Predicate]()
+    var index = 0
+    while index < 12 {
+        push(facts, arithmetic_scan_fixture(100 + index))
+        index = index + 1
+    }
+    push(facts, arithmetic_scan_fixture(777))
+    push(facts, arithmetic_scan_fixture(777))
+    let first = ArithmeticRead {
+        version = 777
+        path = []
+        index = variable(4)
+        scope = []
+    }
+    let second = ArithmeticRead {
+        index = variable(5)
+        ..first
+    }
+    let selected = new[ArithmeticScan]()
+    cut_scans(facts, [], selected, [512], [first, second])
+    assert length(selected) == 1 && get(selected, 0).step.version == 777
+    let ordinary = new[ArithmeticScan]()
+    cut_scans(facts, [], ordinary, [512])
+    assert length(ordinary) == 8 && get(ordinary, 7).step.version == 107
+    assert !cut_scan_relevant(get(selected, 0).step, [first, first])
+    assert !cut_scan_relevant(get(selected, 0).step, [first, ArithmeticRead {
+                path = [0]
+                ..second
+            }])
+    let exhausted = new[ArithmeticScan]()
+    cut_scans(facts, [], exhausted, [0], [first, second])
+    assert length(exhausted) == 0
+}
+
+test fn arithmetic_target_paths_propose_a_stronger_binder_free_end_only_for_unit_indices() {
+    let scans = new[ArithmeticScan]()
+    cut_scans([arithmetic_scan_fixture(777)], [], scans, [512])
+    let scan = get(scans, 0)
+    let first = ArithmeticRead {
+        version = 777
+        path = []
+        index = variable(4)
+        scope = []
+    }
+    let target = ArithmeticRead {
+        index = add(variable(-9), constant(integer(2)))
+        scope = [ArithmeticRange {
+                identity = -9
+                start = variable(4)
+                end = variable(6)
+            }]
+        ..first
+    }
+    let expected = Predicate.Forall(-1, add(variable(4), constant(integer(1))),
+        add(variable(6), constant(integer(2))), [scan.guard])
+    assert match cut_path(scan, first, target) {
+        Option.Some(value) => same(value, expected)
+        Option.None => false
+    }
+    let doubled = ArithmeticRead {
+        index = scale(variable(-9), integer(2))
+        ..target
+    }
+    assert match cut_path(scan, first, doubled) {
+        Option.Some(Predicate.Forall(identity, _, _, _)) => identity == -9
+        _ => false
+    }
+    let captured = ArithmeticRead {
+        index = variable(-9)
+        ..first
+    }
+    assert match cut_path(scan, captured, target) {
+        Option.None => true
+        _ => false
+    }
+}

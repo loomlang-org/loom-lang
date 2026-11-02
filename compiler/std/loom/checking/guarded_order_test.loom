@@ -2,6 +2,7 @@ import std.loom.proof.z3.backend
 import std.loom.proof.z3.solve
 import std.loom.proof.ProofBackend
 import std.text.contains
+import std.int.to_text
 
 fn guarded_order_checked(source Text) Result[std.loom.typed.Program, Failure] {
     let inputs = with_proof_backend(build_inputs(no_input_reader), backend("z3"))
@@ -157,6 +158,59 @@ test fn guarded_order_scalar_remainder_goals_can_use_weaker_facts_in_an_array_co
         ensures result % width == 0 { start + width }
         """
     assert match guarded_order_checked(source) {
+        Result.Ok(_) => true
+        Result.Err(_) => false
+    }
+}
+
+test fn guarded_order_keeps_saved_endpoint_reads_relevant_among_unrelated_observations() {
+    var body = """
+        pub fn with_noise(values List[Int], width Int, start Int, end Int, noise List[Int]) Bool
+        requires length(noise) >= 20
+        requires width > 0 && width <= length(values)
+        requires start >= 0 && start < end && end <= length(values)
+        requires end - start <= width && start % width == 0
+        requires blocks(values, width)
+        ensures result {
+            let first = values[start]
+            let last = values[end - 1]
+        """
+    var index = 0
+    while index < 20 {
+        body = concat(body, concat("\n    discard noise[", concat(std.int.to_text(index), "]")))
+        index = index + 1
+    }
+    body = concat(body, "\n    first <= last\n}\n")
+    assert match guarded_order_checked(concat(guarded_modular_source(false), body)) {
+        Result.Ok(_) => true
+        Result.Err(_) => false
+    }
+}
+
+test fn guarded_order_keeps_current_column_paths_among_unrelated_scanned_columns() {
+    var body = "\npub fn with_scan_noise(values List[Int], width Int, start Int, end Int"
+    var index = 0
+    while index < 10 {
+        body = concat(body, concat(", noise", concat(std.int.to_text(index), " List[Int]")))
+        index = index + 1
+    }
+    body = concat(body, """
+        ) Bool
+        requires width > 0 && width <= length(values)
+        requires start >= 0 && start < end && end <= length(values)
+        requires end - start <= width && start % width == 0
+        """)
+    index = 0
+    while index < 10 {
+        body = concat(body, concat("\nrequires blocks(noise", concat(std.int.to_text(index), ", width)")))
+        index = index + 1
+    }
+    body = concat(body, """
+
+        requires blocks(values, width)
+        ensures result { values[start] <= values[end - 1] }
+        """)
+    assert match guarded_order_checked(concat(guarded_modular_source(false), body)) {
         Result.Ok(_) => true
         Result.Err(_) => false
     }

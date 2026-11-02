@@ -1,0 +1,188 @@
+// Literal translations only select optional guesses. They establish no
+// monotonicity or conservation fact; retained guesses still need induction.
+record LoopTranslation {
+    values List[Number]
+    known List[Bool]
+}
+
+fn loop_translation_copy(value LoopTranslation) LoopTranslation {
+    LoopTranslation {
+        values = std.list.clone(value.values)
+        known = std.list.clone(value.known)
+    }
+}
+
+fn loop_translation_paths(proof Verification, value Expr, paths List[LoopTranslation],
+    symbols State) Result[List[LoopTranslation], Text] {
+    if !conjunction_step(proof.budget) || value.kind == ExprKind.While || value.kind == ExprKind.Match {
+        return Result.Err("optional translation shape unavailable")
+    }
+    if function_layout(value) {
+        return Result.Ok(paths)
+    }
+    if value.kind == ExprKind.If && length(value.children) == 3 {
+        let tested = loop_translation_paths(proof, get(value.children, 0), paths, symbols)?
+        let yes = new[LoopTranslation]()
+        let no = new[LoopTranslation]()
+        var index = 0
+        while index < length(tested) {
+            push(yes, loop_translation_copy(get(tested, index)))
+            push(no, loop_translation_copy(get(tested, index)))
+            index = index + 1
+        }
+        let first = loop_translation_paths(proof, get(value.children, 1), yes, symbols)?
+        let second = loop_translation_paths(proof, get(value.children, 2), no, symbols)?
+        if length(first) + length(second) > 64 {
+            return Result.Err("optional translation alternatives unavailable")
+        }
+        index = 0
+        while index < length(second) {
+            push(first, get(second, index))
+            index = index + 1
+        }
+        return Result.Ok(first)
+    }
+    var current = paths
+    var index = 0
+    while index < length(value.children) {
+        current = loop_translation_paths(proof, get(value.children, index), current, symbols)?
+        index = index + 1
+    }
+    if (value.kind == ExprKind.Assign || value.kind == ExprKind.Let) && value.index >= 0 &&
+    value.index < length(proof.function.locals) && get(proof.function.locals, value.index).ty == 1 {
+        let delta = match pure(get(value.children, 0), symbols) {
+            Result.Ok(Value.Number(next)) => add(next, scale(variable(value.index), integer(-1)))
+            _ => variable(value.index)
+        }
+        index = 0
+        while index < length(current) {
+            let path = get(current, index)
+            if length(delta.terms) == 0 {
+                set(path.values, value.index, sum(get(path.values, value.index), delta.constant))
+            } else {
+                set(path.known, value.index, false)
+            }
+            index = index + 1
+        }
+    }
+    Result.Ok(current)
+}
+
+fn loop_translations(proof Verification, body Expr, entry State) List[LoopTranslation] {
+    if length(proof.loop_goals.values) == 0 || loop_goal_jump(body) {
+        return []
+    }
+    let values = new[Number]()
+    let known = new[Bool]()
+    let locals = new[Value]()
+    var index = 0
+    while index < length(proof.function.locals) {
+        push(values, integer(0))
+        push(known, true)
+        push(locals, Value.Number(variable(index)))
+        index = index + 1
+    }
+    let symbols = State {
+        locals = locals
+        facts = []
+        ..entry
+    }
+    match loop_translation_paths(proof, body, [LoopTranslation {
+                values = values
+                known = known
+            }], symbols) {
+        Result.Ok(paths) => paths
+        Result.Err(_) => []
+    }
+}
+
+fn loop_translation_term(terms List[LoopTerm], path LoopTranslation) Option[Number] {
+    var value = integer(0)
+    var index = 0
+    while index < length(terms) {
+        let term = get(terms, index)
+        match term.observation {
+            LoopObservation.Local(local, fields) => {
+                if length(fields) != 0 || local < 0 || local >= length(path.known) || !get(path.known, local) {
+                    return Option.None
+                }
+                value = sum(value, product(term.factor, get(path.values, local)))
+            }
+            _ => {
+                return Option.None
+            }
+        }
+        index = index + 1
+    }
+    Option.Some(value)
+}
+
+fn loop_translation_declines(candidate LoopCandidate, paths List[LoopTranslation], entry State) Bool {
+    let terms = new[LoopTerm]()
+    var relation = ""
+    match candidate {
+        LoopCandidate.Affine(values, op, _) => {
+            var index = 0
+            while index < length(values) {
+                push(terms, get(values, index))
+                index = index + 1
+            }
+            relation = op
+        }
+        LoopCandidate.Entry(local, fields, op, Value.Number(initial)) => {
+            if length(fields) != 0 {
+                return false
+            }
+            match get(entry.locals, local) {
+                Value.Number(value) => {
+                    if !same_terms(value.terms, initial.terms) || compare(value.constant, initial.constant) != 0 {
+                        return false
+                    }
+                }
+                _ => {
+                    return false
+                }
+            }
+            push(terms, LoopTerm {
+                    observation = LoopObservation.Local(local, [])
+                    factor = integer(1)
+                })
+            relation = op
+        }
+        _ => {
+            return false
+        }
+    }
+    var index = 0
+    while index < length(paths) {
+        match loop_translation_term(terms, get(paths, index)) {
+            Option.Some(value) => {
+                let sign = compare(value, integer(0))
+                if (relation == "==" && sign != 0) || (relation == "<=" && sign > 0) ||
+                (relation == ">=" && sign < 0) {
+                    return true
+                }
+            }
+            Option.None => {
+            }
+        }
+        index = index + 1
+    }
+    false
+}
+
+fn loop_translation_candidates(candidates List[LoopCandidate], paths List[LoopTranslation], entry State) List[LoopCandidate] {
+    if length(paths) == 0 {
+        return candidates
+    }
+    let retained = new[LoopCandidate]()
+    var index = 0
+    while index < length(candidates) {
+        let candidate = get(candidates, index)
+        if !loop_translation_declines(candidate, paths, entry) {
+            push(retained, candidate)
+        }
+        index = index + 1
+    }
+    retained
+}

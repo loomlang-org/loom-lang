@@ -1,0 +1,161 @@
+// A concrete indexed transfer can suggest how the previous output element
+// relates to each remaining input tail. These are ordinary checked candidates,
+// never a summary of the store or an assumption about a comparator.
+record LoopTailStore {
+    receiver Expr
+    index Expr
+    read Expr
+    ends List[Expr]
+}
+
+fn loop_tail_bound(condition Expr, cursor Expr, ends List[Expr], budget List[Int]) {
+    if !conjunction_step(budget) {
+        return
+    }
+    if condition.kind == ExprKind.Binary && length(condition.children) == 2 {
+        if condition.text == "&&" {
+            loop_tail_bound(get(condition.children, 0), cursor, ends, budget)
+            loop_tail_bound(get(condition.children, 1), cursor, ends, budget)
+        } else {
+            let left = get(condition.children, 0)
+            let right = get(condition.children, 1)
+            if condition.text == "<=" && exact_expression(left, cursor) && loop_call_free(right) {
+                loop_boundary_add(ends, right)
+            }
+            if condition.text == ">=" && exact_expression(right, cursor) && loop_call_free(left) {
+                loop_boundary_add(ends, left)
+            }
+        }
+    }
+}
+
+fn loop_tail_bounds(body Expr, cursor Expr, ends List[Expr], budget List[Int]) Bool {
+    if !conjunction_step(budget) {
+        return false
+    }
+    if body.kind == ExprKind.Assert && length(body.children) == 1 {
+        loop_tail_bound(get(body.children, 0), cursor, ends, budget)
+        // One actual upper bound is enough to propose a tail. Do not rescan
+        // later leading assertions after finding it in this optional search.
+        return length(ends) == 0
+    }
+    if body.kind != ExprKind.Block {
+        return false
+    }
+    var index = 0
+    while index < length(body.children) {
+        if !loop_tail_bounds(get(body.children, index), cursor, ends, budget) {
+            return false
+        }
+        index = index + 1
+    }
+    true
+}
+
+fn loop_tail_stores(proof Verification, value Expr, body Expr, stores List[LoopTailStore], budget List[Int]) {
+    if !conjunction_step(budget) || length(stores) >= 8 || value.kind == ExprKind.While || function_layout(value) {
+        return
+    }
+    if value.kind == ExprKind.Assert {
+        return
+    }
+    if loop_storage_primitive(proof, value) == "list_set" && length(value.children) == 3 {
+        let read = get(value.children, 2)
+        if loop_storage_primitive(proof, read) == "list_get" && length(read.children) == 2 {
+            let ends = new[Expr]()
+            discard loop_tail_bounds(body, get(read.children, 1), ends, budget)
+            if length(ends) != 0 {
+                push(stores, LoopTailStore {
+                        receiver = get(value.children, 0)
+                        index = get(value.children, 1)
+                        read = read
+                        ends = ends
+                    })
+            }
+            return
+        }
+    }
+    var index = 0
+    while index < length(value.children) {
+        loop_tail_stores(proof, get(value.children, index), body, stores, budget)
+        index = index + 1
+    }
+}
+
+fn loop_tail_replace(value Expr, store LoopTailStore, replacement Expr,
+    found List[Bool], budget List[Int]) Result[Expr, Text] {
+    if !conjunction_step(budget) || quantified_expression(value) {
+        return Result.Err("optional tail shape unavailable")
+    }
+    if list_read_expression(value) && exact_expression(get(value.children, 0), store.receiver) &&
+    exact_expression(get(value.children, 1), store.index) {
+        set(found, 0, true)
+        return Result.Ok(replacement)
+    }
+    let children = new[Expr]()
+    var index = 0
+    while index < length(value.children) {
+        push(children, loop_tail_replace(get(value.children, index), store, replacement, found, budget)?)
+        index = index + 1
+    }
+    Result.Ok(proof_expr(value, value.kind, value.ty, value.text, value.index, children))
+}
+
+fn loop_tail_clause(proof Verification, value Expr, stores List[LoopTailStore],
+    candidates List[LoopCandidate], entry State, guard Expr, budget List[Int]) {
+    if !conjunction_step(budget) || length(candidates) >= 64 || function_layout(value) ||
+    (value.kind == ExprKind.Intrinsic && value.text == "proof_scan_checks") {
+        return
+    }
+    if value.kind == ExprKind.Binary && value.text == "||" && length(value.children) == 2 {
+        var side = 0
+        while side < 2 {
+            let scalar = get(value.children, side)
+            if entry_guard_expression(scalar) && !contains_application(scalar) {
+                loop_tail_clause(proof, get(value.children, 1 - side), stores, candidates,
+                    entry, proof_and(guard, proof_not(scalar)), budget)
+                return
+            }
+            side = side + 1
+        }
+    }
+    if quantified_expression(value) && value.text != "proof_scan_checks" {
+        var index = 0
+        while index < length(stores) && length(candidates) < 64 && get(budget, 0) > 0 {
+            let store = get(stores, index)
+            let identity = -1 - get(proof.fresh, 0)
+            set(proof.fresh, 0, get(proof.fresh, 0) + 1)
+            let bound = proof_expr(value, ExprKind.Intrinsic, 1, "proof_bound", identity, [])
+            let read = proof_expr(store.read, ExprKind.Intrinsic, store.read.ty, "list_get", -1,
+                [get(store.read.children, 0), bound])
+            let point = loop_replace_bound(get(value.children, 2), value.index, store.index)
+            let found = [false]
+            match loop_tail_replace(point, store, read, found, budget) {
+                Result.Ok(condition) => if get(found, 0) {
+                    let before = proof_expr(value, ExprKind.Binary, 2, "<", -1,
+                        [store.index, get(value.children, 0)])
+                    let after = proof_expr(value, ExprKind.Binary, 2, ">=", -1,
+                        [store.index, get(value.children, 1)])
+                    let outside = proof_expr(value, ExprKind.Binary, 2, "||", -1, [before, after])
+                    let required = proof_expr(value, ExprKind.Binary, 2, "||", -1, [outside, condition])
+                    var end = 0
+                    while end < length(store.ends) && length(candidates) < 64 {
+                        let tail = quantified_value(value, identity, get(store.read.children, 1),
+                            get(store.ends, end), required)
+                        propose_quantified(proof, candidates, guarded_value(guard, tail), entry)
+                        end = end + 1
+                    }
+                }
+                Result.Err(_) => {
+                }
+            }
+            index = index + 1
+        }
+        return
+    }
+    var index = 0
+    while index < length(value.children) && get(budget, 0) > 0 {
+        loop_tail_clause(proof, get(value.children, index), stores, candidates, entry, guard, budget)
+        index = index + 1
+    }
+}

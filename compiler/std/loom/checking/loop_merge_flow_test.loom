@@ -1,0 +1,70 @@
+import std.text.concat
+
+fn merge_flow_source(reverse Bool) Text {
+    let comparison = if reverse {
+        "fn less(left Int, right Int) Bool { left > right }\n"
+    } else {
+        "fn less(left Int, right Int) Bool { left < right }\n"
+    }
+    concat("import std.list.length\nimport std.list.clone\n", concat(comparison, """
+        fn ordered_range(values List[Int], start Int, end Int) Bool
+        requires start >= 0 && start <= end && end <= length(values)
+        {
+            var index = start
+            while index < end {
+                if index > start && values[index - 1] > values[index] { return false }
+                index = index + 1
+            }
+            true
+        }
+        
+        fn merge_buffer(values List[Int], middle Int) List[Int]
+        requires middle >= 0 && middle <= length(values)
+        requires ordered_range(values, 0, middle)
+        requires ordered_range(values, middle, length(values))
+        {
+            let source = clone(values)
+            let count = length(source)
+            let output = clone(source)
+            var index = 0
+            var left = 0
+            var right = middle
+            while index < count {
+                assert left >= 0 && left <= middle
+                assert right >= middle && right <= count
+                assert length(output) == count
+                assert index == left + (right - middle)
+                if left < middle && (right >= count || !less(source[right], source[left])) {
+                    output[index] = source[left]
+                    left = left + 1
+                } else {
+                    output[index] = source[right]
+                    right = right + 1
+                }
+                index = index + 1
+            }
+            output
+        }
+        
+        pub fn merged(values List[Int], middle Int) List[Int]
+        requires middle >= 0 && middle <= length(values)
+        requires ordered_range(values, 0, middle)
+        requires ordered_range(values, middle, length(values))
+        ensures ordered_range(result, 0, length(result))
+        { merge_buffer(values, middle) }
+        """))
+}
+
+test fn caller_ordering_composes_through_private_buffers_and_merge_frontiers() {
+    assert match guarded_order_checked(merge_flow_source(false)) {
+        Result.Ok(_) => true
+        Result.Err(_) => false
+    }
+}
+
+test fn caller_ordering_rejects_the_reversed_merge_comparison() {
+    assert match guarded_order_checked(merge_flow_source(true)) {
+        Result.Ok(_) => false
+        Result.Err(_) => true
+    }
+}

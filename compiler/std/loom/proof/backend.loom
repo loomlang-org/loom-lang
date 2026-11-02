@@ -50,7 +50,10 @@ fn discharge(proof ProofQuery, extended Bool) Result[Bool, Text] {
     // Avoid introducing extra quantified search into obligations already
     // settled by the base theories. A satisfiable abstract counterexample may
     // need more valid theory laws; it supplies no fact to the extended query.
-    // Host errors, including cancellation and timeouts, retain their boundary.
+    // At most two main queries retain the existing host and encoding limits.
+    // A remainder abstraction first removes arithmetic knowledge; an unproved
+    // abstraction supplies no fact to the exact refined query. Other host
+    // failures, including cancellation, retain their boundary.
     let obligations = if extended {
         arithmetic_cuts(proof.backend, proof.obligations)
     } else {
@@ -59,9 +62,19 @@ fn discharge(proof ProofQuery, extended Bool) Result[Bool, Text] {
     if length(obligations) == 0 {
         return Result.Ok(true)
     }
-    let query = smt_query(obligations, false, extended)?
-    if proof.backend.solve(proof.backend.context, query)? {
-        return Result.Ok(true)
+    let encoded = smt_encoding(obligations, false, extended, extended)?
+    let query = encoded.text
+    match proof.backend.solve(proof.backend.context, query) {
+        Result.Ok(true) => {
+            return Result.Ok(true)
+        }
+        Result.Ok(false) => {
+        }
+        Result.Err(message) => {
+            if !encoded.abstracted || message != "SMT solver returned unknown or timed out; required proof was not established" {
+                return Result.Err(message)
+            }
+        }
     }
     if !extended {
         return Result.Err("required postcondition is not proved")

@@ -16,6 +16,7 @@ fn permutation_trial(
     equivalent: &[String],
     invalid: &[String],
     check_elision: bool,
+    proof_only_lines: Option<usize>,
 ) {
     let package = tempfile::tempdir().unwrap();
     let source = package.path().join("main.loom");
@@ -47,6 +48,32 @@ fn permutation_trial(
     }
     fs::write(&source, program).unwrap();
     trial_success("restored check", &check());
+    if let Some(last_proof_line) = proof_only_lines {
+        let output = common::loom(&[
+            "emit-checked",
+            package.path().to_str().unwrap(),
+            "--frontend-cache",
+            cache.to_str().unwrap(),
+        ]);
+        trial_success("native proof-scan elision", &output);
+        let native =
+            loom_native::native_input::decode(std::str::from_utf8(&output.stdout).unwrap())
+                .unwrap();
+        let selected = fs::canonicalize(&source).unwrap();
+        for position in native.source_locations.sites.values() {
+            if fs::canonicalize(&native.source_locations.paths[position.file])
+                .ok()
+                .as_deref()
+                == Some(selected.as_path())
+            {
+                assert!(
+                    position.line > last_proof_line,
+                    "proof-only predicate reached native code at line {}",
+                    position.line
+                );
+            }
+        }
+    }
     for mode in ["test", "run"] {
         trial_success(
             mode,
@@ -97,13 +124,72 @@ fn permutation_trial(
 }
 
 #[test]
+fn source_library_integer_sort_composes_order_and_permutation() {
+    let program = include_str!("../examples/std_sort_contracts/main.loom");
+    let equivalent = [program.replace("left < right", "!(left >= right)")];
+    let invalid = [
+        program.replace("left < right", "left > right"),
+        program.replace(
+            "    sorted(values,",
+            "    let changed = std.list.clone(values)\n    if length(changed) > 0 { changed[0] = 0 }\n    sorted(changed,",
+        ),
+    ];
+    let proof_lines = program[..program.find("pub fn sorted_values").unwrap()]
+        .lines()
+        .count();
+    permutation_trial(program, &equivalent, &invalid, true, Some(proof_lines));
+}
+
+#[test]
+fn source_library_sort_cannot_assume_unknown_or_changing_comparison_order() {
+    let program = include_str!("../examples/std_sort_contracts/main.loom");
+    let prefix = program.split("pub fn sorted_values").next().unwrap();
+    let claims = "ensures ordered(result)\nensures permutation(old(values), result)";
+    let variants = [
+        format!(
+            "pub fn unknown(values List[Int], less fn(Int, Int) Bool) List[Int]\n{claims}\n{{ sorted(values, less) }}"
+        ),
+        format!(
+            "pub fn changing(values List[Int]) List[Int]\n{claims}\n{{\n    let reverse = [false]\n    sorted(values, fn(left Int, right Int) Bool {{\n        reverse[0] = !reverse[0]\n        if reverse[0] {{ left > right }} else {{ left < right }}\n    }})\n}}"
+        ),
+    ];
+    let package = tempfile::tempdir().unwrap();
+    let source = package.path().join("main.loom");
+    for variant in variants {
+        fs::write(&source, format!("{prefix}{variant}\n")).unwrap();
+        let output = common::loom(&["check", package.path().to_str().unwrap()]);
+        assert!(
+            !output.status.success(),
+            "unproved comparator order was accepted"
+        );
+        let error = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            error.contains("proof") || error.contains("proved"),
+            "{error}"
+        );
+        fs::write(
+            &source,
+            format!(
+                "{prefix}{}\n",
+                variant.replace("ensures ordered(result)\n", "")
+            ),
+        )
+        .unwrap();
+        trial_success(
+            "permutation-only comparator control",
+            &common::loom(&["check", package.path().to_str().unwrap()]),
+        );
+    }
+}
+
+#[test]
 fn library_sort_preserves_entry_counts_through_unknown_effectful_comparisons() {
     let program = include_str!("../examples/sort_permutation/main.loom");
     let invalid = [
         "let changed = std.list.clone(values)\n    if length(changed) > 0 { changed[0] = 0 }\n    changed",
         "discard sorted(values, less)\n    values",
     ].map(|body| program.replace("    sorted(values, less)", body));
-    permutation_trial(program, &[], &invalid, true);
+    permutation_trial(program, &[], &invalid, true, None);
 }
 
 #[test]
@@ -127,7 +213,7 @@ fn record_sort_tracks_nested_and_sibling_columns_without_mixing_them() {
             "push(ids, values[index].amount)",
         ),
     ];
-    permutation_trial(program, &[], &invalid, false);
+    permutation_trial(program, &[], &invalid, false, None);
 }
 
 #[test]
@@ -154,7 +240,7 @@ fn complete_record_counts_keep_field_pairings_and_normalize_equivalent_equalitie
         "count(second, first[index])",
         "count_reordered(second, first[index])",
     );
-    permutation_trial(program, &[equivalent], &invalid, true);
+    permutation_trial(program, &[equivalent], &invalid, true, None);
 }
 
 #[test]
@@ -174,7 +260,7 @@ fn boolean_count_algebra_keeps_overlap_complements_and_entry_guards() {
             "selected(values[index], id, label) && values[0].id == id",
         ),
     ];
-    permutation_trial(program, &[equivalent], &invalid, true);
+    permutation_trial(program, &[equivalent], &invalid, true, None);
 
     let package = tempfile::tempdir().unwrap();
     let prefix = program.split("pub fn sorted_matching").next().unwrap();

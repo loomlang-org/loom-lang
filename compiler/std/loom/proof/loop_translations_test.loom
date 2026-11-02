@@ -1,0 +1,96 @@
+test fn literal_translation_guesses_preserve_branch_correlations_and_scalar_bounds() {
+    let left = expression(ExprKind.Assign, 0, "", 0, [operation("+", local(0), literal("1"))])
+    let right = expression(ExprKind.Assign, 0, "", 1, [operation("+", local(1), literal("1"))])
+    let choice = expression(ExprKind.If, 0, "", -1,
+        [expression(ExprKind.Local, 2, "", 3, []), left, right])
+    let advance = expression(ExprKind.Assign, 0, "", 2, [operation("+", local(2), literal("1"))])
+    let body = expression(ExprKind.Block, 0, "", -1, [choice, advance])
+    let function = contract_fixture([1, 1, 1, 2], 0, body, [], [])
+    let original = verification(function, empty_proof_program())
+    let proof = Verification {
+        budget = [256]
+        loop_goals = LoopGoals {
+            values = [proof_bool(body, true)]
+            remaining = [8]
+        }
+        ..original
+    }
+    let entry = State {
+        heap = -1
+        locals = [Value.Number(variable(0)), Value.Number(variable(1)), Value.Number(variable(2)),
+            Value.Boolean(Predicate.Constant(true))]
+        facts = []
+        extents = []
+        observations = []
+    }
+    let paths = loop_translations(proof, body, entry)
+    assert length(paths) == 2
+    let conservation = LoopCandidate.Affine([
+            LoopTerm {
+                observation = LoopObservation.Local(0, [])
+                factor = integer(1)
+            },
+            LoopTerm {
+                observation = LoopObservation.Local(1, [])
+                factor = integer(1)
+            },
+            LoopTerm {
+                observation = LoopObservation.Local(2, [])
+                factor = integer(-1)
+            }], "==", Value.Number(constant(integer(0))))
+    let drift = LoopCandidate.Affine([
+            LoopTerm {
+                observation = LoopObservation.Local(0, [])
+                factor = integer(1)
+            },
+            LoopTerm {
+                observation = LoopObservation.Local(2, [])
+                factor = integer(-1)
+            }], "==", Value.Number(constant(integer(0))))
+    let unchanged = LoopCandidate.Entry(0, [], "<=", get(entry.locals, 0))
+    let lower = LoopCandidate.Entry(0, [], ">=", get(entry.locals, 0))
+    let upper = LoopCandidate.Entry(0, [], "<=", Value.Number(constant(integer(100))))
+    let candidates = [conservation, drift, unchanged, lower, upper]
+    let retained = loop_translation_candidates(candidates, paths, entry)
+    assert length(retained) == 3
+    assert !loop_translation_declines(conservation, paths, entry)
+    assert loop_translation_declines(drift, paths, entry)
+    assert loop_translation_declines(unchanged, paths, entry)
+    assert !loop_translation_declines(lower, paths, entry)
+    assert !loop_translation_declines(upper, paths, entry)
+    assert length(entry.facts) == 0 && length(proof.function.postconditions) == 0
+    assert get(proof.loop_goals.remaining, 0) == 8 && get(proof.budget, 0) < 256
+    let unused = get(original.budget, 0)
+    assert length(loop_translations(original, body, entry)) == 0
+    assert get(original.budget, 0) == unused
+}
+
+test fn unknown_translations_and_nested_loops_decline_no_guesses() {
+    let nonlinear = expression(ExprKind.Assign, 0, "", 0, [operation("*", local(0), local(0))])
+    let original = verification(contract_fixture([1], 0, nonlinear, [], []), empty_proof_program())
+    let proof = Verification {
+        loop_goals = LoopGoals {
+            values = [proof_bool(nonlinear, true)]
+            remaining = [8]
+        }
+        ..original
+    }
+    let entry = State {
+        heap = -1
+        locals = [Value.Number(variable(0))]
+        facts = []
+        extents = []
+        observations = []
+    }
+    let paths = loop_translations(proof, nonlinear, entry)
+    let candidate = LoopCandidate.Entry(0, [], "==", get(entry.locals, 0))
+    assert !loop_translation_declines(candidate, paths, entry)
+    let nested = expression(ExprKind.While, 0, "", -1, [proof_bool(nonlinear, true), nonlinear])
+    assert length(loop_translations(proof, nested, entry)) == 0
+    let exhausted = Verification {
+        budget = [0]
+        ..proof
+    }
+    assert length(loop_translations(exhausted, nonlinear, entry)) == 0
+    assert length(loop_translation_candidates([candidate], [], entry)) == 1
+}
