@@ -60,12 +60,14 @@ fn permutation_trial(
             loom_native::native_input::decode(std::str::from_utf8(&output.stdout).unwrap())
                 .unwrap();
         let selected = fs::canonicalize(&source).unwrap();
+        let mut selected_sites = 0;
         for position in native.source_locations.sites.values() {
             if fs::canonicalize(&native.source_locations.paths[position.file])
                 .ok()
                 .as_deref()
                 == Some(selected.as_path())
             {
+                selected_sites += 1;
                 assert!(
                     position.line > last_proof_line,
                     "proof-only predicate reached native code at line {}",
@@ -73,6 +75,7 @@ fn permutation_trial(
                 );
             }
         }
+        assert!(selected_sites > 0, "native source map omitted the trial");
     }
     for mode in ["test", "run"] {
         trial_success(
