@@ -24,6 +24,13 @@ test fn help_covers_public_commands_without_discovery_or_source_loading() {
     assert contains(help_text("test"), "--recursive")
     assert contains(help_text("fmt"), "--stdin")
     assert contains(help_text("resolve"), "--git-credential-tool")
+    let change = cli_arguments("change")
+    push(change, "--help")
+    assert help_requested(change)
+    assert contains(help_text("change"), "Usage: loom change")
+    push(change, "left")
+    push(change, "right")
+    assert !help_requested(change)
 }
 
 test fn help_does_not_consume_option_values_or_forwarded_program_arguments() {

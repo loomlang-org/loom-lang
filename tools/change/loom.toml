@@ -1,5 +1,5 @@
 [module]
-name = "semantic_change_trial"
+name = "loom_change"
 
 [dependencies.semantic_change]
 path = "../semantic_change"

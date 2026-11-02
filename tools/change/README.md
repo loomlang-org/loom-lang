@@ -1,13 +1,25 @@
-# Semantic change trial
+# Loom semantic changes
+
+A full `bash scripts/bootstrap.sh` build installs the companion command. After
+`--dev`, build it when needed:
+
+```sh
+target/loom build tools/change --output target/debug/loom-change
+# Windows: use target/loom.exe and target/debug/loom-change.exe.
+```
+
+Relocatable toolchains include this command. `loom change --help` also works
+without the companion executable. The compiler forwards other arguments literally;
+Git and semantic-change policy live in the Loom-written command.
 
 This tool previews a three-way merge of one Loom package or a bounded
 module. Preview **does not change input source, identity files or Git state**:
 
 ```sh
-target/loom run tools/semantic_change_trial -- \
-  tools/semantic_change_trial/fixtures/base \
-  tools/semantic_change_trial/fixtures/left \
-  tools/semantic_change_trial/fixtures/right
+target/loom change \
+  tools/change/fixtures/base \
+  tools/change/fixtures/left \
+  tools/change/fixtures/right
 ```
 
 Like the compiler CLI, this host explicitly enables the standard Z3 proof
@@ -21,7 +33,7 @@ The underlying merge library remains I/O-free unless given a proof capability.
 Review a dependency upgrade or fork switch independently of three-way merging:
 
 ```sh
-target/loom run tools/semantic_change_trial -- --dependencies compiler/std BEFORE AFTER
+target/loom change --dependencies compiler/std BEFORE AFTER
 ```
 
 Both directories are complete named-module snapshots with the same application
@@ -50,12 +62,12 @@ can distinguish derivation from a move without inferring intent from similarity:
 
 ```sh
 # Copy: keep SOURCE and allocate a new identity for copied.
-semantic_change_trial refresh DIR --derive SOURCE copied.loom copied KEY
+loom change refresh DIR --derive SOURCE copied.loom copied KEY
 # Split: retire SOURCE; each destination receives its own new identity.
-semantic_change_trial refresh DIR --delete SOURCE \
+loom change refresh DIR --delete SOURCE \
   --derive SOURCE parts.loom first KEY1 --derive SOURCE parts.loom second KEY2
 # Merge: retire A and B; repeating the destination records both parents.
-semantic_change_trial refresh DIR --delete A --delete B \
+loom change refresh DIR --delete A --delete B \
   --derive A joined.loom joined KEY --derive B joined.loom joined KEY
 ```
 
@@ -76,8 +88,8 @@ remain unsupported; whole-package deletion cannot silently discard that history.
 For a complete named module, use:
 
 ```sh
-target/loom run tools/semantic_change_trial -- --module compiler/std BASE LEFT RIGHT
-target/loom run tools/semantic_change_trial -- --apply TOKEN NEW_MODULE_DIR \
+target/loom change --module compiler/std BASE LEFT RIGHT
+target/loom change --apply TOKEN NEW_MODULE_DIR \
   --module compiler/std BASE LEFT RIGHT
 ```
 
@@ -155,7 +167,7 @@ provision locked Git snapshots before an offline build. Module Git-object input,
 with an explicit baseline context, is also available:
 
 ```sh
-target/loom run tools/semantic_change_trial -- --module BASE_MODULE_DIR compiler/std \
+target/loom change --module BASE_MODULE_DIR compiler/std \
   --git /path/to/git /path/to/repo module/directory BASE_REV LEFT_REV RIGHT_REV
 ```
 
@@ -185,9 +197,9 @@ No baseline checkout is needed in automatic mode:
 
 ```sh
 scratch="$(mktemp -d)"
-target/loom run tools/semantic_change_trial -- --git-module \
+target/loom change --git-module \
   "$scratch" compiler/std CACHE_BASE /path/to/git /path/to/repo MODULE_DIR BASE LEFT RIGHT
-target/loom run tools/semantic_change_trial -- --apply TOKEN --git-module \
+target/loom change --apply TOKEN --git-module \
   "$scratch" compiler/std CACHE_BASE /path/to/git /path/to/repo MODULE_DIR BASE LEFT RIGHT
 ```
 
@@ -228,7 +240,7 @@ The same preview can read existing commits directly from Git's object database,
 without checkout, worktree creation, or changes to Git state:
 
 ```sh
-target/loom run tools/semantic_change_trial -- --git /path/to/git \
+target/loom change --git /path/to/git \
   /path/to/repo package/directory BASE_REV LEFT_REV RIGHT_REV
 ```
 
@@ -249,11 +261,11 @@ edges, and canonical project/standard-library roots in the review token. Apply
 reloads that context and rejects changes before creating an output directory:
 
 ```sh
-target/loom run tools/semantic_change_trial -- --context \
-  tools/semantic_change_trial/fixtures/project compiler/std \
-  tools/semantic_change_trial/fixtures/project \
-  tools/semantic_change_trial/fixtures/project_left \
-  tools/semantic_change_trial/fixtures/project_right
+target/loom change --context \
+  tools/change/fixtures/project compiler/std \
+  tools/change/fixtures/project \
+  tools/change/fixtures/project_left \
+  tools/change/fixtures/project_right
 ```
 
 Use `--apply TOKEN OUTPUT_DIR --context PACKAGE_DIR STD_ROOT BASE_DIR LEFT_DIR
@@ -265,7 +277,7 @@ source files, but does not merge import-graph changes or output the dependency
 closure. Git-object input can use the same explicit baseline context:
 
 ```sh
-target/loom run tools/semantic_change_trial -- --context BASE_PACKAGE_DIR compiler/std \
+target/loom change --context BASE_PACKAGE_DIR compiler/std \
   --git /path/to/git /path/to/repo package/directory BASE_REV LEFT_REV RIGHT_REV
 ```
 
@@ -352,10 +364,10 @@ the tool does not infer new member identities.
 Ambiguities may be saved without guessing an identity:
 
 ```sh
-target/loom run tools/semantic_change_trial -- refresh DIR --draft
-target/loom run tools/semantic_change_trial -- refresh DIR --draft \
+target/loom change refresh DIR --draft
+target/loom change refresh DIR --draft \
   --move FIRST_ID app.loom first -
-target/loom run tools/semantic_change_trial -- refresh DIR \
+target/loom change refresh DIR \
   --move LAST_ID app.loom last -
 ```
 
@@ -378,21 +390,21 @@ then merges a move on one side with a body edit on the other:
 ```sh
 loom_trial_dir="$(realpath "$(mktemp -d)")"
 mkdir -p "$loom_trial_dir/base" "$loom_trial_dir/left" "$loom_trial_dir/right"
-cp tools/semantic_change_trial/fixtures/base/*.loom "$loom_trial_dir/base/"
-target/loom run tools/semantic_change_trial -- init sample "$loom_trial_dir/base"
+cp tools/change/fixtures/base/*.loom "$loom_trial_dir/base/"
+target/loom change init sample "$loom_trial_dir/base"
 cp "$loom_trial_dir/base/.loom-ids" "$loom_trial_dir/left/.loom-ids"
 cp "$loom_trial_dir/base/.loom-ids" "$loom_trial_dir/right/.loom-ids"
-cp tools/semantic_change_trial/fixtures/left/*.loom "$loom_trial_dir/left/"
-cp tools/semantic_change_trial/fixtures/right/*.loom "$loom_trial_dir/right/"
+cp tools/change/fixtures/left/*.loom "$loom_trial_dir/left/"
+cp tools/change/fixtures/right/*.loom "$loom_trial_dir/right/"
 loom_amount_id="$(awk '$1 == "id" && $4 == "amount" { print $2 }' "$loom_trial_dir/base/.loom-ids")"
-target/loom run tools/semantic_change_trial -- refresh "$loom_trial_dir/left" \
+target/loom change refresh "$loom_trial_dir/left" \
   --move "$loom_amount_id" app.loom amount -
-target/loom run tools/semantic_change_trial -- refresh "$loom_trial_dir/right"
-target/loom run tools/semantic_change_trial -- \
+target/loom change refresh "$loom_trial_dir/right"
+target/loom change \
   "$loom_trial_dir/base" "$loom_trial_dir/left" "$loom_trial_dir/right" \
   > "$loom_trial_dir/preview.txt"
 loom_review_token="$(sed -n 's/^review token: //p' "$loom_trial_dir/preview.txt")"
-target/loom run tools/semantic_change_trial -- --apply "$loom_review_token" \
+target/loom change --apply "$loom_review_token" \
   "$loom_trial_dir/merged" "$loom_trial_dir/base" \
   "$loom_trial_dir/left" "$loom_trial_dir/right"
 target/loom check "$loom_trial_dir/merged"
@@ -403,10 +415,10 @@ It also prints a SHA-256 review token. After reviewing the result, apply that
 exact proposal to a **new** directory (use the token printed by your preview):
 
 ```sh
-target/loom run tools/semantic_change_trial -- --apply TOKEN OUTPUT_DIR \
-  tools/semantic_change_trial/fixtures/base \
-  tools/semantic_change_trial/fixtures/left \
-  tools/semantic_change_trial/fixtures/right
+target/loom change --apply TOKEN OUTPUT_DIR \
+  tools/change/fixtures/base \
+  tools/change/fixtures/left \
+  tools/change/fixtures/right
 ```
 
 For Git snapshots, use `--apply TOKEN OUTPUT_DIR --git GIT_EXE REPO
@@ -457,10 +469,10 @@ version of `amount` while the other branch edits its body. The `Bool` version
 keeps its own identity and both calls retain their checked targets:
 
 ```sh
-target/loom run tools/semantic_change_trial -- \
-  tools/semantic_change_trial/fixtures/overloads/base \
-  tools/semantic_change_trial/fixtures/overloads/left \
-  tools/semantic_change_trial/fixtures/overloads/right
+target/loom change \
+  tools/change/fixtures/overloads/base \
+  tools/change/fixtures/overloads/left \
+  tools/change/fixtures/overloads/right
 ```
 
 Apply the printed token to a new directory using the same three inputs, then

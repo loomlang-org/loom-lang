@@ -164,7 +164,7 @@ test fn output_path_rejects_traversal_and_noncanonical_components() {
 }
 
 test fn directory_checks_accept_the_hosts_canonical_path_spelling() {
-    let directory = match canonicalize("tools/semantic_change_trial/fixtures/base") {
+    let directory = match canonicalize("tools/change/fixtures/base") {
         Result.Ok(value) => value
         Result.Err(_) => {
             assert false
@@ -249,7 +249,7 @@ fn value(renamed Int) Int {
 }
 
 test fn initialized_package_applies_once_to_a_new_tree() {
-    let staging = concat("tools/semantic_change_trial/target/identity-test-", to_text(monotonic_ns()))
+    let staging = concat("tools/change/target/identity-test-", to_text(monotonic_ns()))
     let base = path(staging, "base")
     let output = path(staging, "output")
     match create_dir(staging) {
@@ -395,7 +395,7 @@ test fn reviewed_one_sided_addition_publishes_new_identity() {
             }
         }
     }
-    let staging = concat("tools/semantic_change_trial/target/addition-test-", to_text(monotonic_ns()))
+    let staging = concat("tools/change/target/addition-test-", to_text(monotonic_ns()))
     let output = path(staging, "merged")
     discard create_dir(staging)
     match publish(plan.token, output, plan, base, added, changed, base, added, changed) {
@@ -414,9 +414,9 @@ test fn reviewed_one_sided_addition_publishes_new_identity() {
 }
 
 test fn imported_package_requires_an_exact_pinned_project_context() {
-    let base = snapshot_at("tools/semantic_change_trial/fixtures/project")
-    let left = snapshot_at("tools/semantic_change_trial/fixtures/project_left")
-    let right = snapshot_at("tools/semantic_change_trial/fixtures/project_right")
+    let base = snapshot_at("tools/change/fixtures/project")
+    let left = snapshot_at("tools/change/fixtures/project_left")
+    let right = snapshot_at("tools/change/fixtures/project_right")
     match review(base, left, right) {
         Result.Ok(_) => {
             assert false
@@ -425,7 +425,7 @@ test fn imported_package_requires_an_exact_pinned_project_context() {
             assert std.text.contains(message, "explicit pinned project context")
         }
     }
-    match read_context("tools/semantic_change_trial/fixtures/project", "compiler/std") {
+    match read_context("tools/change/fixtures/project", "compiler/std") {
         Result.Ok(context) => {
             match review_context(right, left, right, context) {
                 Result.Ok(_) => {
@@ -486,7 +486,7 @@ test fn imported_package_requires_an_exact_pinned_project_context() {
 
 test fn changed_dependency_cannot_be_hidden_by_a_merge_that_adapts_to_it() {
     // The context keeps the base package bytes but changes sample.math.bump's argument to Bool.
-    let base = snapshot_at("tools/semantic_change_trial/fixtures/project")
+    let base = snapshot_at("tools/change/fixtures/project")
     let files = new[File]()
     var index = 0
     while index < length(base.revision.files) {
@@ -511,7 +511,7 @@ test fn changed_dependency_cannot_be_hidden_by_a_merge_that_adapts_to_it() {
         commit = ""
         next = base.next
     }
-    match read_context("tools/semantic_change_trial/fixtures/project_dependency_drift", "compiler/std") {
+    match read_context("tools/change/fixtures/project_dependency_drift", "compiler/std") {
         Result.Ok(context) => {
             match review_context(base, base, adapted, context) {
                 Result.Ok(_) => {

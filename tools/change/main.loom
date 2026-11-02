@@ -975,8 +975,35 @@ fn apply_git_context(expected Text, destination Text, directory Text, standard T
         read_git_commit(executable, repository, package, fresh.right)?)
 }
 
+fn change_usage() Text {
+    """
+        usage: loom change init PACKAGE_NAME DIR
+           or: loom change scan DIR
+           or: loom change refresh DIR [--draft] [--move ID FILE NAME KEY | --derive PARENT FILE NAME KEY | --delete ID]...
+        usage: loom change BASE_DIR LEFT_DIR RIGHT_DIR
+           or: loom change --git GIT_EXE REPO PACKAGE_DIR BASE_REV LEFT_REV RIGHT_REV
+           or: loom change --context PACKAGE_DIR STD_ROOT BASE_DIR LEFT_DIR RIGHT_DIR
+           or: loom change --context PACKAGE_DIR STD_ROOT --git GIT_EXE REPO PACKAGE_DIR BASE_REV LEFT_REV RIGHT_REV
+           or: loom change --module STD_ROOT BASE_DIR LEFT_DIR RIGHT_DIR
+           or: loom change --dependencies STD_ROOT BEFORE_DIR AFTER_DIR
+           or: loom change --module BASE_MODULE_DIR STD_ROOT --git GIT_EXE REPO MODULE_DIR BASE_REV LEFT_REV RIGHT_REV
+           or: loom change --git-module SCRATCH STD_ROOT CACHE_BASE GIT_EXE REPO MODULE_DIR BASE_REV LEFT_REV RIGHT_REV
+           or: loom change --apply TOKEN --git-module SCRATCH STD_ROOT CACHE_BASE GIT_EXE REPO MODULE_DIR BASE_REV LEFT_REV RIGHT_REV
+           or: loom change --apply TOKEN OUTPUT_DIR BASE_DIR LEFT_DIR RIGHT_DIR
+           or: loom change --apply TOKEN OUTPUT_DIR --context PACKAGE_DIR STD_ROOT BASE_DIR LEFT_DIR RIGHT_DIR
+           or: loom change --apply TOKEN OUTPUT_DIR --context PACKAGE_DIR STD_ROOT --git GIT_EXE REPO PACKAGE_DIR BASE_REV LEFT_REV RIGHT_REV
+           or: loom change --apply TOKEN OUTPUT_DIR --git GIT_EXE REPO PACKAGE_DIR BASE_REV LEFT_REV RIGHT_REV
+           or: loom change --apply TOKEN OUTPUT_DIR --module STD_ROOT BASE_DIR LEFT_DIR RIGHT_DIR
+           or: loom change --apply TOKEN OUTPUT_DIR --module BASE_MODULE_DIR STD_ROOT --git GIT_EXE REPO MODULE_DIR BASE_REV LEFT_REV RIGHT_REV
+        """
+}
+
 fn main() {
     let args = arguments()
+    if length(args) == 2 && (get(args, 1) == "--help" || get(args, 1) == "-h") {
+        discard write_text(concat(change_usage(), "\n"))
+        return
+    }
     let initializing = length(args) == 4 && get(args, 1) == "init"
     let scanning = length(args) == 3 && get(args, 1) == "scan"
     let refreshing = length(args) >= 3 && get(args, 1) == "refresh"
@@ -1002,24 +1029,7 @@ fn main() {
     !directories_apply && !context_apply && !git_apply && !module_preview && !module_apply &&
     !context_git_preview && !context_git_apply && !module_git_preview && !module_git_apply &&
     !automatic_preview && !automatic_apply && !dependencies_preview {
-        discard write_error("usage: semantic_change_trial init PACKAGE_NAME DIR\n")
-        discard write_error("   or: semantic_change_trial scan DIR\n")
-        discard write_error("   or: semantic_change_trial refresh DIR [--draft] [--move ID FILE NAME KEY | --derive PARENT FILE NAME KEY | --delete ID]...\n")
-        discard write_error("usage: semantic_change_trial BASE_DIR LEFT_DIR RIGHT_DIR\n")
-        discard write_error("   or: semantic_change_trial --git GIT_EXE REPO PACKAGE_DIR BASE_REV LEFT_REV RIGHT_REV\n")
-        discard write_error("   or: semantic_change_trial --context PACKAGE_DIR STD_ROOT BASE_DIR LEFT_DIR RIGHT_DIR\n")
-        discard write_error("   or: semantic_change_trial --context PACKAGE_DIR STD_ROOT --git GIT_EXE REPO PACKAGE_DIR BASE_REV LEFT_REV RIGHT_REV\n")
-        discard write_error("   or: semantic_change_trial --module STD_ROOT BASE_DIR LEFT_DIR RIGHT_DIR\n")
-        discard write_error("   or: semantic_change_trial --dependencies STD_ROOT BEFORE_DIR AFTER_DIR\n")
-        discard write_error("   or: semantic_change_trial --module BASE_MODULE_DIR STD_ROOT --git GIT_EXE REPO MODULE_DIR BASE_REV LEFT_REV RIGHT_REV\n")
-        discard write_error("   or: semantic_change_trial --git-module SCRATCH STD_ROOT CACHE_BASE GIT_EXE REPO MODULE_DIR BASE_REV LEFT_REV RIGHT_REV\n")
-        discard write_error("   or: semantic_change_trial --apply TOKEN --git-module SCRATCH STD_ROOT CACHE_BASE GIT_EXE REPO MODULE_DIR BASE_REV LEFT_REV RIGHT_REV\n")
-        discard write_error("   or: semantic_change_trial --apply TOKEN OUTPUT_DIR BASE_DIR LEFT_DIR RIGHT_DIR\n")
-        discard write_error("   or: semantic_change_trial --apply TOKEN OUTPUT_DIR --context PACKAGE_DIR STD_ROOT BASE_DIR LEFT_DIR RIGHT_DIR\n")
-        discard write_error("   or: semantic_change_trial --apply TOKEN OUTPUT_DIR --context PACKAGE_DIR STD_ROOT --git GIT_EXE REPO PACKAGE_DIR BASE_REV LEFT_REV RIGHT_REV\n")
-        discard write_error("   or: semantic_change_trial --apply TOKEN OUTPUT_DIR --git GIT_EXE REPO PACKAGE_DIR BASE_REV LEFT_REV RIGHT_REV\n")
-        discard write_error("   or: semantic_change_trial --apply TOKEN OUTPUT_DIR --module STD_ROOT BASE_DIR LEFT_DIR RIGHT_DIR\n")
-        discard write_error("   or: semantic_change_trial --apply TOKEN OUTPUT_DIR --module BASE_MODULE_DIR STD_ROOT --git GIT_EXE REPO MODULE_DIR BASE_REV LEFT_REV RIGHT_REV\n")
+        discard write_error(concat(change_usage(), "\n"))
         exit_code(2)
         return
     }

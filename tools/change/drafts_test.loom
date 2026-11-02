@@ -109,7 +109,7 @@ fn draft_lifecycle(directory Text) Result[Text, Text] {
 }
 
 test fn identity_draft_retains_partial_choices_and_requires_a_current_source_basis() {
-    let directory = concat("tools/semantic_change_trial/target/draft-", to_text(monotonic_ns()))
+    let directory = concat("tools/change/target/draft-", to_text(monotonic_ns()))
     assert successful(draft_lifecycle(directory)) == "identity draft resolved"
 }
 
@@ -165,6 +165,6 @@ fn restored_draft(directory Text) Result[Text, Text] {
 }
 
 test fn identity_draft_never_infers_restoration_or_deletion_of_pending_ids() {
-    let directory = concat("tools/semantic_change_trial/target/restored-draft-", to_text(monotonic_ns()))
+    let directory = concat("tools/change/target/restored-draft-", to_text(monotonic_ns()))
     assert successful(restored_draft(directory)) == "explicit deletion retained"
 }

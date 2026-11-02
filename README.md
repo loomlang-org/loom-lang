@@ -61,6 +61,7 @@ same-directory tests, and format/check/build/test/run tasks. See the
 - [Stage a local toolchain outside the checkout](compiler/README.md#relocatable-local-toolchain)
 - [Prepare a development release from verified CI archives](distribution/README.md)
 - [Use Loom syntax and analysis libraries](compiler/loom/README.md#public-syntax-libraries)
+- [Review semantic changes with loom change](tools/change/README.md)
 - [Format source and get editor feedback](compiler/loom/README.md#formatting-and-editor-feedback)
 - [Try the VS Code development extension](editors/vscode/README.md)
 - [Project goals](docs/project/charter.md)

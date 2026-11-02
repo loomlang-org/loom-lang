@@ -182,6 +182,11 @@ evidence for narrow cases, not arbitrary-schema migration or general semantic
 version control. Online coexistence, throttling, unknown outcomes and hotfix
 compatibility require their own complete evidence.
 
+`loom change` provides the shared entry point for existing identity, review and
+merge workflows. Its Loom-written companion ships with the toolchain and uses
+Git objects for the supported Git merge modes; general history/workspace
+management and semantic merge coverage remain open.
+
 ## Delivery discipline
 
 Use focused PRs, keep the three-platform native/bootstrap gates green, and remove

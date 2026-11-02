@@ -79,7 +79,7 @@ jobs:
           target/loom test compiler/examples/cleanup
           # Large unit-test harnesses need coverage, not expensive optimization.
           LOOM_OPT_LEVEL=0 target/loom test tools/semantic_change
-          LOOM_OPT_LEVEL=0 target/loom test tools/semantic_change_trial
+          LOOM_OPT_LEVEL=0 target/loom test tools/change
           LOOM_OPT_LEVEL=0 target/loom test tools/deployment
           migration_dir="$(mktemp -d "$RUNNER_TEMP/loom-migration.XXXXXX")"
           target/loom run tools/deployment/sqlite_rows_trial -- /usr/bin/sqlite3 "$migration_dir/typed rows ?#% 数据.sqlite"
@@ -117,8 +117,8 @@ jobs:
   linux-llvm22:
     name: Linux native compiler (LLVM 22)
     runs-on: ubuntu-24.04
-    # Leave room for relocation and packaging after the full cold native gate.
-    timeout-minutes: 75
+    # The cold gate, companion command and relocated toolchain share this job.
+    timeout-minutes: 90
     env:
       CARGO_TERM_COLOR: always
       LLVM_SYS_221_PREFIX: /usr/lib/llvm-22
@@ -163,7 +163,7 @@ jobs:
           cargo clippy --locked --workspace --all-targets -- -D warnings
           bash scripts/bootstrap.sh
           LOOM_OPT_LEVEL=0 target/loom test tools/semantic_change
-          LOOM_OPT_LEVEL=0 target/loom test tools/semantic_change_trial
+          LOOM_OPT_LEVEL=0 target/loom test tools/change
           cargo nextest run --locked --workspace --test-threads 2 --no-fail-fast
           cargo test --locked --workspace --doc
 
@@ -269,7 +269,7 @@ jobs:
           target/loom.exe test compiler/std/storage
           target/loom.exe test compiler/std/json
           LOOM_OPT_LEVEL=0 target/loom.exe test tools/semantic_change
-          LOOM_OPT_LEVEL=0 target/loom.exe test tools/semantic_change_trial
+          LOOM_OPT_LEVEL=0 target/loom.exe test tools/change
           cargo nextest run --locked --workspace --test-threads 2 --no-fail-fast
           cargo test --locked --workspace --doc
 

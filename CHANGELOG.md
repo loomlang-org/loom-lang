@@ -236,7 +236,7 @@ implementation, not a compatibility ledger for previous prototypes.
   without confusing them with function or type declarations.
 
 - Save unresolved semantic identities and partial explicit choices with
-  `semantic_change_trial refresh --draft`, without guessing IDs or blocking
+  `loom change refresh --draft`, without guessing IDs or blocking
   ordinary compilation. Source edits invalidate the draft basis; semantic
   preview/apply requires explicit resolution of pending identities.
 
