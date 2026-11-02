@@ -157,7 +157,19 @@ fn counted_scan(context Expansion, source Expr, condition Expr, end Expr, identi
     let receivers = new[Expr]()
     let fields = new[BagField]()
     let needles = new[Expr]()
-    discard counted_fields(context, condition, identity, receivers, fields, needles, 64)?
+    match counted_fields(context, condition, identity, receivers, fields, needles, 64) {
+        Result.Ok(_) => {
+        }
+        Result.Err(_) => {
+            let formula = count_formula(context, source, [condition], end, identity, 0)?
+            if end.kind == ExprKind.Intrinsic && sequence_operation(end.text) == "list_len" {
+                return Result.Ok(formula)
+            }
+            let zero = count_integer(source, 0)
+            let nonempty = proof_expr(end, ExprKind.Binary, 2, ">", -1, [end, zero])
+            return Result.Ok(proof_choice(nonempty, formula, zero))
+        }
+    }
     normalize_count_fields(fields, needles)
     Result.Ok(count_value(source, get(receivers, 0), needles, end, fields))
 }

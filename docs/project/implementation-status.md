@@ -111,6 +111,11 @@ one indexed element; conjunction and operand order normalize. Generic finite
 histogram laws reuse the existing immutable-value encoding and preserve source
 store premises, indices and scopes. Float, enum and mutable-graph equality remain
 open, as do general comparator laws.
+The [composed predicate trial](../../compiler/examples/predicate_sort_contracts)
+also preserves counts of unions, complements and guarded alternatives. It uses
+finite indicator algebra over the same equality keys, including overlap and empty
+ranges, within the existing expansion limits. Source evaluation checks remain
+required; this supplies no arbitrary predicate induction.
 Finite relation proofs also accept a loop-defined partial predicate under
 explicit comparability and transitivity requirements. Relation-specific solver
 scheduling retains both value and successful-evaluation obligations within the

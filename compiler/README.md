@@ -3706,6 +3706,12 @@ proves full-row entry permutation through unknown effectful comparators.
 IEEE equality, enum alternatives, mutable descendants and arbitrary equality
 predicates remain outside that count fragment. No runtime histogram is added.
 This does not establish comparator laws, ordering or arbitrary-element permutation.
+The [composed predicate trial](examples/predicate_sort_contracts) proves filtered
+entry counts for unions and complements of those equality atoms. Finite indicator
+algebra subtracts intersecting matches, preserves stable branch guards, and treats
+nonpositive scan ranges as empty. Boolean element reads and inequality reuse the
+same keys. Original source evaluation checks and expansion limits remain intact;
+exhaustion or unsupported atoms still leave a required proof unproved.
 Count bounds instantiate at each actual symbolic needle, retaining any enclosing
 quantifier ranges and their dependencies. This avoids universal search over
 unrelated integers without sampling source values or changing source checks.

@@ -1,0 +1,98 @@
+import std.list.length
+import std.list.sorted
+import std.list.push
+
+record Row {
+    id Int
+    label Text
+}
+
+fn selected(row Row, id Int, label Text) Bool {
+    row.id == id || row.label == label
+}
+
+fn count(values List[Row], id Int, label Text) Int {
+    var index = 0
+    var found = 0
+    while index < length(values) {
+        if selected(values[index], id, label) {
+            found = found + 1
+        }
+        index = index + 1
+    }
+    found
+}
+
+pub fn sorted_matching(values List[Row], less fn(Row, Row) Bool,
+    id Int, label Text) List[Row]
+ensures count(old(values), id, label) == count(result, id, label) {
+    sorted(values, less)
+}
+
+fn count_by_id(values List[Row], id Int, end Int, equal Bool) Int
+requires end <= length(values) {
+    var index = 0
+    var found = 0
+    while index < end {
+        let matches = if equal {
+            values[index].id == id
+        } else {
+            values[index].id != id
+        }
+        if matches {
+            found = found + 1
+        }
+        index = index + 1
+    }
+    found
+}
+
+pub fn partition_size(values List[Row], id Int, equal Bool) Int
+ensures result == length(values) {
+    count_by_id(values, id, length(values), equal) +
+    count_by_id(values, id, length(values), !equal)
+}
+
+pub fn empty_prefix(values List[Row], id Int, end Int, equal Bool) Int
+requires end <= 0
+ensures result == 0 {
+    count_by_id(values, id, end, equal)
+}
+
+fn exercise() {
+    let first = Row {
+        id = 1
+        label = "first"
+    }
+    let both = Row {
+        id = 1
+        label = "selected"
+    }
+    let neither = Row {
+        id = 3
+        label = "other"
+    }
+    let values = [neither, both, first, first]
+    let arranged = sorted_matching(values, fn(a Row, b Row) Bool {
+            values[0] = first
+            push(values, both)
+            a.id < b.id
+        }, 1, "selected")
+    assert length(arranged) == 4
+    assert count(arranged, 1, "selected") == 3
+    assert partition_size(arranged, 1, true) == 4
+    assert partition_size(arranged, 1, false) == 4
+    assert empty_prefix(arranged, 1, -1, false) == 0
+    let reversed = sorted_matching(arranged, fn(a Row, b Row) Bool {
+            a.id > b.id
+        }, 1, "selected")
+    assert count(reversed, 1, "selected") == 3
+}
+
+fn main() {
+    exercise()
+}
+
+test fn sorting_preserves_boolean_combinations_without_double_counting() {
+    exercise()
+}

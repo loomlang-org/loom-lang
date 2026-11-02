@@ -137,7 +137,9 @@ complete immutable-record entry permutation through effectful comparisons.
 Conjunction and equality-operand order normalize; scalar and joint keys share
 the same finite histogram laws. Arbitrary equality predicates, general
 content induction, comparator laws and constrained shared-alias preservation
-remain open.
+remain open. Finite indicator algebra now also composes unions, complements and
+guarded alternatives over the admitted equality keys, retaining source evaluation
+checks and the existing expansion limits.
 
 Use these complete acceptance stories, rather than a count of syntax features:
 
