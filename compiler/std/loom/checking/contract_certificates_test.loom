@@ -36,13 +36,18 @@ test fn completed_groups_retain_helper_clauses_only_after_every_member_passes() 
     }
     let root = certificate_signature(env, "root")
     let helper = certificate_signature(env, "helper")
-    assert match function(env, root, [], [], true) {
+    assert match function(env, root, [], [], false) {
         Result.Ok(_) => true
         _ => false
     }
     let cache = get(env.inputs, 0).contracts
     assert length(get(cache, root)) == 1
     assert length(get(cache, helper)) == 1
+    assert match function(env, root, [], [], true) {
+        Result.Ok(_) => true
+        _ => false
+    }
+    assert length(get(cache, root)) == 1
     let clauses = get(get(cache, helper), 0).postconditions
     assert length(clauses) != 0
     assert !proof_body_calls(get(clauses, 0))

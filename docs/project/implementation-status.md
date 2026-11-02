@@ -86,6 +86,9 @@ binding evidence, not behavioral compatibility or migration proof.
 Resident workers reuse valid analyses while revalidating source and observed
 inputs. They also retain bounded decisions for complete identical SMT queries
 across edits; source checking still runs and errors/timeouts are not proof facts.
+Within one checked snapshot, complete concrete declaration proofs also serve
+emission. Abstract instances and declaration-only assertion bodies retain their
+independent checks; no proof budget or solver timeout is increased.
 A [recursive integer merge sort](../../compiler/examples/merge_sort_contracts)
 now composes entry-state order/count contracts across a package boundary.
 Finite source goals remain intact; histogram strengthening applies to established
