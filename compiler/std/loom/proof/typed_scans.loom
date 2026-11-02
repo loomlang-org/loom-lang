@@ -1,0 +1,417 @@
+// A universally selected element has its declared type at every valid index.
+// Prove the entire clause for an arbitrary value of that type, including its
+// nested access checks. No sampled child, heap equality or frozen graph is used.
+fn typed_scan_mentions(value Expr, binder Int, depth Int) Bool {
+    if depth <= 0 || (bound_expression(value) && value.index == binder) {
+        return true
+    }
+    var index = 0
+    while index < length(value.children) {
+        if typed_scan_mentions(get(value.children, index), binder, depth - 1) {
+            return true
+        }
+        index = index + 1
+    }
+    false
+}
+
+fn typed_scan_selection(value Expr, binder Int, depth Int) Option[Expr] {
+    if depth <= 0 || function_layout(value) {
+        return Option.None
+    }
+    if list_read_expression(value) && value.ty >= 6 {
+        let index = get(value.children, 1)
+        if bound_expression(index) && index.index == binder &&
+        !typed_scan_mentions(get(value.children, 0), binder, 64) {
+            return Option.Some(value)
+        }
+    }
+    var index = 0
+    while index < length(value.children) {
+        match typed_scan_selection(get(value.children, index), binder, depth - 1) {
+            Option.Some(selected) => {
+                return Option.Some(selected)
+            }
+            Option.None => {
+            }
+        }
+        index = index + 1
+    }
+    Option.None
+}
+
+fn typed_scan_at(value Expr, selected Expr, binder Int, cursor Expr, element Expr,
+    copies List[Int], shared Bool, depth Int) Result[Expr, Text] {
+    if depth <= 0 || length(value.arms) != 0 {
+        return Result.Err("typed scan substitution budget exhausted")
+    }
+    if same_structure(value, selected, [256]) {
+        let offset = if shared {
+            get(copies, 0)
+        } else {
+            0
+        }
+        set(copies, 0, get(copies, 0) + 1)
+        return Result.Ok(Expr {
+                index = element.index + offset,
+                ..element
+            })
+    }
+    if bound_expression(value) && value.index == binder {
+        return Result.Ok(cursor)
+    }
+    // Nested scopes cannot capture a binder replaced by this query.
+    if quantified_expression(value) && value.index == binder {
+        return Result.Err("typed scan has a shadowed binder")
+    }
+    if function_layout(value) {
+        return Result.Ok(value)
+    }
+    let children = new[Expr]()
+    var index = 0
+    while index < length(value.children) {
+        push(children, typed_scan_at(get(value.children, index), selected, binder, cursor, element, copies, shared, depth - 1)?)
+        index = index + 1
+    }
+    Result.Ok(Expr {
+            children = children,
+            ..value
+        })
+}
+
+fn typed_scan_proved(types List[Type], locals List[Local], clause Expr, backend ProofBackend,
+    protected List[InputGuarantee], shared Bool) Bool {
+    if !quantified_expression(clause) || !typed_scan_locals(clause, locals, 256) {
+        return false
+    }
+    let selected = match typed_scan_selection(get(clause.children, 2), clause.index, 64) {
+        Option.Some(selected) => selected
+        Option.None => {
+            return false
+        }
+    }
+    if !typed_scan_constrained(types, selected.ty, [], 16) {
+        return false
+    }
+    let cursor = proof_expr(clause, ExprKind.Local, 1, "", length(locals), [])
+    let element = proof_expr(clause, ExprKind.Local, selected.ty, "", length(locals) + 1, [])
+    let copies = [0]
+    let condition = match typed_scan_at(get(clause.children, 2), selected, clause.index, cursor, element, copies, shared, 256) {
+        Result.Ok(condition) => condition
+        Result.Err(_) => {
+            return false
+        }
+    }
+    let zero = proof_expr(clause, ExprKind.Integer, 1, "0", -1, [])
+    let receiver = get(selected.children, 0)
+    let size = proof_expr(clause, ExprKind.Intrinsic, 1,
+        if selected.text == "bytes_get" {
+            "bytes_len"
+        } else {
+            "list_len"
+        }, -1, [receiver])
+    let in_range = proof_and(proof_expr(clause, ExprKind.Binary, 2, ">=", -1, [cursor, zero]),
+        proof_expr(clause, ExprKind.Binary, 2, "<", -1, [cursor, size]))
+    let scope = proof_and(proof_expr(clause, ExprKind.Binary, 2, ">=", -1,
+            [cursor, get(clause.children, 0)]),
+        proof_expr(clause, ExprKind.Binary, 2, "<", -1, [cursor, get(clause.children, 1)]))
+    let defined_bounds = proof_and(
+        proof_expr(clause, ExprKind.Intrinsic, 2, "proof_defined", -1, [get(clause.children, 0)]),
+        proof_expr(clause, ExprKind.Intrinsic, 2, "proof_defined", -1, [get(clause.children, 1)]))
+    if !typed_scan_query(types, locals, -1, clause, proof_bool(clause, true), defined_bounds, backend, protected, false, 0) {
+        return false
+    }
+    // Establish bounds without the element parameter. Its type may be
+    // uninhabited; assuming it before proving selection would invent a witness
+    // and make an out-of-range read vacuously safe even on an empty List.
+    if !typed_scan_query(types, locals, -1, clause, scope, in_range, backend, protected, false, 0) {
+        return false
+    }
+    typed_scan_query(types, locals, selected.ty, clause, scope, condition, backend, protected, shared, if shared {
+            get(copies, 0)
+        } else {
+            1
+        })
+}
+
+// Ordinary scalar/inline domains already have quantified rules. Only a
+// validated refinement in the selected value can add the shared-child facts
+// needed here; unrelated record scans must not acquire extra solver queries.
+fn typed_scan_constrained(types List[Type], ty Int, seen List[Int], depth Int) Bool {
+    if ty < 6 || ty >= length(types) || depth <= 0 {
+        return false
+    }
+    var index = 0
+    while index < length(seen) {
+        if get(seen, index) == ty {
+            return false
+        }
+        index = index + 1
+    }
+    push(seen, ty)
+    let shape = get(types, ty)
+    if shape.kind == TypeKind.Refined && length(shape.constraint) != 0 {
+        return true
+    }
+    index = 0
+    while index < length(shape.fields) {
+        if typed_scan_constrained(types, get(shape.fields, index).ty, seen, depth - 1) {
+            return true
+        }
+        index = index + 1
+    }
+    var variant = 0
+    while variant < length(shape.variants) {
+        let fields = get(shape.variants, variant).fields
+        index = 0
+        while index < length(fields) {
+            if typed_scan_constrained(types, get(fields, index), seen, depth - 1) {
+                return true
+            }
+            index = index + 1
+        }
+        variant = variant + 1
+    }
+    false
+}
+
+fn typed_scan_clauses(types List[Type], locals List[Local], value Expr, backend ProofBackend,
+    protected List[InputGuarantee], shared Bool, budget List[Int], depth Int) Expr {
+    if depth <= 0 || function_layout(value) || length(value.arms) != 0 {
+        return value
+    }
+    if quantified_expression(value) && get(budget, 0) > 0 {
+        set(budget, 0, get(budget, 0) - 1)
+        if typed_scan_proved(types, locals, value, backend, protected, shared) {
+            return proof_bool(value, true)
+        }
+    }
+    let children = new[Expr]()
+    var index = 0
+    while index < length(value.children) {
+        push(children, typed_scan_clauses(types, locals, get(value.children, index), backend, protected, shared, budget, depth - 1))
+        index = index + 1
+    }
+    Expr {
+        children = children,
+        ..value
+    }
+}
+
+fn typed_scan_function(types List[Type], function Function, backend ProofBackend,
+    protected List[InputGuarantee], shared Bool) Function {
+    var needed = false
+    var index = 0
+    while index < length(function.preconditions) {
+        needed = needed || typed_scan_candidate(get(function.preconditions, index), 256)
+        index = index + 1
+    }
+    index = 0
+    while index < length(function.postconditions) {
+        needed = needed || typed_scan_candidate(get(function.postconditions, index), 256)
+        index = index + 1
+    }
+    if !needed {
+        return function
+    }
+    let locals = typed_scan_inputs(function, false)
+    let returned = typed_scan_inputs(function, true)
+    let budget = [32]
+    let before = new[Expr]()
+    let after = new[Expr]()
+    index = 0
+    while index < length(function.preconditions) {
+        push(before, typed_scan_clauses(types, locals, get(function.preconditions, index), backend, protected, shared, budget, 256))
+        index = index + 1
+    }
+    index = 0
+    while index < length(function.postconditions) {
+        push(after, typed_scan_clauses(types, returned, get(function.postconditions, index), backend, protected, shared, budget, 256))
+        index = index + 1
+    }
+    Function {
+        preconditions = before,
+        postconditions = after,
+        ..function
+    }
+}
+
+fn typed_scan_candidate(value Expr, depth Int) Bool {
+    if depth <= 0 || function_layout(value) || length(value.arms) != 0 {
+        return false
+    }
+    if quantified_expression(value) && match typed_scan_selection(get(value.children, 2), value.index, 64) {
+        Option.Some(_) => true
+        Option.None => false
+    } {
+        return true
+    }
+    var index = 0
+    while index < length(value.children) {
+        if typed_scan_candidate(get(value.children, index), depth - 1) {
+            return true
+        }
+        index = index + 1
+    }
+    false
+}
+
+fn typed_scan_locals(value Expr, inputs List[Local], depth Int) Bool {
+    if function_layout(value) {
+        return true
+    }
+    if depth <= 0 || length(value.arms) != 0 ||
+    (value.kind == ExprKind.Local && (value.index < 0 || value.index >= length(inputs) ||
+            get(inputs, value.index).ty != value.ty)) {
+        return false
+    }
+    var index = 0
+    while index < length(value.children) {
+        if !typed_scan_locals(get(value.children, index), inputs, depth - 1) {
+            return false
+        }
+        index = index + 1
+    }
+    true
+}
+
+fn typed_scan_inputs(function Function, returned Bool) List[Local] {
+    let inputs = new[Local]()
+    var index = 0
+    while index < length(function.locals) {
+        let local = get(function.locals, index)
+        // A normal result is typed independently of the extra ensures. Other
+        // body locals (notably inactive match payloads) may be uninitialized;
+        // never assume their predicates by turning them into parameters.
+        push(inputs, Local {
+                ty = if index < length(function.params) || (returned && index == function.result_local) {
+                    local.ty
+                } else {
+                    0
+                }
+                ..local
+            })
+        index = index + 1
+    }
+    inputs
+}
+
+// Expanded helper arguments occupy call-local slots beyond the caller's
+// lexical locals. Only actually initialized values can supply typed inputs;
+// inactive payloads and hypothetical future results supply no assumptions.
+fn typed_scan_observed(value Expr, state State, locals List[Local], depth Int) Bool {
+    if function_layout(value) {
+        return true
+    }
+    if depth <= 0 || length(value.arms) != 0 {
+        return false
+    }
+    if value.kind == ExprKind.Local {
+        if value.index < 0 || value.index >= length(state.locals) {
+            return false
+        }
+        if match get(state.locals, value.index) {
+            Value.Empty => true
+            _ => false
+        } {
+            return false
+        }
+        let previous = get(locals, value.index)
+        if previous.ty != 0 && previous.ty != value.ty {
+            return false
+        }
+        set(locals, value.index, Local {
+                ty = value.ty,
+                ..previous
+            })
+    }
+    var index = 0
+    while index < length(value.children) {
+        if !typed_scan_observed(get(value.children, index), state, locals, depth - 1) {
+            return false
+        }
+        index = index + 1
+    }
+    true
+}
+
+fn typed_scan_executed(proof Verification, value Expr, state State) Bool {
+    if !proof.typed_scans || !typed_scan_candidate(value, 256) {
+        return false
+    }
+    let locals = new[Local]()
+    var index = 0
+    while index < length(state.locals) {
+        push(locals, Local {
+                name = "input",
+                ty = 0,
+                mutable = false,
+                is_scoped = false
+            })
+        index = index + 1
+    }
+    typed_scan_observed(value, state, locals, 256) &&
+    typed_scan_proved(proof.program.types, locals, value, proof.query.backend, proof.protected, proof.shared)
+}
+
+fn typed_scan_query(types List[Type], source_locals List[Local], element Int, source Expr, scope Expr,
+    condition Expr, backend ProofBackend, protected List[InputGuarantee], shared Bool, copies Int) Bool {
+    let params = new[Int]()
+    let locals = clone(source_locals)
+    var index = 0
+    while index < length(source_locals) {
+        push(params, get(source_locals, index).ty)
+        index = index + 1
+    }
+    push(params, 1)
+    push(locals, Local {
+            name = "index",
+            ty = 1,
+            mutable = false,
+            is_scoped = false
+        })
+    var copy = 0
+    while element >= 0 && copy < copies {
+        push(params, element)
+        push(locals, Local {
+                name = "element",
+                ty = element,
+                mutable = false,
+                is_scoped = false
+            })
+        copy = copy + 1
+    }
+    let result_slot = length(locals)
+    push(locals, Local {
+            name = "result",
+            ty = 2,
+            mutable = false,
+            is_scoped = false
+        })
+    let function = Function {
+        is_async = false
+        symbol = -1
+        arguments = []
+        params = params
+        result = 2
+        locals = locals
+        preconditions = [scope]
+        postconditions = [condition]
+        result_cleanup = []
+        result_local = result_slot
+        body = proof_bool(source, true)
+        runtime_name = ""
+        span = source.span
+    }
+    let proof = verification(function, proof_program_with_types(types), backend)
+    // The lemma is proved by the underlying verifier, without recursively
+    // invoking itself on the same input type's entry predicate.
+    match verify_body(Verification {
+            typed_scans = false,
+            shared = shared,
+            ..proof
+        }, protected) {
+        Result.Ok(proved) => proved
+        Result.Err(_) => false
+    }
+}

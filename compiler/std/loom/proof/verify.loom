@@ -25,6 +25,7 @@ record Verification {
     preservation List[Expr]
     identity_stores Bool
     histograms Bool
+    typed_scans Bool
     histogram_keys List[List[BagField]]
     protected List[InputGuarantee]
     body_calls List[Int]
@@ -805,7 +806,14 @@ enum Revalidation {
 }
 
 fn verify_body(source Verification, protected List[InputGuarantee], allocations List[Int], entries List[Int], continuation Bool, revalidate Revalidation) Result[Bool, Text] {
-    let proof = protected_verification(source, protected)
+    let proof = protected_verification(Verification {
+            function = if source.typed_scans {
+                typed_scan_function(source.program.types, source.function, source.query.backend, protected, source.shared)
+            } else {
+                source.function
+            }
+            ..source
+        }, protected)
     let function = proof.function
     if length(function.postconditions) == 0 {
         return Result.Ok(true)

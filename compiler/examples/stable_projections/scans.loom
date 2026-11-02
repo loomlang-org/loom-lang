@@ -1,0 +1,122 @@
+// A published outer list can keep arbitrary aliases when its predicate follows
+// from each child's independently enforced type. Children remain mutable.
+record CheckedNode {
+    head PositiveHead
+    children List[CheckedNode]
+}
+
+fn checked_nodes(values List[CheckedNode]) Bool {
+    var index = 0
+    while index < length(values) {
+        if values[index].head[0] <= 0 {
+            return false
+        }
+        index = index + 1
+    }
+    true
+}
+
+type Published = List[CheckedNode] where checked_nodes(self)
+
+fn published(values List[CheckedNode]) Published {
+    Published(values)
+}
+
+fn published_valid(values Published) Bool
+ensures result
+{
+    checked_nodes(values)
+}
+
+fn published_scope() Bool {
+    let head = PositiveHead([1])
+    let raw List[CheckedNode] = []
+    let shared = published(raw)
+    push(raw, CheckedNode {
+            head = head,
+            children = raw
+        })
+    head[0] = 2
+    push(head, -1)
+    assert length(shared) == 1 && shared[0].head[0] == 2
+    assert length(shared[0].children) == 1
+    push(shared, CheckedNode {
+            head = PositiveHead([3]),
+            children = raw
+        })
+    assert length(raw) == 2
+    assert published_valid(shared)
+    true
+}
+
+async fn published_later(values Published) Bool
+ensures result
+{
+    sleep_ms(1).await
+    published_valid(values)
+}
+
+async fn edit_published(values Published, events List[Int]) {
+    defer {
+        push(values, CheckedNode {
+                head = PositiveHead([7]),
+                children = values
+            })
+    }
+    push(events, 1)
+    sleep_ms(10000).await
+}
+
+async fn fault_published(values Published) {
+    push(values, CheckedNode {
+            head = PositiveHead([9]),
+            children = values
+        })
+    assert false
+}
+
+async fn quantified_publication() {
+    assert published_scope()
+    assert comptime {
+        published_scope()
+    }
+    let head = PositiveHead([1])
+    let raw = [CheckedNode {
+            head = head,
+            children = []
+        }]
+    let shared = published(raw)
+    let pending = published_later(shared)
+    head[0] = 2
+    push(raw, CheckedNode {
+            head = head,
+            children = raw
+        })
+    assert pending.await
+    let worker = run(fn() Bool {
+            published_valid(shared)
+        })
+    head[0] = 3
+    assert worker.await
+    let events List[Int] = []
+    let editing = edit_published(shared, events)
+    while length(events) == 0 {
+        sleep_ms(1).await
+    }
+    match cancel(editing) {
+        Outcome.Cancelled => {
+        }
+        _ => {
+            assert false
+        }
+    }
+    assert published_valid(shared) && length(raw) == 3
+    match outcome(fault_published(shared)).await {
+        Outcome.Faulted(_) => {
+        }
+        _ => {
+            assert false
+        }
+    }
+    assert published_valid(shared) && length(raw) == 4
+}

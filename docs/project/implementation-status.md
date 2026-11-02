@@ -582,6 +582,17 @@ supported theories and boundaries. The central rules are:
   suspension, cancellation cleanup and faults.
   Unproved state relationships and general nested-graph publication remain
   conservative.
+  Finite scans can also derive a continuing predicate from each selected
+  element's independently checked type, including shared child projections in
+  generic and recursive records. An arbitrary typed element proves the scan
+  body only after separate proofs of domain evaluation and the original access
+  bounds. Uninhabited element types cannot supply an out-of-range witness.
+  Construction, ordinary helper results and required contracts share the rule;
+  uninitialized body locals supply no facts. A universally valid predicate can
+  retain raw outer aliases and permit growth without copying or monitoring.
+  Shared-mode proofs keep repeated outer reads independent rather than
+  identifying their immutable fields or mutable children.
+  Cross-child relationships and arbitrary graph induction remain unproved.
 
 Fixed-view `map`/`filter` contracts compose their immutable range with fresh
 output lengths, including refined output construction, CTFE and shared workers.

@@ -114,6 +114,9 @@ fn quantified_views(proof Verification, expr Expr, state State, inside Bool, dep
 }
 
 fn execute_quantifier(proof Verification, expr Expr, state State) Result[List[Outcome], Text] {
+    if typed_scan_executed(proof, expr, state) {
+        return Result.Ok(outcomes(state, Value.Boolean(Predicate.Constant(true))))
+    }
     let current = quantified_views(proof, expr, state, false, 256)?
     // A normal early return does not establish checks for later elements.
     // Require the stronger sufficient safety proof before using the abstraction.

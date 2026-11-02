@@ -1,0 +1,111 @@
+fn typed_scan_fixture(item Int, end Expr, inner_index Text) Expr {
+    let input = expression(ExprKind.Local, 8, "", 0, [])
+    let bound = expression(ExprKind.Intrinsic, 1, "proof_bound", -1, [])
+    let child = expression(ExprKind.Intrinsic, item, "list_get", -1, [input, bound])
+    let raw = expression(ExprKind.Coerce, 6, "", -1, [child])
+    let read = expression(ExprKind.Intrinsic, 1, "list_get", -1, [raw, literal(inner_index)])
+    quantified_value(literal("true"), -1, literal("0"), end, operation(">", read, literal("0")))
+}
+
+test fn typed_scans_check_an_arbitrary_child_without_freezing_its_contents() {
+    let program = atomic_pair_program()
+    push(program.types, publication_shape(TypeKind.List, [7]))
+    let input = expression(ExprKind.Local, 8, "", 0, [])
+    let size = expression(ExprKind.Intrinsic, 1, "list_len", -1, [input])
+    let protected = [InputGuarantee {
+            ty = 7,
+            writes = 2
+        }]
+    let locals = [Local {
+            name = "self",
+            ty = 8,
+            mutable = false,
+            is_scoped = false
+        }]
+    assert typed_scan_proved(program.types, locals, typed_scan_fixture(7, size, "0"),
+        no_proof_backend(), protected, true)
+    assert !typed_scan_proved(program.types, locals, typed_scan_fixture(7, size, "1"),
+        no_proof_backend(), protected, true)
+    assert !typed_scan_proved(program.types, locals, typed_scan_fixture(7, size, "2"),
+        no_proof_backend(), protected, true)
+    assert !typed_scan_proved(program.types, locals,
+        typed_scan_fixture(7, operation("+", size, literal("1")), "0"),
+        no_proof_backend(), protected, true)
+    let shape = get(program.types, 7)
+    std.list.set(program.types, 7, Type {
+            constraint = [literal("false")],
+            ..shape
+        })
+    // An empty List can have an uninhabited element type. That type cannot
+    // prove the original out-of-range read safe by contradiction.
+    assert !typed_scan_proved(program.types, locals,
+        typed_scan_fixture(7, operation("+", size, literal("1")), "0"),
+        no_proof_backend(), protected, true)
+}
+
+test fn typed_scans_retain_bound_evaluation_and_refuse_inactive_locals() {
+    let program = atomic_pair_program()
+    push(program.types, publication_shape(TypeKind.List, [7]))
+    let locals = [Local {
+            name = "self",
+            ty = 8,
+            mutable = false,
+            is_scoped = false
+        }]
+    assert !typed_scan_proved(program.types, locals,
+        typed_scan_fixture(7, operation("+", literal("9223372036854775807"), literal("1")), "0"),
+        no_proof_backend(), [InputGuarantee {
+                ty = 7,
+                writes = 2
+            }], true)
+    let future = expression(ExprKind.Local, 7, "", 1, [])
+    let state = State {
+        heap = -1,
+        locals = [Value.List(12), Value.Empty],
+        facts = [],
+        extents = [],
+        observations = []
+    }
+    let inputs = [get(locals, 0), Local {
+            name = "inactive",
+            ty = 0,
+            mutable = false,
+            is_scoped = false
+        }]
+    assert !typed_scan_observed(future, state, inputs, 256)
+    assert get(inputs, 1).ty == 0
+}
+
+test fn shared_typed_scans_do_not_merge_separate_outer_reads() {
+    let program = atomic_pair_program()
+    let record_shape = publication_shape(TypeKind.Record, [])
+    push(program.types, Type {
+            fields = [Field {
+                    name = "head",
+                    ty = 7
+                }, Field {
+                    name = "number",
+                    ty = 1
+                }]
+            ..record_shape
+        })
+    push(program.types, publication_shape(TypeKind.List, [8]))
+    let input = expression(ExprKind.Local, 9, "", 0, [])
+    let cursor = expression(ExprKind.Intrinsic, 1, "proof_bound", -3, [])
+    let selected = expression(ExprKind.Intrinsic, 8, "list_get", -1, [input, cursor])
+    let number = expression(ExprKind.Field, 1, "number", 1, [selected])
+    let size = expression(ExprKind.Intrinsic, 1, "list_len", -1, [input])
+    let clause = quantified_value(literal("true"), -3, literal("0"), size, operation("==", number, number))
+    let locals = [Local {
+            name = "values",
+            ty = 9,
+            mutable = false,
+            is_scoped = false
+        }]
+    let protected = [InputGuarantee {
+            ty = 7,
+            writes = 2
+        }]
+    assert typed_scan_proved(program.types, locals, clause, no_proof_backend(), protected, false)
+    assert !typed_scan_proved(program.types, locals, clause, no_proof_backend(), protected, true)
+}

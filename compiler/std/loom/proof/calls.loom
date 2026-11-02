@@ -70,6 +70,7 @@ fn verification(function Function, program Program, backend ProofBackend) Verifi
         preservation = new[Expr]()
         identity_stores = false
         histograms = loop_histogram_requested(function.postconditions)
+        typed_scans = true
         histogram_keys = loop_histogram_keys(function.postconditions)
         protected = []
         body_calls = new[Int]()
@@ -188,8 +189,18 @@ fn established_checks(proof Verification, checks List[Evaluation], state State, 
             var path = 0
             while path < length(paths) {
                 let previous = get(paths, path)
-                let current = quantified_views(proof, check.value, previous.state, false, 256)?
-                discard condition_or_queue(proof.query, guarded_value(check.guard, check.value), current)?
+                let typed = typed_scan_executed(proof, check.value, previous.state)
+                let current = if typed {
+                    previous.state
+                } else {
+                    quantified_views(proof, check.value, previous.state, false, 256)?
+                }
+                discard condition_or_queue(proof.query, guarded_value(check.guard,
+                        if typed {
+                            proof_bool(check.value, true)
+                        } else {
+                            check.value
+                        }), current)?
                 set(paths, path, Outcome {
                         state = current
                         value = previous.value
