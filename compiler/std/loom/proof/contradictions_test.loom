@@ -41,3 +41,31 @@ test fn unreachable_snapshots_recheck_changed_facts_and_keep_ancestor_states() {
     assert !unreachable(proof, state)
     assert length(proof.fact_check) == 1
 }
+
+test fn unreachable_paths_use_only_proved_linear_contradictions() {
+    let function = contract_fixture([], 0, literal("0"), [], [])
+    let proof = verification(function, empty_proof_program())
+    let width = variable(10)
+    let count = variable(11)
+    let middle = variable(12)
+    let doubled = scale(width, integer(2))
+    let state = State {
+        heap = -1
+        locals = []
+        facts = [Predicate.Compare(">", width),
+            Predicate.Compare("==", add(middle, scale(width, integer(-1)))),
+            Predicate.Compare("<=", add(add(count, scale(middle, integer(-1))), scale(width, integer(-1))))]
+        extents = []
+        observations = []
+    }
+    assert !unreachable(proof, state)
+    assert !loop_holds(Predicate.Constant(false), state)
+    let impossible = assume(state, Predicate.Compare("<", add(doubled, scale(count, integer(-1)))))
+    assert unreachable(proof, impossible)
+    assert loop_holds(Predicate.Constant(false), impossible)
+    assert !unreachable(proof, state)
+    // Equality at the boundary remains feasible. No strict edge may be lost.
+    let boundary = assume(state, Predicate.Compare("==", add(doubled, scale(count, integer(-1)))))
+    assert !unreachable(proof, boundary)
+    assert !loop_holds(Predicate.Constant(false), boundary)
+}

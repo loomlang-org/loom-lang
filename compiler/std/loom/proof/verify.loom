@@ -436,7 +436,8 @@ fn unreachable(proof Verification, state State) Bool {
             return previous.unreachable
         }
     }
-    let impossible = holds(Predicate.Constant(false), state.facts)
+    let impossible = holds(Predicate.Constant(false), state.facts) ||
+    inequality_holds("<", constant(integer(0)), state.facts)
     let checked = FactCheck {
         facts = state.facts
         unreachable = impossible

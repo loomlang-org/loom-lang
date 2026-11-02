@@ -266,7 +266,13 @@ fn loop_predicate(candidate LoopCandidate, state State) Result[Predicate, Text] 
 }
 
 fn loop_holds(fact Predicate, state State) Bool {
-    holds(fact, state.facts) || difference_holds(fact, state.facts)
+    if holds(fact, state.facts) || difference_holds(fact, state.facts) {
+        return true
+    }
+    match fact {
+        Predicate.Constant(value) => !value && inequality_holds("<", constant(integer(0)), state.facts)
+        _ => false
+    }
 }
 
 fn add_loop_candidate(candidates List[LoopCandidate], candidate LoopCandidate, entry State) Result[Bool, Text] {

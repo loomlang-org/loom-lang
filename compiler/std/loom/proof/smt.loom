@@ -30,6 +30,7 @@ fn smt_binder(value SmtBinder, condition Text) Text {
 
 record SmtWriter {
     extended Bool
+    guarded_order Bool
     support_keys List[SmtSupportKey]
     support_laws List[SmtSupportLaw]
     declarations Bytes
@@ -603,6 +604,10 @@ fn smt_query(obligations List[Obligation]) Result[Text, Text] {
 }
 
 fn smt_query(obligations List[Obligation], extended Bool) Result[Text, Text] {
+    smt_query(obligations, extended, true)
+}
+
+fn smt_query(obligations List[Obligation], extended Bool, guarded_order Bool) Result[Text, Text] {
     let budget = new[Int]()
     push(budget, 65536)
     let counts = new[Linear]()
@@ -615,6 +620,7 @@ fn smt_query(obligations List[Obligation], extended Bool) Result[Text, Text] {
     }
     let writer = SmtWriter {
         extended = extended
+        guarded_order = guarded_order
         support_keys = []
         support_laws = []
         declarations = std.bytes.new()

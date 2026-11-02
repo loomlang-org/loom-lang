@@ -1,0 +1,163 @@
+import std.loom.proof.z3.backend
+import std.loom.proof.z3.solve
+import std.loom.proof.ProofBackend
+import std.text.contains
+
+fn guarded_order_checked(source Text) Result[std.loom.typed.Program, Failure] {
+    let inputs = with_proof_backend(build_inputs(no_input_reader), backend("z3"))
+    check_with_inputs(bind(fixture_project(list_constraint_files(source)), false)?, inputs)
+}
+
+test fn guarded_order_connects_only_the_covered_shifted_interval() {
+    let source = """
+        import std.list.length
+        fn ordered(values List[Int], start Int, end Int, shift Int) Bool {
+            var index = start
+            while index < end {
+                if index > start && values[index - 1 + shift] > values[index + shift] {
+                    return false
+                }
+                index = index + 1
+            }
+            true
+        }
+        pub fn endpoints(values List[Int], start Int, end Int, shift Int) Bool
+        requires shift >= 0 && shift <= length(values)
+        requires start >= 0 && start < end && end <= length(values) - shift
+        requires ordered(values, start, end, shift)
+        ensures result {
+            values[start + shift] <= values[end - 1 + shift]
+        }
+        """
+    match guarded_order_checked(source) {
+        Result.Ok(_) => {
+        }
+        Result.Err(failed) => {
+            discard write_error(failed.diagnostic.message)
+            assert false
+        }
+    }
+}
+
+test fn guarded_order_cannot_bridge_an_unchecked_edge() {
+    // [2, 1] with cut = 1 satisfies the premise and refutes the conclusion.
+    let source = """
+        import std.list.length
+        fn segments(values List[Int], cut Int) Bool {
+            var index = 1
+            while index < length(values) {
+                if index != cut && values[index - 1] > values[index] {
+                    return false
+                }
+                index = index + 1
+            }
+            true
+        }
+        pub fn invalid(values List[Int], cut Int) Bool
+        requires cut > 0 && cut < length(values)
+        requires segments(values, cut)
+        ensures result {
+            values[0] <= values[length(values) - 1]
+        }
+        """
+    assert match guarded_order_checked(source) {
+        Result.Ok(_) => false
+        Result.Err(_) => true
+    }
+}
+
+fn guarded_modular_source(permission Bool) Text {
+    let header = """
+        import std.list.length
+        fn blocks(values List[Int], width Int) Bool {
+            var index = 1
+            while index < length(values) {
+                if index % width != 0 && values[index - 1] > values[index] { return false }
+                index = index + 1
+            }
+            true
+        }
+        """
+    concat(header, if permission {
+            """
+            pub fn endpoints(values List[Int], width Int, start Int, end Int, permit Bool) Bool
+            requires width > 0 && width <= length(values)
+            requires start >= 0 && start < end && end <= length(values)
+            requires end - start <= width
+            requires permit || start % width == 0
+            requires blocks(values, width)
+            ensures result { values[start] <= values[end - 1] }
+            """
+        } else {
+            """
+            pub fn endpoints(values List[Int], width Int, start Int, end Int) Bool
+            requires width > 0 && width <= length(values)
+            requires start >= 0 && start < end && end <= length(values)
+            requires end - start <= width && start % width == 0
+            requires blocks(values, width)
+            ensures result { values[start] <= values[end - 1] }
+            """
+        })
+}
+
+test fn guarded_order_composes_proved_arithmetic_without_narrowing_disjunctions() {
+    assert match guarded_order_checked(guarded_modular_source(false)) {
+        Result.Ok(_) => true
+        Result.Err(_) => false
+    }
+    // With permit=true, [0, 9, 1], width=2, start=1, end=3 crosses a gap.
+    assert match guarded_order_checked(guarded_modular_source(true)) {
+        Result.Ok(_) => false
+        Result.Err(_) => true
+    }
+}
+
+test fn guarded_order_does_not_assume_failed_arithmetic_queries() {
+    let arithmetic_calls = [0]
+    let solver = ProofBackend {
+        enabled = true
+        context = "z3"
+        solve = fn(tool Text, query Text) Result[Bool, Text] {
+            if !contains(query, "(Array ") {
+                arithmetic_calls[0] = arithmetic_calls[0] + 1
+                return Result.Err("arithmetic capability unavailable")
+            }
+            solve(tool, query)
+        }
+    }
+    let inputs = with_proof_backend(build_inputs(no_input_reader), solver)
+    let bound = match bind(fixture_project(list_constraint_files(guarded_modular_source(true))), false) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            assert false
+            return
+        }
+    }
+    assert match check_with_inputs(bound, inputs) {
+        Result.Ok(_) => false
+        Result.Err(_) => true
+    }
+    assert arithmetic_calls[0] > 0
+}
+
+test fn guarded_order_scalar_remainder_goals_can_use_weaker_facts_in_an_array_context() {
+    let source = """
+        import std.list.length
+        fn blocks(values List[Int], width Int) Bool {
+            var index = 1
+            while index < length(values) {
+                if index % width != 0 && values[index - 1] > values[index] { return false }
+                index = index + 1
+            }
+            true
+        }
+        pub fn advance(values List[Int], width Int, start Int) Int
+        requires width > 0 && start >= 0 && start <= 1000 && width <= 1000
+        requires start % width == 0 && blocks(values, width)
+        ensures result % width == 0 { start + width }
+        """
+    assert match guarded_order_checked(source) {
+        Result.Ok(_) => true
+        Result.Err(_) => false
+    }
+}

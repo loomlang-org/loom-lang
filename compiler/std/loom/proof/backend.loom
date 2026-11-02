@@ -51,14 +51,22 @@ fn discharge(proof ProofQuery, extended Bool) Result[Bool, Text] {
     // settled by the base theories. A satisfiable abstract counterexample may
     // need more valid theory laws; it supplies no fact to the extended query.
     // Host errors, including cancellation and timeouts, retain their boundary.
-    let query = smt_query(proof.obligations, false)?
+    let obligations = if extended {
+        arithmetic_cuts(proof.backend, proof.obligations)
+    } else {
+        proof.obligations
+    }
+    if length(obligations) == 0 {
+        return Result.Ok(true)
+    }
+    let query = smt_query(obligations, false, extended)?
     if proof.backend.solve(proof.backend.context, query)? {
         return Result.Ok(true)
     }
     if !extended {
         return Result.Err("required postcondition is not proved")
     }
-    let refined = smt_query(proof.obligations, true)?
+    let refined = smt_query(obligations, true)?
     if refined != query && proof.backend.solve(proof.backend.context, refined)? {
         return Result.Ok(true)
     }
