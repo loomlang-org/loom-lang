@@ -94,8 +94,11 @@ fn expanded_field(context Expansion, field Expr, value Expr, depth Int) Result[E
 }
 
 fn expansion_step(context Expansion, depth Int) Result[Bool, Text] {
-    if depth >= 64 || get(context.budget, 0) == 0 {
-        return Result.Err("helper proof expansion budget exhausted")
+    if depth >= 64 {
+        return Result.Err("helper proof expansion depth budget exhausted")
+    }
+    if get(context.budget, 0) == 0 {
+        return Result.Err("helper proof expansion work budget exhausted")
     }
     set(context.budget, 0, get(context.budget, 0) - 1)
     Result.Ok(true)

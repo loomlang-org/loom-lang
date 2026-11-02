@@ -1,7 +1,15 @@
 use std::{fs, process::Command};
 
 mod common;
-use common::success;
+
+fn trial_success(phase: &str, output: &std::process::Output) {
+    assert!(
+        output.status.success(),
+        "{phase}: stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
 
 fn permutation_trial(
     program: &str,
@@ -21,12 +29,12 @@ fn permutation_trial(
         ])
     };
     fs::write(&source, program).unwrap();
-    success(&check());
-    success(&check());
-    for changed in equivalent {
+    trial_success("cold check", &check());
+    trial_success("warm check", &check());
+    for (index, changed) in equivalent.iter().enumerate() {
         assert_ne!(changed, program);
         fs::write(&source, changed).unwrap();
-        success(&check());
+        trial_success(&format!("equivalent variant {index}"), &check());
     }
     for (index, changed) in invalid.iter().enumerate() {
         assert_ne!(changed, program);
@@ -38,19 +46,23 @@ fn permutation_trial(
         );
     }
     fs::write(&source, program).unwrap();
-    success(&check());
+    trial_success("restored check", &check());
     for mode in ["test", "run"] {
-        success(&common::loom(&[
+        trial_success(
             mode,
-            package.path().to_str().unwrap(),
-            "--frontend-cache",
-            cache.to_str().unwrap(),
-        ]));
+            &common::loom(&[
+                mode,
+                package.path().to_str().unwrap(),
+                "--frontend-cache",
+                cache.to_str().unwrap(),
+            ]),
+        );
     }
     let artifact = common::executable(package.path(), "permutation");
     let ir = package.path().join("permutation.ll");
     for level in ["0", "2"] {
-        success(
+        trial_success(
+            &format!("build O{level}"),
             &common::command(&["build", package.path().to_str().unwrap()])
                 .arg("--frontend-cache")
                 .arg(&cache)
@@ -74,7 +86,8 @@ fn permutation_trial(
                 }
             }
         }
-        success(
+        trial_success(
+            &format!("run O{level}"),
             &Command::new(&artifact)
                 .env("LOOM_GC_STRESS", "1")
                 .output()
@@ -207,5 +220,8 @@ ensures result == count_id(values, id) + count_label(values, label) {{
         "",
     );
     fs::write(source, without_claim).unwrap();
-    success(&common::loom(&["check", package.path().to_str().unwrap()]));
+    trial_success(
+        "overlap control without the false claim",
+        &common::loom(&["check", package.path().to_str().unwrap()]),
+    );
 }

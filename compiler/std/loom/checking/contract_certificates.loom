@@ -15,12 +15,24 @@ record ContractCertificate {
 }
 
 fn contract_cacheable(context Context, id Int) Bool {
-    if id < 0 || !context.emit {
+    if id < 0 {
         return false
+    }
+    // Declaration checking and emission share a completed concrete proof.
+    // Abstract generic/value instances still need their own emitted check.
+    if !context.emit {
+        var argument = 0
+        while argument < length(context.arguments) {
+            if !concrete(context.env, get(context.arguments, argument)) {
+                return false
+            }
+            argument = argument + 1
+        }
     }
     var index = 0
     while index < length(context.constants) {
-        if get(context.constants, index).storage != -1 {
+        let value = get(context.constants, index)
+        if value.storage != -1 || (!context.emit && !value.known) {
             return false
         }
         index = index + 1
@@ -79,6 +91,11 @@ fn completed_contract(context Context, id Int, function Function) Option[Contrac
 
 fn retain_contract(context Context, id Int, function Function, assertions_checked Bool) {
     if !contract_cacheable(context, id) || length(function.postconditions) == 0 {
+        return
+    }
+    // Declaration-only bodies lack emitted call identities for assertion keys.
+    // Keep their ordinary emitted proof rather than losing assertion evidence.
+    if !context.emit && has_assertion(function.body, -1) {
         return
     }
     let cache = get(context.env.inputs, 0).contracts
