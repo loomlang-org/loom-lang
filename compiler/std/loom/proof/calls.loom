@@ -71,6 +71,7 @@ fn verification(function Function, program Program, backend ProofBackend) Verifi
         identity_stores = false
         histograms = loop_histogram_requested(function.postconditions)
         typed_scans = true
+        typed_scan_use = [false]
         histogram_keys = loop_histogram_keys(function.postconditions)
         protected = []
         body_calls = new[Int]()

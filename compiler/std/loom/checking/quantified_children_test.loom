@@ -44,6 +44,26 @@ fn quantified_children_source() Text {
     """
 }
 
+test fn quantified_children_value_proofs_retain_source_predicate_evaluation() {
+    let program = match quantified_children_checked(concat(quantified_children_source(), """
+        pub fn publish(values List[Head]) Groups {
+            Groups(values)
+        }
+        """)) {
+        Result.Ok(program) => program
+        Result.Err(failed) => {
+            discard write_error(failed.diagnostic.message)
+            assert false
+            return
+        }
+    }
+    assert length(program.exports) == 1
+    let body = get(program.functions, get(program.exports, 0)).body
+    // The constructor has a direct Groups result while keeping the ordinary
+    // predicate call for its faults, termination and allocation behavior.
+    assert dynamic_count(body, ExprKind.Discard) == 1
+}
+
 test fn quantified_children_keep_independent_predicates_under_legal_alias_writes() {
     quantified_children_accept(concat(quantified_children_source(), """
         pub fn publish(values List[Head]) Groups {
@@ -78,6 +98,15 @@ test fn quantified_children_keep_independent_predicates_under_legal_alias_writes
         """))
     quantified_children_reject(std.text.join(std.text.split(quantified_children_source(),
                 "if values[index][0] <= 0"), "if values[index][0] != 1"))
+    quantified_children_reject(concat(quantified_children_source(), """
+        fn invalid_factory() List[Head]
+        ensures length(result) == 0 {
+            [Head([1])]
+        }
+        pub fn publish() Groups {
+            Groups(invalid_factory())
+        }
+        """))
 }
 
 test fn quantified_children_do_not_need_a_recursive_element_whitelist() {

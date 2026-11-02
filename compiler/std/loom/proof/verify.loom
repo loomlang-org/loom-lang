@@ -26,6 +26,7 @@ record Verification {
     identity_stores Bool
     histograms Bool
     typed_scans Bool
+    typed_scan_use List[Bool]
     histogram_keys List[List[BagField]]
     protected List[InputGuarantee]
     body_calls List[Int]
@@ -808,7 +809,7 @@ enum Revalidation {
 fn verify_body(source Verification, protected List[InputGuarantee], allocations List[Int], entries List[Int], continuation Bool, revalidate Revalidation) Result[Bool, Text] {
     let proof = protected_verification(Verification {
             function = if source.typed_scans {
-                typed_scan_function(source.program.types, source.function, source.query.backend, protected, source.shared)
+                typed_scan_function(source.program.types, source.function, source.query.backend, protected, source.shared, source.typed_scan_use)
             } else {
                 source.function
             }
@@ -1052,9 +1053,17 @@ pub fn verify_expression_with_helpers(program Program, function Function, backen
 
 pub fn verify_expression_with_helpers(program Program, function Function, backend ProofBackend,
     protected List[InputGuarantee], shared Bool) Result[List[Expr], Text] {
+    verify_expression_with_helpers(program, function, backend, protected, shared, [false])
+}
+
+// A value theorem is not an erasure certificate for the predicate's source
+// evaluation. The caller retains that evaluation when the new scan rule ran.
+pub fn verify_expression_with_helpers(program Program, function Function, backend ProofBackend,
+    protected List[InputGuarantee], shared Bool, retained List[Bool]) Result[List[Expr], Text] {
     let ordinary = contract_verification(program, function, backend, false)?
     let proof = Verification {
         shared = shared
+        typed_scan_use = retained
         ..ordinary
     }
     if length(function.postconditions) != 0 {

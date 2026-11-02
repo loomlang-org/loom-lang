@@ -588,7 +588,9 @@ supported theories and boundaries. The central rules are:
   body only after separate proofs of domain evaluation and the original access
   bounds. Uninhabited element types cannot supply an out-of-range witness.
   Construction, ordinary helper results and required contracts share the rule;
-  uninitialized body locals supply no facts. A universally valid predicate can
+  uninitialized body locals supply no facts. Construction retains source
+  predicate evaluation when the value proof uses this rule; it is not an
+  erasure certificate for faults, divergence or allocation. A universally valid predicate can
   retain raw outer aliases and permit growth without copying or monitoring.
   Shared-mode proofs keep repeated outer reads independent rather than
   identifying their immutable fields or mutable children.

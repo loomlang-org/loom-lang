@@ -176,20 +176,21 @@ fn typed_scan_constrained(types List[Type], ty Int, seen List[Int], depth Int) B
 }
 
 fn typed_scan_clauses(types List[Type], locals List[Local], value Expr, backend ProofBackend,
-    protected List[InputGuarantee], shared Bool, budget List[Int], depth Int) Expr {
+    protected List[InputGuarantee], shared Bool, used List[Bool], budget List[Int], depth Int) Expr {
     if depth <= 0 || function_layout(value) || length(value.arms) != 0 {
         return value
     }
     if quantified_expression(value) && get(budget, 0) > 0 {
         set(budget, 0, get(budget, 0) - 1)
         if typed_scan_proved(types, locals, value, backend, protected, shared) {
+            set(used, 0, true)
             return proof_bool(value, true)
         }
     }
     let children = new[Expr]()
     var index = 0
     while index < length(value.children) {
-        push(children, typed_scan_clauses(types, locals, get(value.children, index), backend, protected, shared, budget, depth - 1))
+        push(children, typed_scan_clauses(types, locals, get(value.children, index), backend, protected, shared, used, budget, depth - 1))
         index = index + 1
     }
     Expr {
@@ -199,7 +200,7 @@ fn typed_scan_clauses(types List[Type], locals List[Local], value Expr, backend 
 }
 
 fn typed_scan_function(types List[Type], function Function, backend ProofBackend,
-    protected List[InputGuarantee], shared Bool) Function {
+    protected List[InputGuarantee], shared Bool, used List[Bool]) Function {
     var needed = false
     var index = 0
     while index < length(function.preconditions) {
@@ -221,12 +222,12 @@ fn typed_scan_function(types List[Type], function Function, backend ProofBackend
     let after = new[Expr]()
     index = 0
     while index < length(function.preconditions) {
-        push(before, typed_scan_clauses(types, locals, get(function.preconditions, index), backend, protected, shared, budget, 256))
+        push(before, typed_scan_clauses(types, locals, get(function.preconditions, index), backend, protected, shared, used, budget, 256))
         index = index + 1
     }
     index = 0
     while index < length(function.postconditions) {
-        push(after, typed_scan_clauses(types, returned, get(function.postconditions, index), backend, protected, shared, budget, 256))
+        push(after, typed_scan_clauses(types, returned, get(function.postconditions, index), backend, protected, shared, used, budget, 256))
         index = index + 1
     }
     Function {
@@ -350,8 +351,12 @@ fn typed_scan_executed(proof Verification, value Expr, state State) Bool {
             })
         index = index + 1
     }
-    typed_scan_observed(value, state, locals, 256) &&
+    let proved = typed_scan_observed(value, state, locals, 256) &&
     typed_scan_proved(proof.program.types, locals, value, proof.query.backend, proof.protected, proof.shared)
+    if proved {
+        set(proof.typed_scan_use, 0, true)
+    }
+    proved
 }
 
 fn typed_scan_query(types List[Type], source_locals List[Local], element Int, source Expr, scope Expr,

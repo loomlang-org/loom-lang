@@ -34,7 +34,9 @@ induction or a promise that separate shared reads return the same value.
 children. Its ordinary loop checks each record's constrained positive head.
 The compiler proves the scan for an arbitrary element of the declared type,
 including the original index and nested-access checks. Construction returns the
-published type directly. The outer List keeps its raw aliases and may grow;
+published type directly. The predicate's source evaluation remains executable:
+the value theorem alone does not erase its faults, termination or allocation.
+The input still evaluates once. The outer List keeps its raw aliases and may grow;
 children may change while preserving their own constraints. Unobserved recursive
 links can form cycles without becoming frozen. The example exercises compile-time
 execution, suspension, shared workers, cancellation cleanup and fault exits.

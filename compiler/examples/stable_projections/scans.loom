@@ -22,6 +22,18 @@ fn published(values List[CheckedNode]) Published {
     Published(values)
 }
 
+fn source_nodes(events List[Int]) List[CheckedNode] {
+    push(events, 1)
+    [CheckedNode {
+            head = PositiveHead([1]),
+            children = []
+        }]
+}
+
+fn counted_nodes(events List[Int]) Published {
+    Published(source_nodes(events))
+}
+
 fn published_valid(values Published) Bool
 ensures result
 {
@@ -29,6 +41,9 @@ ensures result
 }
 
 fn published_scope() Bool {
+    let events List[Int] = []
+    let generated = counted_nodes(events)
+    assert length(events) == 1 && length(generated) == 1
     let head = PositiveHead([1])
     let raw List[CheckedNode] = []
     let shared = published(raw)

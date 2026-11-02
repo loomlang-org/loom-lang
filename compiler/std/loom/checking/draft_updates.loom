@@ -10,6 +10,11 @@ record DraftUpdates {
 fn draft_type(candidate Expr) Int {
     if candidate.kind == ExprKind.Coerce {
         candidate.ty
+    } else if candidate.kind == ExprKind.Block && length(candidate.children) != 0 &&
+    get(candidate.children, length(candidate.children) - 1).kind == ExprKind.Coerce {
+        // Proved construction with retained predicate evaluation returns the
+        // constrained value directly, after the saved input and predicate.
+        candidate.ty
     } else {
         // Checked sequence: saved input; if predicate { Ok(refined input) } else ...
         let condition = get(candidate.children, 1)
