@@ -221,6 +221,19 @@ fn summary_template_at(proof Verification, value CallTemplate, boundary Int) Cal
 // original evaluations are locally proved defined, retain a required Boolean
 // as one normal-return fact. An unsupported or unproved evaluation uses the
 // original executor from the incoming state, with every check still present.
+fn summary_evaluation_defined(value Expr, state State) Bool {
+    // Most scalar checks already have direct bounds or contain total
+    // operations. Build transitive endpoint bounds only when those ordinary
+    // definedness checks need them; never omit an original evaluation check.
+    match defined(value, state) {
+        Result.Ok(_) => true
+        Result.Err(_) => match defined(value, difference_facts(state)) {
+            Result.Ok(_) => true
+            Result.Err(_) => false
+        }
+    }
+}
+
 fn summary_logical_state(checks List[Evaluation], state State) Option[State] {
     var current = state
     var index = 0
@@ -234,12 +247,8 @@ fn summary_logical_state(checks List[Evaluation], state State) Option[State] {
         } else {
             check.guard
         }
-        match defined(value, difference_facts(current)) {
-            Result.Err(_) => {
-                return Option.None
-            }
-            Result.Ok(_) => {
-            }
+        if !summary_evaluation_defined(value, current) {
+            return Option.None
         }
         if check.required {
             let predicate = match normalized_predicate(value) {
@@ -263,12 +272,8 @@ fn summary_logical_state(checks List[Evaluation], state State) Option[State] {
                     return Option.None
                 }
             }
-            match defined(check.value, difference_facts(assume(current, guard))) {
-                Result.Err(_) => {
-                    return Option.None
-                }
-                Result.Ok(_) => {
-                }
+            if !summary_evaluation_defined(check.value, assume(current, guard)) {
+                return Option.None
             }
         }
         index = index + 1
