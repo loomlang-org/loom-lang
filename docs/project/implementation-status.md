@@ -454,7 +454,7 @@ supported theories and boundaries. The central rules are:
   distances on the same content version and field column. The conditional
   induction law retains shifted ranges and outer scopes, excluding distinctness
   and IEEE comparisons. A native merge fixture removes its proved loop scans;
-  global comparator laws and standard-library ordering remain open.
+  general comparator laws remain open.
   A conditional finite-induction rule also composes admitted adjacent predicates
   under a transitivity premise for the exact range. Text length and record
   lexicographic relations use ordinary source contracts and nested `all` calls;
