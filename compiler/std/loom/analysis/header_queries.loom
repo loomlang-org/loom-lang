@@ -161,7 +161,7 @@ fn header_shadowed(analysis CheckedQuery, owner Int, spelling Text) Bool {
     false
 }
 
-fn inspect_header_type_parameter(analysis CheckedQuery, report Inspection, owner Int, spelling Text, ty Int) {
+fn inspect_header_type_parameter(analysis CheckedQuery, report InspectionDraft, owner Int, spelling Text, ty Int) {
     let shape = get(analysis.types, ty)
     if shape.kind != TypeKind.Parameter {
         return
@@ -176,7 +176,7 @@ fn inspect_header_type_parameter(analysis CheckedQuery, report Inspection, owner
     }
 }
 
-fn inspect_header_type(analysis CheckedQuery, report Inspection, target Query,
+fn inspect_header_type(analysis CheckedQuery, report InspectionDraft, target Query,
     owner Int, node Node, ty Int, depth Int) {
     if depth >= 64 || !inside(node.span, target.token.span.start) || ty < 0 || ty >= length(analysis.types) {
         return
@@ -277,11 +277,11 @@ fn inspect_header_type(analysis CheckedQuery, report Inspection, target Query,
     }
 }
 
-fn inspect_function_header(analysis CheckedQuery, report Inspection, function Function, target Query) {
+fn inspect_function_header(analysis CheckedQuery, report InspectionDraft, function Function, target Query) {
     inspect_signature_header(analysis, report, function.symbol, function.params, function.result, target, false)
 }
 
-fn inspect_header_parameter(analysis CheckedQuery, report Inspection, symbol_id Int, target Query) {
+fn inspect_header_parameter(analysis CheckedQuery, report InspectionDraft, symbol_id Int, target Query) {
     if target.node.kind == NodeKind.Name {
         let parameters = header_parameters(analysis, symbol_id)
         var index = 0
@@ -297,7 +297,7 @@ fn inspect_header_parameter(analysis CheckedQuery, report Inspection, symbol_id 
     }
 }
 
-fn inspect_signature_header(analysis CheckedQuery, report Inspection, symbol_id Int,
+fn inspect_signature_header(analysis CheckedQuery, report InspectionDraft, symbol_id Int,
     params List[Int], output Int, target Query, original Bool) {
     if original {
         inspect_header_parameter(analysis, report, symbol_id, target)
@@ -357,7 +357,7 @@ fn inspect_signature_header(analysis CheckedQuery, report Inspection, symbol_id 
     }
 }
 
-fn inspect_data_header(analysis CheckedQuery, report Inspection, shape Type, target Query) {
+fn inspect_data_header(analysis CheckedQuery, report InspectionDraft, shape Type, target Query) {
     let symbol = get(analysis.bindings.symbols, shape.symbol)
     var index = 0
     while index < length(symbol.node.children) {
@@ -415,7 +415,7 @@ fn header_local_shadowed(node Node, spelling Text, before Int) Bool {
     false
 }
 
-fn inspect_local_header(analysis CheckedQuery, report Inspection, function Function, target Query, value Expr) {
+fn inspect_local_header(analysis CheckedQuery, report InspectionDraft, function Function, target Query, value Expr) {
     if target.node.kind != NodeKind.Type || value.kind != ExprKind.Let || value.index < 0 {
         return
     }
@@ -438,7 +438,7 @@ fn inspect_local_header(analysis CheckedQuery, report Inspection, function Funct
     }
 }
 
-fn nominal_body_location(analysis CheckedQuery, report Inspection, function Function, target Query, ty Int, path Text) {
+fn nominal_body_location(analysis CheckedQuery, report InspectionDraft, function Function, target Query, ty Int, path Text) {
     let symbol = get(analysis.bindings.symbols, function.symbol)
     if header_shadowed(analysis, function.symbol, path) ||
     header_local_shadowed(symbol.node, header_root(path), target.node.span.start) ||
@@ -456,7 +456,7 @@ fn nominal_body_location(analysis CheckedQuery, report Inspection, function Func
     }
 }
 
-fn inspect_variant_type(analysis CheckedQuery, report Inspection, function Function, target Query, ty Int) {
+fn inspect_variant_type(analysis CheckedQuery, report InspectionDraft, function Function, target Query, ty Int) {
     if get(analysis.types, ty).kind != TypeKind.Enum || target.segment + 2 != target.segments {
         return
     }
@@ -470,7 +470,7 @@ fn inspect_variant_type(analysis CheckedQuery, report Inspection, function Funct
     }
 }
 
-fn inspect_variant_pattern(analysis CheckedQuery, report Inspection, function Function, target Query, value Expr) {
+fn inspect_variant_pattern(analysis CheckedQuery, report InspectionDraft, function Function, target Query, value Expr) {
     if target.node.kind != NodeKind.Pattern || value.kind != ExprKind.Match || length(value.children) != 1 {
         return
     }
