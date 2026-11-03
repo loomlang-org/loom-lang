@@ -17,11 +17,15 @@ pub record ReferenceEvidence {
 }
 
 fn reference_tokens(analysis AnalysisState, file Int) Result[List[Token], Text] {
-    if file < 0 || file >= length(analysis.bindings.files) {
+    lexical_tokens(analysis.bindings, analysis.lexical_sources, file)
+}
+
+fn lexical_tokens(bindings std.loom.binding.Program, sources std.map.Map[Int, LexicalSource], file Int) Result[List[Token], Text] {
+    if file < 0 || file >= length(bindings.files) {
         return Result.Err("reference query has no source file")
     }
-    let text = get(analysis.bindings.files, file).text
-    match std.map.get(analysis.lexical_sources, file) {
+    let text = get(bindings.files, file).text
+    match std.map.get(sources, file) {
         Option.Some(cached) => {
             if cached.text == text {
                 return cached.answer
@@ -34,7 +38,7 @@ fn reference_tokens(analysis AnalysisState, file Int) Result[List[Token], Text] 
         Result.Ok(tokens) => Result.Ok(tokens)
         Result.Err(problem) => Result.Err(problem.message)
     }
-    discard std.map.insert(analysis.lexical_sources, file, LexicalSource {
+    discard std.map.insert(sources, file, LexicalSource {
             text = text
             answer = answer
         })

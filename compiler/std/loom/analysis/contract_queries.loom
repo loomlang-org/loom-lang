@@ -31,7 +31,7 @@ fn inspect_source_contract(analysis AnalysisState, file Int, offset Int, tokens 
     }
     var index = 0
     while index < length(analysis.contract_queries) {
-        match inspect_view(get(analysis.contract_queries, index), file, offset, tokens) {
+        match inspect_view(get(analysis.contract_queries, index), file, offset, tokens, analysis.lexical_sources) {
             Option.Some(found) => {
                 return Option.Some(found)
             }
@@ -44,7 +44,7 @@ fn inspect_source_contract(analysis AnalysisState, file Int, offset Int, tokens 
     // Check its own closure; do not invent instances for uncalled templates.
     match check_query(analysis.bindings, file, offset, analysis_query_inputs(analysis)) {
         Result.Ok(view) => {
-            let found = inspect_view(view, file, offset, tokens)
+            let found = inspect_view(view, file, offset, tokens, analysis.lexical_sources)
             match found {
                 Option.Some(_) => {
                     push(analysis.contract_queries, view)

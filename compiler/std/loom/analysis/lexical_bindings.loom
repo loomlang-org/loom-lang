@@ -121,8 +121,7 @@ fn import_definition(analysis AnalysisState, file Int, token Token, tokens List[
                 return Option.None
             }
             let symbol = get(analysis.bindings.symbols, get(candidates, 0))
-            let source = get(analysis.bindings.files, symbol.file)
-            let declared = match lex(source.text) {
+            let declared = match reference_tokens(analysis, symbol.file) {
                 Result.Ok(value) => value
                 Result.Err(_) => {
                     return Option.None

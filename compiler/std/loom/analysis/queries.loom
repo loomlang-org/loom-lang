@@ -30,6 +30,32 @@ pub record Inspection {
     definitions List[Location]
 }
 
+// Query work retains only private lexical storage. Published answers contain
+// fresh result Lists and never carry this shared token cache.
+record InspectionDraft {
+    span Span
+    types List[Text]
+    definitions List[Location]
+    lexical_sources std.map.Map[Int, LexicalSource]
+}
+
+fn inspection_draft(span Span, sources std.map.Map[Int, LexicalSource]) InspectionDraft {
+    InspectionDraft {
+        span = span
+        types = new[Text]()
+        definitions = new[Location]()
+        lexical_sources = sources
+    }
+}
+
+fn published_inspection(draft InspectionDraft) Inspection {
+    Inspection {
+        span = draft.span
+        types = draft.types
+        definitions = draft.definitions
+    }
+}
+
 record Query {
     node Node
     token Token
@@ -158,7 +184,7 @@ fn query(node Node, token Token, tokens List[Token]) Option[Query] {
         })
 }
 
-fn add_type(report Inspection, value Text) {
+fn add_type(report InspectionDraft, value Text) {
     var index = 0
     while index < length(report.types) {
         if get(report.types, index) == value {
@@ -169,7 +195,7 @@ fn add_type(report Inspection, value Text) {
     push(report.types, value)
 }
 
-fn add_location(report Inspection, file Int, span Span) {
+fn add_location(report InspectionDraft, file Int, span Span) {
     var index = 0
     while index < length(report.definitions) {
         let previous = get(report.definitions, index)
@@ -184,7 +210,7 @@ fn add_location(report Inspection, file Int, span Span) {
         })
 }
 
-fn declaration(analysis CheckedQuery, report Inspection, file Int, node Node) {
+fn declaration(analysis CheckedQuery, report InspectionDraft, file Int, node Node) {
     var index = 0
     while index < length(node.children) {
         let marker = get(node.children, index)
@@ -194,7 +220,7 @@ fn declaration(analysis CheckedQuery, report Inspection, file Int, node Node) {
         }
         index = index + 1
     }
-    match lex(get(analysis.bindings.files, file).text) {
+    match lexical_tokens(analysis.bindings, report.lexical_sources, file) {
         Result.Ok(tokens) => {
             match name_span(tokens, node, if node.kind == NodeKind.Function && node.value == "" {
                     "fn"
@@ -213,7 +239,7 @@ fn declaration(analysis CheckedQuery, report Inspection, file Int, node Node) {
     }
 }
 
-fn symbol_location(analysis CheckedQuery, report Inspection, id Int) {
+fn symbol_location(analysis CheckedQuery, report InspectionDraft, id Int) {
     let symbol = get(analysis.bindings.symbols, id)
     declaration(analysis, report, symbol.file, symbol.node)
 }
@@ -316,7 +342,7 @@ fn local_binding(source Node, value Expr, local Int, spans List[Span]) {
     }
 }
 
-fn local_location(analysis CheckedQuery, report Inspection, function Function, local Int) {
+fn local_location(analysis CheckedQuery, report InspectionDraft, function Function, local Int) {
     let symbol = get(analysis.bindings.symbols, function.symbol)
     var index = 0
     if local >= 0 && local == function.result_local {
@@ -377,7 +403,7 @@ fn local_location(analysis CheckedQuery, report Inspection, function Function, l
     capture_location(analysis, report, function, get(function.locals, local).name)
 }
 
-fn capture_location(analysis CheckedQuery, report Inspection, function Function, name Text) {
+fn capture_location(analysis CheckedQuery, report InspectionDraft, function Function, name Text) {
     let symbol = get(analysis.bindings.symbols, function.symbol)
     if symbol.node.value != "" || symbol.owner < 0 {
         return
@@ -394,7 +420,7 @@ fn capture_location(analysis CheckedQuery, report Inspection, function Function,
 
 // Follow the checked capture initializer back to its actual enclosing binding.
 // A same-spelled declaration elsewhere is not definition evidence.
-fn capture_location(analysis CheckedQuery, report Inspection, parent Function, function Function, name Text, value Expr) {
+fn capture_location(analysis CheckedQuery, report InspectionDraft, parent Function, function Function, name Text, value Expr) {
     if value.kind == ExprKind.FunctionRef && length(value.children) == 1 {
         let environment = get(value.children, 0)
         let selected = if value.index >= 0 {
@@ -469,7 +495,7 @@ fn signature_name(analysis CheckedQuery, params List[Int], output Int) Text {
     label
 }
 
-fn field_location(analysis CheckedQuery, report Inspection, ty Int, field Int) {
+fn field_location(analysis CheckedQuery, report InspectionDraft, ty Int, field Int) {
     let shape = get(analysis.types, ty)
     if shape.kind != TypeKind.Record {
         return
@@ -490,11 +516,11 @@ fn field_location(analysis CheckedQuery, report Inspection, ty Int, field Int) {
     }
 }
 
-fn dyn_location(analysis CheckedQuery, report Inspection, value Expr) {
+fn dyn_location(analysis CheckedQuery, report InspectionDraft, value Expr) {
     dyn_location(analysis, report, value, true)
 }
 
-fn dyn_location(analysis CheckedQuery, report Inspection, value Expr, label_type Bool) {
+fn dyn_location(analysis CheckedQuery, report InspectionDraft, value Expr, label_type Bool) {
     if value.index < 0 || length(value.children) == 0 {
         return
     }
@@ -573,7 +599,7 @@ fn path_depth(analysis CheckedQuery, value Expr) Int {
 
 // Entry contracts read capture slots before body locals are initialized. Use
 // the checked environment field and its actual initializer, not name guessing.
-fn inspect_capture_read(analysis CheckedQuery, report Inspection, function Function, target Query, value Expr) Bool {
+fn inspect_capture_read(analysis CheckedQuery, report InspectionDraft, function Function, target Query, value Expr) Bool {
     let slot = if value.kind == ExprKind.Intrinsic && value.text == "cell_get" && length(value.children) == 1 {
         get(value.children, 0)
     } else {
@@ -594,7 +620,7 @@ fn inspect_capture_read(analysis CheckedQuery, report Inspection, function Funct
     true
 }
 
-fn inspect_expression(analysis CheckedQuery, report Inspection, function Function, target Query, value Expr, parent_type Int) {
+fn inspect_expression(analysis CheckedQuery, report InspectionDraft, function Function, target Query, value Expr, parent_type Int) {
     // A checked named specialization spans name[type arguments], while its
     // source Name ends before '['. Use only the resolved FunctionRef evidence;
     // ordinary indexing and the argument type names do not satisfy this rule.
@@ -709,7 +735,7 @@ fn inspect_expression(analysis CheckedQuery, report Inspection, function Functio
     }
 }
 
-fn inspect_tree(analysis CheckedQuery, report Inspection, function Function, target Query, value Expr, parent_type Int) {
+fn inspect_tree(analysis CheckedQuery, report InspectionDraft, function Function, target Query, value Expr, parent_type Int) {
     if !inside(value.span, target.token.span.start) {
         return
     }
@@ -901,7 +927,7 @@ fn checked_inspection(analysis AnalysisState, file Int, offset Int, tokens List[
     if erased_type_binding_at(analysis, file, offset, tokens) {
         return independent_inspection(analysis, file, offset, tokens)
     }
-    match inspect_view(view, file, offset, tokens) {
+    match inspect_view(view, file, offset, tokens, analysis.lexical_sources) {
         Option.Some(found) => Option.Some(found)
         Option.None => {
             match inspect_abstract_body(analysis, file, offset, tokens) {
@@ -939,20 +965,22 @@ pub fn inspect_independent(bindings std.loom.binding.Program, file Int, offset I
 }
 
 fn inspect_view(analysis CheckedQuery, file Int, offset Int) Option[Inspection] {
-    if file < 0 || file >= length(analysis.bindings.files) {
-        return Option.None
-    }
-    let source = get(analysis.bindings.files, file)
-    let tokens = match lex(source.text) {
-        Result.Ok(tokens) => tokens,
+    inspect_view(analysis, file, offset, std.map.new[Int, LexicalSource]())
+}
+
+fn inspect_view(analysis CheckedQuery, file Int, offset Int,
+    lexical_sources std.map.Map[Int, LexicalSource]) Option[Inspection] {
+    let tokens = match lexical_tokens(analysis.bindings, lexical_sources, file) {
+        Result.Ok(tokens) => tokens
         Result.Err(_) => {
             return Option.None
         }
     }
-    inspect_view(analysis, file, offset, tokens)
+    inspect_view(analysis, file, offset, tokens, lexical_sources)
 }
 
-fn inspect_view(analysis CheckedQuery, file Int, offset Int, tokens List[Token]) Option[Inspection] {
+fn inspect_view(analysis CheckedQuery, file Int, offset Int, tokens List[Token],
+    lexical_sources std.map.Map[Int, LexicalSource]) Option[Inspection] {
     if file < 0 || file >= length(analysis.bindings.files) {
         return Option.None
     }
@@ -969,11 +997,7 @@ fn inspect_view(analysis CheckedQuery, file Int, offset Int, tokens List[Token])
             return Option.None
         }
     }
-    let report = Inspection {
-        span = token.span
-        types = new[Text]()
-        definitions = new[Location]()
-    }
+    let report = inspection_draft(token.span, lexical_sources)
     // A retained abstract declaration is fallback evidence. Returning it before
     // walking the checked functions would hide observed implementations after
     // an independent query populated the declaration cache.
@@ -994,7 +1018,7 @@ fn inspect_view(analysis CheckedQuery, file Int, offset Int, tokens List[Token])
         index = index + 1
     }
     if length(report.definitions) > 0 {
-        return Option.Some(report)
+        return Option.Some(published_inspection(report))
     }
     index = 0
     while index < length(analysis.headers) {
@@ -1024,7 +1048,7 @@ fn inspect_view(analysis CheckedQuery, file Int, offset Int, tokens List[Token])
         index = index + 1
     }
     if length(report.definitions) > 0 {
-        return Option.Some(report)
+        return Option.Some(published_inspection(report))
     }
     index = 0
     while index < length(analysis.types) {
@@ -1086,7 +1110,7 @@ fn inspect_view(analysis CheckedQuery, file Int, offset Int, tokens List[Token])
                 stages = new[StagedQuery]()
                 ..analysis
             }
-            match inspect_view(view, file, offset, tokens) {
+            match inspect_view(view, file, offset, tokens, lexical_sources) {
                 Option.Some(found) => {
                     var item = 0
                     while item < length(found.types) {
@@ -1112,7 +1136,7 @@ fn inspect_view(analysis CheckedQuery, file Int, offset Int, tokens List[Token])
     if length(report.types) == 0 && length(report.definitions) == 0 {
         return Option.None
     }
-    Option.Some(report)
+    Option.Some(published_inspection(report))
 }
 
 fn ordinary_comptime_at(node Node, offset Int) Bool {
@@ -1136,7 +1160,7 @@ fn ordinary_comptime_at(node Node, offset Int) Bool {
 // Parameters and direct match payloads need not have an expression at their
 // declaration. A candidate's spelling only narrows the search; the checked
 // local ID must lead back to this exact source token before publishing evidence.
-fn inspect_binding_declaration(analysis CheckedQuery, report Inspection, function Function, target Query, file Int) {
+fn inspect_binding_declaration(analysis CheckedQuery, report InspectionDraft, function Function, target Query, file Int) {
     let kind = target.node.kind
     if kind != NodeKind.Name && kind != NodeKind.Parameter && kind != NodeKind.Pattern &&
     kind != NodeKind.Let && kind != NodeKind.Var && kind != NodeKind.Scoped {
@@ -1146,11 +1170,7 @@ fn inspect_binding_declaration(analysis CheckedQuery, report Inspection, functio
     while index < length(function.locals) {
         let local = get(function.locals, index)
         if local.name == target.token.value {
-            let candidate = Inspection {
-                span = target.token.span
-                types = new[Text]()
-                definitions = new[Location]()
-            }
+            let candidate = inspection_draft(target.token.span, report.lexical_sources)
             local_location(analysis, candidate, function, index)
             var location = 0
             while location < length(candidate.definitions) {

@@ -146,14 +146,14 @@ fn independent_view(analysis AnalysisState, file Int, offset Int) Option[Checked
 // Unrecognized scopes use the ordinary fresh query, never a guessed binding.
 fn inspect_independent(analysis AnalysisState, file Int, offset Int) Option[Inspection] {
     match independent_view(analysis, file, offset) {
-        Option.Some(view) => inspect_view(view, file, offset)
+        Option.Some(view) => inspect_view(view, file, offset, analysis.lexical_sources)
         Option.None => Option.None
     }
 }
 
 fn independent_inspection(analysis AnalysisState, file Int, offset Int, tokens List[Token]) Option[Inspection] {
     match independent_view(analysis, file, offset) {
-        Option.Some(view) => inspect_view(view, file, offset, tokens)
+        Option.Some(view) => inspect_view(view, file, offset, tokens, analysis.lexical_sources)
         Option.None => Option.None
     }
 }

@@ -22,7 +22,7 @@ fn ordinary_query_owner(node Node) Bool {
     true
 }
 
-fn inspect_declaration_references(view CheckedQuery, report Inspection, target Query, file Int, references List[DeclarationReference]) {
+fn inspect_declaration_references(view CheckedQuery, report InspectionDraft, target Query, file Int, references List[DeclarationReference]) {
     var index = 0
     while index < length(references) {
         let reference = get(references, index)
@@ -212,14 +212,10 @@ fn inspect_declaration_at(analysis AnalysisState, view CheckedQuery, file Int, o
         }
     }
     retain_declaration_scope(analysis, scope, references)
-    let report = Inspection {
-        span = token.span
-        types = new[Text]()
-        definitions = new[Location]()
-    }
+    let report = inspection_draft(token.span, analysis.lexical_sources)
     inspect_declaration_references(view, report, target, file, references)
     if length(report.definitions) == 0 {
         return Option.None
     }
-    Option.Some(report)
+    Option.Some(published_inspection(report))
 }
