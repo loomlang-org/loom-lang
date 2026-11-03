@@ -812,7 +812,7 @@ fn inspect_at(analysis AnalysisState, file Int, offset Int) Option[Inspection] {
     if file < 0 || file >= length(analysis.source.files) {
         return Option.None
     }
-    match lex(get(analysis.bindings.files, file).text) {
+    match reference_tokens(analysis, file) {
         Result.Ok(tokens) => checked_inspection(analysis, file, offset, tokens)
         Result.Err(_) => Option.None
     }

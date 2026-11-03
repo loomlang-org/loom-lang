@@ -40,6 +40,8 @@ import std.list.length
 import std.text.concat
 import std.int.to_text
 import std.result.Result
+import std.map.Map
+import std.map.new
 
 // Query evidence is private. Editable metadata and expressions are explicit
 // detached copies; their IDs still belong to this analysis alone.
@@ -59,6 +61,7 @@ record AnalysisState {
     // Lazy query evidence; never attached to executable IR or definition caches.
     declarations List[List[std.loom.checking.DeclarationReference]]
     source_declarations List[List[std.loom.checking.DeclarationReference]]
+    lexical_sources std.map.Map[Int, LexicalSource]
     declaration_scopes List[Location]
     contract_queries List[CheckedQuery]
     // At most one independent scope; replacing it releases the previous view.
@@ -126,6 +129,7 @@ fn analysis_result(source Project, bindings std.loom.binding.Program,
             proof_backend = detached.proof_backend
             declarations = new[List[std.loom.checking.DeclarationReference]]()
             source_declarations = new[List[std.loom.checking.DeclarationReference]]()
+            lexical_sources = std.map.new[Int, LexicalSource]()
             declaration_scopes = new[Location]()
             contract_queries = new[CheckedQuery]()
             independent_queries = new[Option[IndependentQuery]]()

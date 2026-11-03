@@ -55,7 +55,7 @@ pub fn static_binding_at(analysis Analysis, file Int, offset Int) Option[StaticB
     if file < 0 || file >= length(analysis.state.bindings.files) {
         return Option.None
     }
-    match lex(get(analysis.state.bindings.files, file).text) {
+    match reference_tokens(analysis.state, file) {
         Result.Ok(tokens) => match token_at(tokens, offset) {
             Option.Some(token) => static_binding(analysis.state, file, token, tokens)
             Option.None => Option.None
@@ -68,7 +68,7 @@ pub fn import_definition_at(analysis Analysis, file Int, offset Int) Option[Loca
     if file < 0 || file >= length(analysis.state.bindings.files) {
         return Option.None
     }
-    match lex(get(analysis.state.bindings.files, file).text) {
+    match reference_tokens(analysis.state, file) {
         Result.Ok(tokens) => match token_at(tokens, offset) {
             Option.Some(token) => import_definition(analysis.state, file, token, tokens)
             Option.None => Option.None
