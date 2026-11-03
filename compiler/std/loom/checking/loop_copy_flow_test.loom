@@ -1,0 +1,88 @@
+import std.text.concat
+
+fn copy_flow_source(copy Text, finish Text) Text {
+    concat("""
+        import std.list.length
+        import std.list.push
+        fn ordered(values List[Int]) Bool {
+            var index = 1
+            while index < length(values) {
+                if values[index - 1] > values[index] { return false }
+                index = index + 1
+            }
+            true
+        }
+        """, concat(copy, finish))
+}
+
+fn copy_flow_body() Text {
+    """
+    fn append_copy(output List[Int], values List[Int]) {
+        let count = length(values)
+        var index = 0
+        while index < count {
+            push(output, values[index])
+            index = index + 1
+        }
+    }
+    fn copied(values List[Int]) List[Int] {
+        let output List[Int] = []
+        append_copy(output, values)
+        output
+    }
+    """
+}
+
+test fn pointwise_copy_relations_cross_an_uncontracted_unit_helper() {
+    let source = copy_flow_source(copy_flow_body(), """
+        pub fn copied_order(values List[Int]) List[Int]
+        requires ordered(values)
+        ensures ordered(result) { copied(values) }
+        """)
+    assert match guarded_order_checked(source) {
+        Result.Ok(_) => true
+        Result.Err(_) => false
+    }
+}
+
+test fn pointwise_copies_keep_their_snapshot_after_the_source_changes() {
+    let source = copy_flow_source(copy_flow_body(), """
+        pub fn copied_order(values List[Int]) List[Int]
+        requires ordered(values)
+        ensures ordered(result) {
+            let output = copied(values)
+            if length(values) > 1 { values[0] = 9223372036854775807 }
+            output
+        }
+        """)
+    assert match guarded_order_checked(source) {
+        Result.Ok(_) => true
+        Result.Err(_) => false
+    }
+}
+
+test fn reverse_transfer_is_not_a_pointwise_order_preserving_copy() {
+    let source = copy_flow_source("""
+        fn append_reversed(output List[Int], values List[Int]) {
+            let count = length(values)
+            var index = 0
+            while index < count {
+                push(output, values[count - index - 1])
+                index = index + 1
+            }
+        }
+        fn copied(values List[Int]) List[Int] {
+            let output List[Int] = []
+            append_reversed(output, values)
+            output
+        }
+        """, """
+        pub fn copied_order(values List[Int]) List[Int]
+        requires ordered(values)
+        ensures ordered(result) { copied(values) }
+        """)
+    assert match guarded_order_checked(source) {
+        Result.Ok(_) => false
+        Result.Err(_) => true
+    }
+}

@@ -1,0 +1,51 @@
+test fn transfer_tail_hints_substitute_the_written_cell_and_keep_other_reads() {
+    let target = expression(ExprKind.Local, 6, "", 0, [])
+    let source = expression(ExprKind.Local, 6, "", 1, [])
+    let index = local(2)
+    let cursor = local(3)
+    let end = local(4)
+    let read = expression(ExprKind.Intrinsic, 1, "list_get", -1, [source, cursor])
+    let store = LoopTailStore {
+        receiver = target
+        index = index
+        read = read
+        ends = [end]
+    }
+    let previous = expression(ExprKind.Intrinsic, 1, "list_get", -1,
+        [target, operation("-", index, literal("1"))])
+    let written = expression(ExprKind.Intrinsic, 1, "list_get", -1, [target, index])
+    let bound = expression(ExprKind.Intrinsic, 1, "proof_bound", -9, [])
+    let replacement = expression(ExprKind.Intrinsic, 1, "list_get", -1, [source, bound])
+    let point = operation("<=", previous, written)
+    let found = [false]
+    let replaced = match loop_tail_replace(point, store, replacement, found, [256]) {
+        Result.Ok(value) => value
+        Result.Err(_) => point
+    }
+    assert get(found, 0) && exact_expression(replaced, operation("<=", previous, replacement))
+    let unrelated = [false]
+    discard loop_tail_replace(previous, store, replacement, unrelated, [256])
+    assert !get(unrelated, 0)
+    let nested = quantified_value(point, -9, literal("0"), end, point)
+    assert match loop_tail_replace(nested, store, replacement, [false], [256]) {
+        Result.Err(_) => true
+        _ => false
+    }
+}
+
+test fn transfer_tail_bounds_come_only_from_leading_source_assertions() {
+    let cursor = local(0)
+    let middle = local(1)
+    let late = local(2)
+    let leading = expression(ExprKind.Assert, 0, "", -1,
+        [operation("&&", operation(">=", cursor, literal("0")), operation("<=", cursor, middle))])
+    let assignment = expression(ExprKind.Assign, 0, "", 0, [operation("+", cursor, literal("1"))])
+    let following = expression(ExprKind.Assert, 0, "", -1, [operation("<=", cursor, late)])
+    let body = expression(ExprKind.Block, 0, "", -1, [leading, assignment, following])
+    let ends = new[Expr]()
+    assert !loop_tail_bounds(body, cursor, ends, [256])
+    assert length(ends) == 1 && exact_expression(get(ends, 0), middle)
+    let exhausted = new[Expr]()
+    discard loop_tail_bounds(body, cursor, exhausted, [0])
+    assert length(exhausted) == 0
+}

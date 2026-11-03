@@ -1,0 +1,255 @@
+// A universal fact covers every contained integer interval on the same
+// immutable column/version and body. Scalar bounds use the existing local
+// arithmetic prover; this introduces no solver query or sampled instances.
+fn loop_interval_goal(goal Predicate, budget List[Int]) Bool {
+    if !conjunction_step(budget) {
+        return false
+    }
+    match goal {
+        Predicate.Forall(_, _, _, _) => true
+        Predicate.And(parts) => loop_interval_goal(get(parts, 0), budget) || loop_interval_goal(get(parts, 1), budget)
+        Predicate.Or(parts) => loop_interval_goal(get(parts, 0), budget) || loop_interval_goal(get(parts, 1), budget)
+        _ => false
+    }
+}
+
+fn loop_interval_root(goal Predicate, facts List[Predicate]) Bool {
+    let composite = match goal {
+        Predicate.Forall(_, _, _, _) => true
+        Predicate.And(_) => true
+        Predicate.Or(_) => true
+        _ => false
+    }
+    if !composite {
+        return false
+    }
+    let budget = [256]
+    loop_interval_goal(goal, budget) && loop_interval_holds(goal, facts, budget)
+}
+
+fn loop_interval_body(goal Predicate, premise Predicate, facts List[Predicate], budget List[Int]) Bool {
+    if !conjunction_step(budget) {
+        return false
+    }
+    if same(goal, premise) || holds(goal, facts) || difference_holds(goal, facts) {
+        return true
+    }
+    match premise {
+        Predicate.And(parts) => {
+            if loop_interval_body(goal, get(parts, 0), facts, budget) ||
+            loop_interval_body(goal, get(parts, 1), facts, budget) {
+                return true
+            }
+        }
+        Predicate.Or(parts) => {
+            var side = 0
+            while side < 2 {
+                let excluded = not(get(parts, side))
+                if (holds(excluded, facts) || difference_holds(excluded, facts)) &&
+                loop_interval_body(goal, get(parts, 1 - side), facts, budget) {
+                    return true
+                }
+                side = side + 1
+            }
+        }
+        _ => {
+        }
+    }
+    match goal {
+        Predicate.And(parts) => loop_interval_body(get(parts, 0), premise, facts, budget) &&
+        loop_interval_body(get(parts, 1), premise, facts, budget)
+        Predicate.Or(parts) => loop_interval_body(get(parts, 0), premise, facts, budget) ||
+        loop_interval_body(get(parts, 1), premise, facts, budget)
+        _ => false
+    }
+}
+
+fn loop_interval_premise(goal Predicate, premise Predicate, facts List[Predicate], budget List[Int]) Bool {
+    if !conjunction_step(budget) {
+        return false
+    }
+    match premise {
+        Predicate.And(parts) => loop_interval_premise(goal, get(parts, 0), facts, budget) ||
+        loop_interval_premise(goal, get(parts, 1), facts, budget)
+        Predicate.Or(parts) => {
+            if loop_interval_scalar(goal, Predicate.Constant(false), premise, facts, budget) {
+                return true
+            }
+            var side = 0
+            while side < 2 {
+                let excluded = not(get(parts, side))
+                if (holds(excluded, facts) || difference_holds(excluded, facts)) &&
+                loop_interval_premise(goal, get(parts, 1 - side), facts, budget) {
+                    return true
+                }
+                side = side + 1
+            }
+            false
+        }
+        Predicate.Forall(identity, start, end, body) => match goal {
+            Predicate.Forall(other, first, last, conditions) => {
+                if identity != other || length(body) != 1 || length(conditions) != 1 {
+                    return false
+                }
+                let lower = Predicate.Compare("<=", add(start, scale(first, integer(-1))))
+                let upper = Predicate.Compare("<=", add(last, scale(end, integer(-1))))
+                if !(holds(lower, facts) || difference_holds(lower, facts)) ||
+                !(holds(upper, facts) || difference_holds(upper, facts)) {
+                    return false
+                }
+                if same_predicates(body, conditions) {
+                    return true
+                }
+                let body_facts = std.list.clone(facts)
+                push(body_facts, Predicate.Compare(">=", add(variable(other), scale(first, integer(-1)))))
+                push(body_facts, Predicate.Compare("<", add(variable(other), scale(last, integer(-1)))))
+                loop_interval_body(get(conditions, 0), get(body, 0), body_facts, budget)
+            }
+            _ => false
+        }
+        _ => false
+    }
+}
+
+fn loop_interval_holds(goal Predicate, facts List[Predicate], budget List[Int]) Bool {
+    if !conjunction_step(budget) {
+        return false
+    }
+    match goal {
+        Predicate.And(parts) => loop_interval_holds(get(parts, 0), facts, budget) &&
+        loop_interval_holds(get(parts, 1), facts, budget)
+        Predicate.Or(parts) => loop_interval_guarded(goal, facts, budget) ||
+        loop_interval_holds(get(parts, 0), facts, budget) || loop_interval_holds(get(parts, 1), facts, budget)
+        Predicate.Forall(identity, _, _, body) => {
+            if length(body) == 1 && loop_interval_scalar_holds(get(body, 0), identity, facts, budget) {
+                return true
+            }
+            var index = length(facts)
+            while index > 0 && get(budget, 0) > 0 {
+                index = index - 1
+                if loop_interval_premise(goal, get(facts, index), facts, budget) {
+                    return true
+                }
+            }
+            false
+        }
+        _ => holds(goal, facts) || difference_holds(goal, facts)
+    }
+}
+
+fn loop_interval_scalar_holds(value Predicate, identity Int, facts List[Predicate], budget List[Int]) Bool {
+    if !conjunction_step(budget) {
+        return false
+    }
+    if !cut_mentions(value, identity) {
+        return holds(value, facts) || difference_holds(value, facts)
+    }
+    match value {
+        Predicate.Or(parts) => loop_interval_scalar_holds(get(parts, 0), identity, facts, budget) ||
+        loop_interval_scalar_holds(get(parts, 1), identity, facts, budget)
+        Predicate.And(parts) => loop_interval_scalar_holds(get(parts, 0), identity, facts, budget) &&
+        loop_interval_scalar_holds(get(parts, 1), identity, facts, budget)
+        _ => false
+    }
+}
+
+// Boolean weakening can discharge a universal whose scalar alternatives are
+// already established for every binder value. It never samples array cells or
+// treats a fact about one bound index as a fact about every index.
+fn loop_clause_implies(goal Predicate, premise Predicate, facts List[Predicate], budget List[Int]) Bool {
+    if !conjunction_step(budget) {
+        return false
+    }
+    if same(goal, premise) {
+        return true
+    }
+    match goal {
+        Predicate.Constant(true) => {
+            return true
+        }
+        _ => {
+        }
+    }
+    match premise {
+        Predicate.Constant(false) => {
+            return true
+        }
+        _ => {
+        }
+    }
+    match goal {
+        Predicate.And(parts) => {
+            return loop_clause_implies(get(parts, 0), premise, facts, budget) &&
+            loop_clause_implies(get(parts, 1), premise, facts, budget)
+        }
+        _ => {
+        }
+    }
+    match premise {
+        Predicate.Or(parts) => {
+            return loop_clause_implies(goal, get(parts, 0), facts, budget) &&
+            loop_clause_implies(goal, get(parts, 1), facts, budget)
+        }
+        _ => {
+        }
+    }
+    match premise {
+        Predicate.And(_) => {
+        }
+        _ => if holds(not(premise), facts) || difference_holds(not(premise), facts) {
+            return true
+        }
+    }
+    match goal {
+        Predicate.Or(parts) => if loop_clause_implies(get(parts, 0), premise, facts, budget) ||
+        loop_clause_implies(get(parts, 1), premise, facts, budget) {
+            return true
+        }
+        _ => {
+        }
+    }
+    match premise {
+        Predicate.And(parts) => loop_clause_implies(goal, get(parts, 0), facts, budget) ||
+        loop_clause_implies(goal, get(parts, 1), facts, budget)
+        _ => false
+    }
+}
+
+fn loop_interval_scalar(goal Predicate, guard Predicate, premise Predicate, facts List[Predicate], budget List[Int]) Bool {
+    if !conjunction_step(budget) {
+        return false
+    }
+    match goal {
+        Predicate.Forall(identity, _, _, body) => length(body) == 1 &&
+        !cut_mentions(premise, identity) && !cut_mentions(guard, identity) &&
+        loop_clause_implies(Predicate.Or([guard, get(body, 0)]), premise, facts, budget)
+        Predicate.Or(parts) => loop_interval_scalar(get(parts, 0), Predicate.Or([guard, get(parts, 1)]), premise, facts, budget) ||
+        loop_interval_scalar(get(parts, 1), Predicate.Or([guard, get(parts, 0)]), premise, facts, budget)
+        _ => false
+    }
+}
+
+fn loop_interval_guarded(goal Predicate, facts List[Predicate], budget List[Int]) Bool {
+    match goal {
+        Predicate.Or(parts) => {
+            var side = 0
+            while side < 2 {
+                match get(parts, side) {
+                    Predicate.Forall(identity, first, last, body) => if length(body) == 1 &&
+                    !cut_mentions(get(parts, 1 - side), identity) {
+                        let combined = Predicate.Or([get(parts, 1 - side), get(body, 0)])
+                        if loop_interval_holds(Predicate.Forall(identity, first, last, [combined]), facts, budget) {
+                            return true
+                        }
+                    }
+                    _ => {
+                    }
+                }
+                side = side + 1
+            }
+        }
+        _ => {
+        }
+    }
+    false
+}

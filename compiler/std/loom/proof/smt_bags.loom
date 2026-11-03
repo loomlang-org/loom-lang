@@ -297,13 +297,23 @@ fn count_predicate_list(output List[Linear], values List[Predicate], depth Int) 
     }
 }
 
-fn smt_bag_store(writer SmtWriter, previous SmtBag, stored Text, position Text, value Text, size Linear) Result[Text, Text] {
+fn smt_bag_store(writer SmtWriter, previous SmtBag, stored Text, index Linear, value Text, size Linear) Result[Text, Text] {
+    let position = smt_linear(writer, index)?
     let bag = smt_bag(writer, previous, size)?
-    let prior_value = concat("(select ", concat(previous.array, concat(" ", concat(position, ")"))))
-    let removed = concat("(store ", concat(bag, concat(" ", concat(prior_value,
-                    concat(" (- (select ", concat(bag, concat(" ", concat(prior_value, ") 1))"))))))))
-    let changed = concat("(store ", concat(removed, concat(" ", concat(value,
-                    concat(" (+ (select ", concat(removed, concat(" ", concat(value, ") 1))"))))))))
+    var changed = ""
+    // At the prefix frontier the old cell is outside the preceding prefix.
+    // Append its replacement directly, avoiding an add/remove cancellation.
+    if same_terms(size.terms, index.terms) && compare(size.constant, sum(index.constant, integer(1))) == 0 {
+        let prefix = smt_bag(writer, previous, index)?
+        changed = concat("(store ", concat(prefix, concat(" ", concat(value,
+                        concat(" (+ (select ", concat(prefix, concat(" ", concat(value, ") 1))"))))))))
+    } else {
+        let prior_value = concat("(select ", concat(previous.array, concat(" ", concat(position, ")"))))
+        let removed = concat("(store ", concat(bag, concat(" ", concat(prior_value,
+                        concat(" (- (select ", concat(bag, concat(" ", concat(prior_value, ") 1))"))))))))
+        changed = concat("(store ", concat(removed, concat(" ", concat(value,
+                        concat(" (+ (select ", concat(removed, concat(" ", concat(value, ") 1))"))))))))
+    }
     let limit = smt_linear(writer, size)?
     let condition = concat("(and (<= 0 ", concat(position, concat(") (< ", concat(position,
                     concat(" ", concat(limit, "))"))))))

@@ -1,0 +1,73 @@
+import std.list.length
+import std.list.sorted
+import std.list.push
+
+fn count(values List[Int], needle Int) Int {
+    var index = 0
+    var found = 0
+    while index < length(values) {
+        if values[index] == needle {
+            found = found + 1
+        }
+        index = index + 1
+    }
+    found
+}
+
+fn same_counts(first List[Int], second List[Int]) Bool {
+    var index = 0
+    while index < length(first) {
+        if count(first, first[index]) != count(second, first[index]) {
+            return false
+        }
+        index = index + 1
+    }
+    true
+}
+
+fn permutation(first List[Int], second List[Int]) Bool {
+    length(first) == length(second) && same_counts(first, second)
+}
+
+fn ordered(values List[Int]) Bool {
+    var index = 1
+    while index < length(values) {
+        if values[index - 1] > values[index] {
+            return false
+        }
+        index = index + 1
+    }
+    true
+}
+
+pub fn sorted_values(values List[Int]) List[Int]
+ensures ordered(result)
+ensures permutation(old(values), result) {
+    sorted(values, fn(left Int, right Int) Bool {
+            left < right
+        })
+}
+
+fn exercise() {
+    assert length(sorted_values([])) == 0
+    let single = sorted_values([7])
+    assert length(single) == 1 && single[0] == 7
+    let original = [3, -1, 2, 1, 2]
+    let arranged = sorted_values(original)
+    assert length(arranged) == 5
+    assert arranged[0] == -1 && arranged[1] == 1
+    assert arranged[2] == 2 && arranged[3] == 2 && arranged[4] == 3
+    assert original[0] == 3 && original[1] == -1 && original[4] == 2
+    arranged[0] = -9
+    assert original[0] == 3
+    let extremes = sorted_values([9223372036854775807, 0, -9223372036854775808])
+    assert extremes[0] == -9223372036854775808 && extremes[1] == 0 && extremes[2] == 9223372036854775807
+}
+
+fn main() {
+    exercise()
+}
+
+test fn source_library_sort_composes_order_and_entry_counts() {
+    exercise()
+}

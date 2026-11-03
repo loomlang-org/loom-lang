@@ -1,0 +1,110 @@
+test fn histogram_context_weakens_order_premises_without_losing_count_or_copy_frames() {
+    let order = arithmetic_scan_fixture(777)
+    let bag = Predicate.BagEqual(bag_column(10), variable(2), bag_column(11), variable(2))
+    let frame = Predicate.ArrayPrefix(10, 11, variable(2))
+    let pointwise = Predicate.Forall(-1, constant(integer(0)), variable(2),
+        [Predicate.IntegerCompare("==", IntegerTerm.Select(10, [], variable(-1)),
+                IntegerTerm.Select(11, [], variable(-1)))])
+    let counted = Predicate.Forall(-1, constant(integer(0)), variable(2), [bag])
+    let negated = Predicate.Not([order])
+    let state = State {
+        heap = -1
+        locals = []
+        facts = [Predicate.And([bag, order]), frame, pointwise, counted, negated]
+        extents = []
+        observations = []
+    }
+    let context = loop_histogram_context(state, bag)
+    assert length(context.facts) == 5 && same(get(context.facts, 0), bag)
+    assert same(get(context.facts, 1), frame) && same(get(context.facts, 2), pointwise)
+    assert same(get(context.facts, 3), counted) && same(get(context.facts, 4), negated)
+    assert length(state.facts) == 5 && same(get(state.facts, 0), Predicate.And([bag, order]))
+    let exhausted = new[Predicate]()
+    loop_histogram_fact(bag, bag, exhausted, [0])
+    assert length(exhausted) == 0
+}
+
+test fn histogram_context_keeps_all_versions_of_goal_columns_and_preserves_boolean_scope() {
+    let first = joint_test_column(10)
+    let second = joint_test_column(11)
+    let goal = Predicate.BagEqual(first, variable(1), second, variable(1))
+    let related = Predicate.BagEqual(joint_test_column(12), variable(2), first, variable(2))
+    let unrelated = Predicate.BagEqual(bag_column(10), variable(1), bag_column(11), variable(1))
+    let mixed = Predicate.BagBalance([
+            BagTerm {
+                column = first,
+                size = variable(1),
+                factor = integer(1)
+            },
+            BagTerm {
+                column = bag_column(10),
+                size = variable(1),
+                factor = integer(-1)
+            },
+        ])
+    let negated = Predicate.Not([unrelated])
+    let disjoined = Predicate.Or([related, unrelated])
+    let quantified = Predicate.Forall(-7, constant(integer(0)), variable(1), [unrelated])
+    let output = new[Predicate]()
+    loop_histogram_fact(Predicate.And([related, unrelated, mixed, negated, disjoined, quantified]), goal, output, [256])
+    assert length(output) == 4
+    assert same(get(output, 0), related) && same(get(output, 1), negated)
+    assert same(get(output, 2), disjoined) && same(get(output, 3), quantified)
+    let projected = BagColumn {
+        contents = 20,
+        fields = [BagField {
+                path = [2],
+                domain = ScalarDomain.Text
+            }]
+    }
+    let renamed = Predicate.BagEqual(first, variable(1), projected, variable(1))
+    assert loop_histogram_column_needed(projected, renamed, [256])
+    assert !loop_histogram_column_needed(BagColumn {
+            contents = 20,
+            fields = [BagField {
+                    path = [2],
+                    domain = ScalarDomain.Integer
+                }]
+        }, renamed, [256])
+    assert loop_histogram_column_needed(bag_column(10), Predicate.BagBalance([BagTerm {
+                    column = first,
+                    size = variable(1),
+                    factor = integer(1)
+                }]), [0])
+}
+
+test fn histogram_context_omits_only_quantified_full_scalar_domains() {
+    let item = IntegerTerm.Select(10, [0], variable(-7))
+    let label = IntegerTerm.TextLength(TextValue.Select(10, [1], variable(-7)))
+    let lower = Predicate.IntegerCompare(">=", item, IntegerTerm.Linear(constant(integer(-9223372036854775808))))
+    let upper = Predicate.IntegerCompare("<=", item, IntegerTerm.Linear(constant(integer(9223372036854775807))))
+    let text_lower = Predicate.IntegerCompare(">=", label, IntegerTerm.Linear(constant(integer(0))))
+    let text_upper = Predicate.IntegerCompare("<=", label, IntegerTerm.Linear(constant(integer(9223372036854775807))))
+    let content = Predicate.IntegerCompare(">=", item, IntegerTerm.Linear(constant(integer(0))))
+    let nonempty = Predicate.IntegerCompare(">", label, IntegerTerm.Linear(constant(integer(0))))
+    let bounds = [lower, upper, text_lower, text_upper]
+    let facts = new[Predicate]()
+    var index = 0
+    while index < length(bounds) {
+        push(facts, Predicate.Forall(-7, constant(integer(0)), variable(1), [get(bounds, index)]))
+        index = index + 1
+    }
+    let constrained = Predicate.Forall(-7, constant(integer(0)), variable(1), [content])
+    let labeled = Predicate.Forall(-7, constant(integer(0)), variable(1), [nonempty])
+    let guarded = Predicate.Forall(-7, constant(integer(0)), variable(1), [Predicate.Or([Predicate.Variable(8), lower])])
+    let negated = Predicate.Not([get(facts, 0)])
+    push(facts, constrained)
+    push(facts, labeled)
+    push(facts, guarded)
+    push(facts, negated)
+    let context = loop_histogram_context(State {
+            heap = -1,
+            locals = [],
+            facts = facts,
+            extents = [],
+            observations = []
+        }, Predicate.BagEqual(joint_test_column(10), variable(1), joint_test_column(11), variable(1)))
+    assert length(context.facts) == 4 && length(facts) == 8
+    assert same(get(context.facts, 0), constrained) && same(get(context.facts, 1), labeled)
+    assert same(get(context.facts, 2), guarded) && same(get(context.facts, 3), negated)
+}

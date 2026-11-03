@@ -1,0 +1,49 @@
+import std.text.concat
+
+fn expression_template_source(finish Text) Text {
+    concat("""
+        fn ascending(left Int, right Int) Bool { left < right }
+        fn descending(left Int, right Int) Bool { left > right }
+        fn changing() Bool {
+            let touched = [0]
+            var compare = ascending
+            let first = true && compare(1, 2)
+            touched[0] = 1
+            compare = descending
+            let second = true && compare(1, 2)
+            first && second
+        }
+        """, finish)
+}
+
+test fn expression_templates_follow_changed_callback_targets() {
+    assert match guarded_order_checked(expression_template_source("""
+        pub fn correct() Bool ensures !result { changing() }
+        """)) {
+        Result.Ok(_) => true
+        Result.Err(_) => false
+    }
+    assert match guarded_order_checked(expression_template_source("""
+        pub fn wrong() Bool ensures result { changing() }
+        """)) {
+        Result.Ok(_) => false
+        Result.Err(_) => true
+    }
+}
+
+test fn expression_templates_reobserve_current_private_contents() {
+    let source = """
+        fn changed() Bool {
+            let values = [1]
+            let first = true && values[0] > 0
+            values[0] = 0
+            let second = true && values[0] > 0
+            first && second
+        }
+        pub fn correct() Bool ensures !result { changed() }
+        """
+    assert match guarded_order_checked(source) {
+        Result.Ok(_) => true
+        Result.Err(_) => false
+    }
+}

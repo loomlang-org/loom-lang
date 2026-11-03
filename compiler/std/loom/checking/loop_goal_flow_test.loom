@@ -1,0 +1,153 @@
+import std.text.concat
+
+fn caller_loop_goal_checked(body Text) Bool {
+    let source = concat("""
+        import std.list.length
+        import std.list.clone
+        fn positive(values List[Int]) Bool {
+            var index = 0
+            while index < length(values) {
+                if values[index] <= 0 { return false }
+                index = index + 1
+            }
+            true
+        }
+        fn fill(values List[Int], value Int) List[Int] {
+            let output = clone(values)
+            var index = 0
+            while index < length(output) {
+                output[index] = value
+                index = index + 1
+            }
+            output
+        }
+        """, body)
+    match guarded_order_checked(source) {
+        Result.Ok(_) => true
+        Result.Err(_) => false
+    }
+}
+
+test fn caller_loop_goals_follow_direct_and_immutable_forwarded_results() {
+    assert caller_loop_goal_checked("""
+        pub fn direct(values List[Int]) List[Int]
+        ensures positive(result) { fill(values, 1) }
+        pub fn forwarded(values List[Int]) List[Int]
+        ensures positive(result) {
+            let output = fill(values, 1)
+            let alias = output
+            alias
+        }
+        """)
+}
+
+test fn caller_loop_goals_do_not_establish_a_synthetic_result_witness() {
+    assert !caller_loop_goal_checked("""
+        pub fn wrong(values List[Int]) List[Int]
+        ensures positive(result) { fill(values, 0) }
+        """)
+    assert !caller_loop_goal_checked("""
+        pub fn wrong(values List[Int]) List[Int]
+        ensures positive(result) {
+            discard fill(values, 1)
+            values
+        }
+        """)
+}
+
+test fn caller_loop_goals_check_every_conditional_return_path() {
+    assert !caller_loop_goal_checked("""
+        pub fn wrong(values List[Int], choose Bool) List[Int]
+        ensures positive(result) {
+            if choose { fill(values, 1) } else { values }
+        }
+        """)
+}
+
+test fn caller_segment_goals_do_not_assume_that_doubled_width_sorts_data() {
+    // [2, 1] is unchanged. A proposed segmented relation must fail its
+    // backedge; recognizing a growing width supplies no ordering evidence.
+    let source = """
+        import std.list.length
+        import std.list.clone
+        fn ordered(values List[Int]) Bool {
+            var index = 1
+            while index < length(values) {
+                if values[index - 1] > values[index] { return false }
+                index = index + 1
+            }
+            true
+        }
+        fn pretend(values List[Int]) List[Int] {
+            let output = clone(values)
+            let count = length(output)
+            if count < 2 { return output }
+            var width = 1
+            while width < count {
+                assert width >= 1 && width <= count
+                width = if width >= count - width { count } else { width * 2 }
+            }
+            output
+        }
+        pub fn wrong(values List[Int]) List[Int]
+        ensures ordered(result) { pretend(values) }
+        """
+    assert match guarded_order_checked(source) {
+        Result.Ok(_) => false
+        Result.Err(_) => true
+    }
+}
+
+test fn caller_loop_goals_cannot_retain_separation_after_buffers_become_aliases() {
+    assert !caller_loop_goal_checked("""
+        fn coalesced(values List[Int]) List[Int] {
+            var source = clone(values)
+            var output = clone(values)
+            let count = length(values)
+            var width = 1
+            while width < count {
+                assert width >= 1 && width <= count
+                source = output
+                output = source
+                output[0] = 0
+                width = if width >= count - width { count } else { width * 2 }
+            }
+            source
+        }
+        pub fn wrong(values List[Int]) List[Int]
+        requires length(values) >= 2 && positive(values)
+        ensures positive(result) { coalesced(values) }
+        """)
+}
+
+fn nested_caller_goal_source(finish Text) Text {
+    concat("""
+        fn nested_fill(values List[Int], value Int, early Bool) List[Int] {
+            let output = clone(values)
+            var pass = 0
+            while pass < length(output) {
+                var index = 0
+                while index < length(output) {
+                    output[index] = value
+                    if early { return output }
+                    index = index + 1
+                }
+                pass = pass + 1
+            }
+            output
+        }
+        """, finish)
+}
+
+test fn nested_caller_goals_do_not_publish_unchecked_early_returns() {
+    assert caller_loop_goal_checked(nested_caller_goal_source("""
+        pub fn correct(values List[Int]) List[Int]
+        requires positive(values)
+        ensures positive(result) { nested_fill(values, 1, false) }
+        """))
+    assert !caller_loop_goal_checked(nested_caller_goal_source("""
+        pub fn wrong(values List[Int]) List[Int]
+        requires positive(values)
+        ensures positive(result) { nested_fill(values, 0, true) }
+        """))
+}

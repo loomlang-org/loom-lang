@@ -1,19 +1,67 @@
+record MergeBounds {
+    middle Int
+    end Int
+}
+
+fn merge_width(width Int, count Int) Int
+requires width > 0 && width < count
+ensures result > width && result <= count
+ensures width < count - width || result == count
+ensures width >= count - width || result - width == width
+{
+    if width >= count - width {
+        count
+    } else {
+        width * 2
+    }
+}
+
+fn merge_bounds(start Int, width Int, count Int) MergeBounds
+requires start >= 0 && start < count
+requires width > 0 && width <= count
+ensures result.middle > start && result.middle <= count
+ensures result.end >= result.middle && result.end <= count
+ensures result.middle - start <= width
+ensures result.end - result.middle <= width
+ensures result.middle == count || result.middle - start == width
+ensures result.end == count || result.end - result.middle == width
+{
+    let middle = if width < count - start {
+        start + width
+    } else {
+        count
+    }
+    let end = if width < count - middle {
+        middle + width
+    } else {
+        count
+    }
+    MergeBounds {
+        middle = middle
+        end = end
+    }
+}
+
 // Stable ordering of an initial snapshot, with a fresh outer List and shared
 // elements. less must remain a consistent strict weak order; this is not proved.
 // Iterative merge sort uses O(n log n) comparisons and O(n) scratch storage.
 pub fn sorted[T](values List[T], less fn(T, T) Bool) List[T] {
     var source = clone(values)
     let count = length(source)
-    if count < 2 { return source }
+    if count < 2 {
+        return source
+    }
     var output = clone(source)
     var width = 1
     while width < count {
         assert width >= 1 && width <= count
+        let next_width = merge_width(width, count)
         var start = 0
         while start < count {
             assert start >= 0 && start <= count
-            let middle = if width < count - start { start + width } else { count }
-            let end = if width < count - middle { middle + width } else { count }
+            let bounds = merge_bounds(start, width, count)
+            let middle = bounds.middle
+            let end = bounds.end
             var left = start
             var right = middle
             var index = start
@@ -37,7 +85,7 @@ pub fn sorted[T](values List[T], less fn(T, T) Bool) List[T] {
         let previous = source
         source = output
         output = previous
-        width = if width >= count - width { count } else { width * 2 }
+        width = next_width
     }
     source
 }

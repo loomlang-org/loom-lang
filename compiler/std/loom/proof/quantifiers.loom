@@ -14,6 +14,13 @@ fn quantified_predicate(expr Expr, state State) Result[Predicate, Text] {
         return Result.Ok(Predicate.Constant(true))
     }
     let condition = boolean(pure(get(expr.children, 2), quantified_scope(expr, state)?)?)?
+    match smt_constant(condition, 0) {
+        Option.Some(true) => {
+            return Result.Ok(Predicate.Constant(true))
+        }
+        _ => {
+        }
+    }
     Result.Ok(Predicate.Forall(expr.index, start, end, predicates(condition)))
 }
 

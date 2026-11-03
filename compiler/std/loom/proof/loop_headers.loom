@@ -65,7 +65,10 @@ fn loop_header_candidates(proof Verification, candidates List[LoopCandidate], wr
         }
         local = local + 1
     }
-    if proof.histograms {
+    // Caller result relations also need separation between current bindings,
+    // including swapped buffers. Entry/backedge checks still establish it;
+    // publication or rebinding to one header must invalidate the candidate.
+    if proof.histograms || length(proof.loop_goals.values) != 0 {
         discard loop_root_candidates(proof, candidates, entry)?
     }
     local = 0

@@ -29,16 +29,48 @@ fn loop_entails(proof Verification, fact Predicate, state State, extended Bool) 
     }
     if extended && loop_linear_context(fact, state.facts) {
         match loop_linear_bound(proof, fact, state) {
-            Result.Ok(true) => { return true }
-            Result.Ok(false) => {}
-            Result.Err(_) => { return false }
+            Result.Ok(true) => {
+                return true
+            }
+            Result.Ok(false) => {
+            }
+            Result.Err(_) => {
+                return false
+            }
         }
     }
     let query = proof_query(proof.query.backend)
-    solver_fact(query, fact, state)
+    let premises = if !extended && cut_predicate(fact, [256]) && cut_division(fact) {
+        loop_uncounted_context(state)
+    } else {
+        state
+    }
+    solver_fact(query, fact, premises)
     match discharge(query, extended) {
         Result.Ok(value) => value
         Result.Err(_) => false
+    }
+}
+
+// Scalar quotient/remainder candidates need no unrelated histogram theory.
+// Keep read observations and all other premises, including scalar snapshots;
+// removing counted premises strengthens this one optional query. Required
+// contracts retain their full state and the query allowance is unchanged.
+fn loop_uncounted_context(state State) State {
+    let facts = new[Predicate]()
+    var index = 0
+    while index < length(state.facts) {
+        let fact = get(state.facts, index)
+        let sizes = new[Linear]()
+        count_predicate_extents(sizes, fact, 64)
+        if length(sizes) == 0 {
+            push(facts, fact)
+        }
+        index = index + 1
+    }
+    State {
+        facts = facts
+        ..state
     }
 }
 
@@ -52,11 +84,15 @@ fn loop_linear_bound(proof Verification, fact Predicate, state State) Result[Boo
         match value {
             Predicate.Compare(_, _) => push(facts, value)
             Predicate.Constant(_) => push(facts, value)
-            _ => {}
+            _ => {
+            }
         }
         index = index + 1
     }
-    let query = smt_query([Obligation { facts = facts conclusion = fact }], false)?
+    let query = smt_query([Obligation {
+                facts = facts
+                conclusion = fact
+            }], false)?
     proof.query.backend.solve(proof.query.backend.context, query)
 }
 
@@ -65,14 +101,20 @@ fn loop_linear_bound(proof Verification, fact Predicate, state State) Result[Boo
 // a failed local bound is not a counterexample to the combined linear system.
 fn loop_linear_context(fact Predicate, facts List[Predicate]) Bool {
     match fact {
-        Predicate.Compare(_, _) => {}
-        _ => { return false }
+        Predicate.Compare(_, _) => {
+        }
+        _ => {
+            return false
+        }
     }
     var index = 0
     while index < length(facts) {
         match get(facts, index) {
-            Predicate.Compare(_, value) => if length(value.terms) > 2 { return true }
-            _ => {}
+            Predicate.Compare(_, value) => if length(value.terms) > 2 {
+                return true
+            }
+            _ => {
+            }
         }
         index = index + 1
     }
@@ -106,6 +148,19 @@ fn propose_quantified(proof Verification, candidates List[LoopCandidate], value 
     if length(candidates) >= 64 {
         return
     }
+    if proof.goal_candidates {
+        var index = 0
+        while index < length(candidates) {
+            match get(candidates, index) {
+                LoopCandidate.Goal(previous, _) => if exact_expression(previous, value) {
+                    return
+                }
+                _ => {
+                }
+            }
+            index = index + 1
+        }
+    }
     let current = match loop_guard_views(proof, value, entry) {
         Result.Ok(current) => current
         Result.Err(_) => {
@@ -115,8 +170,17 @@ fn propose_quantified(proof Verification, candidates List[LoopCandidate], value 
     match pure(value, current) {
         Result.Ok(observed) => match boolean(observed) {
             Result.Ok(fact) => {
-                if loop_entails(proof, fact, current, extended) {
-                    push(candidates, LoopCandidate.Guard(value, extended))
+                let established = if proof.goal_candidates {
+                    loop_holds(fact, current)
+                } else {
+                    loop_entails(proof, fact, current, extended)
+                }
+                if established {
+                    push(candidates, if proof.goal_candidates {
+                            LoopCandidate.Goal(value, proof.loop_goals.remaining)
+                        } else {
+                            LoopCandidate.Guard(value, extended)
+                        })
                 }
             }
             Result.Err(_) => {
@@ -221,6 +285,11 @@ fn loop_counted_relation(value Expr) Bool {
 
 fn loop_boundary_relations(proof Verification, value Expr, candidates List[LoopCandidate],
     boundary Expr, entry State) {
+    loop_boundary_relations(proof, value, candidates, boundary, entry, proof_bool(value, true))
+}
+
+fn loop_boundary_relations(proof Verification, value Expr, candidates List[LoopCandidate],
+    boundary Expr, entry State, guard Expr) {
     let endpoint = proof_expr(boundary, ExprKind.Binary, 1, "-", -1,
         proof_children(boundary, proof_expr(boundary, ExprKind.Integer, 1, "1", -1, new[Expr]())))
     var side = 0
@@ -228,10 +297,10 @@ fn loop_boundary_relations(proof Verification, value Expr, candidates List[LoopC
         match loop_relation_boundary(get(value.children, 2), value.index, endpoint, side) {
             Option.Some(condition) => {
                 let prefix = quantified_value(value, value.index, get(value.children, 0), boundary, condition)
-                propose_quantified(proof, candidates, prefix, entry)
+                propose_quantified(proof, candidates, guarded_value(guard, prefix), entry)
                 let valid = proof_expr(value, ExprKind.Binary, 2, "<", -1,
                     proof_children(endpoint, get(value.children, 1)))
-                propose_quantified(proof, candidates, guarded_value(valid, prefix), entry)
+                propose_quantified(proof, candidates, guarded_value(guard, guarded_value(valid, prefix)), entry)
             }
             Option.None => {
             }
@@ -245,25 +314,46 @@ fn loop_boundary_relations(proof Verification, value Expr, candidates List[LoopC
 // every one must hold initially and on all backedges before it may be assumed.
 fn loop_quantified_clauses(proof Verification, value Expr, candidates List[LoopCandidate],
     boundaries List[Expr], entry State, depth Int) {
+    loop_quantified_clauses(proof, value, candidates, boundaries, entry, depth, proof_bool(value, true))
+}
+
+fn loop_quantified_clauses(proof Verification, value Expr, candidates List[LoopCandidate],
+    boundaries List[Expr], entry State, depth Int, guard Expr) {
     if depth <= 0 || length(candidates) >= 64 {
         return
     }
     if value.kind == ExprKind.Intrinsic && value.text == "proof_logical" {
-        loop_quantified_clauses(proof, get(value.children, 0), candidates, boundaries, entry, depth - 1)
+        loop_quantified_clauses(proof, get(value.children, 0), candidates, boundaries, entry, depth - 1, guard)
         return
     }
     if value.kind == ExprKind.Intrinsic && value.text == "proof_scan_checks" {
         // Sufficient scan safety is proved separately, not an invariant hint.
         return
     }
+    // A clipped phase update can make the requested relation conditional on
+    // a scalar branch. Keep that implication on every derived prefix and
+    // endpoint; a branch-local ordering is not an unconditional goal.
+    if proof.goal_candidates && value.kind == ExprKind.Binary && value.text == "||" &&
+    length(value.children) == 2 {
+        var side = 0
+        while side < 2 {
+            let scalar = get(value.children, side)
+            if entry_guard_expression(scalar) && !contains_application(scalar) {
+                loop_quantified_clauses(proof, get(value.children, 1 - side), candidates,
+                    boundaries, entry, depth - 1, proof_and(guard, proof_not(scalar)))
+                return
+            }
+            side = side + 1
+        }
+    }
     if contains_application(value) {
-        propose_quantified(proof, candidates, value, entry)
+        propose_quantified(proof, candidates, guarded_value(guard, value), entry)
     }
     if value.kind == ExprKind.Binary && value.text == "&&" {
-        propose_quantified(proof, candidates, value, entry)
+        propose_quantified(proof, candidates, guarded_value(guard, value), entry)
     }
     if quantified_expression(value) {
-        propose_quantified(proof, candidates, value, entry)
+        propose_quantified(proof, candidates, guarded_value(guard, value), entry)
         if loop_counted_relation(get(value.children, 2)) {
             // Histogram equality is already a whole-sequence invariant.
             return
@@ -271,17 +361,17 @@ fn loop_quantified_clauses(proof Verification, value Expr, candidates List[LoopC
         var index = 0
         while index < length(boundaries) && length(candidates) < 64 {
             let boundary = get(boundaries, index)
-            propose_quantified(proof, candidates, quantified_value(value, value.index,
-                    get(value.children, 0), boundary, get(value.children, 2)), entry)
-            propose_quantified(proof, candidates, quantified_value(value, value.index,
-                    boundary, get(value.children, 1), get(value.children, 2)), entry)
-            loop_boundary_relations(proof, value, candidates, boundary, entry)
+            propose_quantified(proof, candidates, guarded_value(guard, quantified_value(value, value.index,
+                        get(value.children, 0), boundary, get(value.children, 2))), entry)
+            propose_quantified(proof, candidates, guarded_value(guard, quantified_value(value, value.index,
+                        boundary, get(value.children, 1), get(value.children, 2))), entry)
+            loop_boundary_relations(proof, value, candidates, boundary, entry, guard)
             index = index + 1
         }
     }
     var index = 0
     while index < length(value.children) {
-        loop_quantified_clauses(proof, get(value.children, index), candidates, boundaries, entry, depth - 1)
+        loop_quantified_clauses(proof, get(value.children, index), candidates, boundaries, entry, depth - 1, guard)
         index = index + 1
     }
 }
@@ -295,7 +385,7 @@ fn loop_quantified_candidates(proof Verification, clauses List[Expr], candidates
         }
         local = local + 1
     }
-    let boundaries = new[Expr]()
+    var boundaries = new[Expr]()
     let source = if loop_call_free(loop) {
         loop
     } else {
@@ -305,6 +395,21 @@ fn loop_quantified_candidates(proof Verification, clauses List[Expr], candidates
         }
     }
     loop_boundaries(source, cursors, entry, boundaries, 64)
+    if proof.goal_candidates {
+        let transfers = new[Expr]()
+        loop_transfer_boundaries(proof, get(loop.children, 1), writes, entry, transfers, 64)
+        if length(transfers) != 0 {
+            boundaries = transfers
+        } else {
+            let condition = get(loop.children, 0)
+            if condition.kind == ExprKind.Binary && length(condition.children) == 2 {
+                let cursor = get(condition.children, 0)
+                if cursor.kind == ExprKind.Local && cursor.ty == 1 && loop_boundary_mentions(cursor, writes, entry) {
+                    boundaries = [cursor]
+                }
+            }
+        }
+    }
     var index = 0
     while index < length(clauses) {
         loop_quantified_clauses(proof, get(clauses, index), candidates, boundaries, entry, 64)
@@ -312,21 +417,87 @@ fn loop_quantified_candidates(proof Verification, clauses List[Expr], candidates
     }
 }
 
+// One conjunction can validate several guesses on this exact backedge. A
+// failed batch establishes nothing and keeps ordinary individual validation.
+// All candidates in a loop share the root's existing optional-query counter.
+fn loop_goal_batch(proof Verification, candidates List[LoopCandidate], state State) Bool {
+    if !proof.query.backend.enabled || get(proof.loop_goals.remaining, 0) <= 0 {
+        return false
+    }
+    var current = state
+    var goal = Predicate.Constant(true)
+    var count = 0
+    var extended = false
+    var index = 0
+    while index < length(candidates) {
+        match get(candidates, index) {
+            LoopCandidate.Goal(value, _) => {
+                current = match loop_guard_views(proof, value, current) {
+                    Result.Ok(viewed) => viewed
+                    Result.Err(_) => {
+                        return false
+                    }
+                }
+                let fact = match loop_predicate(get(candidates, index), current) {
+                    Result.Ok(value) => value
+                    Result.Err(_) => {
+                        return false
+                    }
+                }
+                if !loop_holds(fact, current) {
+                    goal = Predicate.And([goal, fact])
+                    count = count + 1
+                    extended = extended || contains_list_read(value)
+                }
+            }
+            _ => {
+            }
+        }
+        index = index + 1
+    }
+    if count == 0 {
+        return true
+    }
+    if count < 2 {
+        return false
+    }
+    set(proof.loop_goals.remaining, 0, get(proof.loop_goals.remaining, 0) - 1)
+    loop_entails(proof, goal, current, extended)
+}
+
 fn quantified_candidate_preserved(proof Verification, candidate LoopCandidate, state State) Bool {
     match candidate {
         LoopCandidate.Histogram(terms, _) => {
             match loop_histogram_views(proof, terms, state) {
-            Result.Ok(current) => match loop_predicate(candidate, current) {
-                Result.Ok(fact) => loop_entails(proof, fact, current)
-                Result.Err(_) => loop_holds(Predicate.Constant(false), current)
-            }
-            Result.Err(_) => false
+                Result.Ok(current) => match loop_predicate(candidate, current) {
+                    Result.Ok(fact) => loop_entails(proof, fact, loop_histogram_context(current, fact))
+                    Result.Err(_) => loop_holds(Predicate.Constant(false), current)
+                }
+                Result.Err(_) => false
             }
         }
         LoopCandidate.Guard(value, extended) => {
             match loop_guard_views(proof, value, state) {
                 Result.Ok(current) => match loop_predicate(candidate, current) {
                     Result.Ok(fact) => loop_entails(proof, fact, current, extended)
+                    Result.Err(_) => loop_holds(Predicate.Constant(false), current)
+                }
+                Result.Err(_) => false
+            }
+        }
+        LoopCandidate.Goal(value, remaining) => {
+            match loop_guard_views(proof, value, state) {
+                Result.Ok(current) => match loop_predicate(candidate, current) {
+                    Result.Ok(fact) => {
+                        if loop_holds(fact, current) {
+                            return true
+                        }
+                        if get(remaining, 0) <= 0 || !proof.query.backend.enabled {
+                            return false
+                        }
+                        set(remaining, 0, get(remaining, 0) - 1)
+                        loop_entails(proof, fact, current, contains_list_read(value))
+                    }
                     Result.Err(_) => loop_holds(Predicate.Constant(false), current)
                 }
                 Result.Err(_) => false

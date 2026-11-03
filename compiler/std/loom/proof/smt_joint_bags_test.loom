@@ -24,7 +24,7 @@ fn joint_test_query(facts List[Predicate]) Text {
 test fn joint_histograms_require_all_component_stores_at_the_same_index_and_scope() {
     let first = Predicate.ArrayWrite(10, 11, [0], variable(1), ArrayScalar.Integer(IntegerTerm.Linear(variable(2))))
     let second = Predicate.ArrayWrite(10, 11, [1], variable(1), ArrayScalar.Text(TextValue.Literal("next")))
-    let marker = "(loom_key_bag (store ((_ map pk_record)"
+    let marker = "(loom_key_bag_it (store ((_ map loom_hkey_it)"
     assert std.text.contains(joint_test_query([first, second]), marker)
     assert !std.text.contains(joint_test_query([first]), marker)
     let shifted = Predicate.ArrayWrite(10, 11, [1], variable(3), ArrayScalar.Text(TextValue.Literal("next")))
@@ -38,4 +38,114 @@ test fn joint_histograms_require_all_component_stores_at_the_same_index_and_scop
                 ]),
         ])
     assert !std.text.contains(scoped_query, marker)
+}
+
+test fn histogram_laws_follow_requested_keys_without_removing_component_equations() {
+    let first = Predicate.ArrayWrite(10, 11, [0], variable(1), ArrayScalar.Integer(IntegerTerm.Linear(variable(2))))
+    let second = Predicate.ArrayWrite(10, 11, [1], variable(1), ArrayScalar.Text(TextValue.Literal("next")))
+    let copy = Predicate.Forall(-7, constant(integer(0)), variable(4), [
+            Predicate.IntegerCompare("==", IntegerTerm.Select(10, [0], variable(-7)), IntegerTerm.Select(11, [0], variable(-7)))
+        ])
+    let query = joint_test_query([first, second, Predicate.ArrayPrefix(10, 11, variable(4)), copy])
+    assert !std.text.contains(query, "(declare-fun loom_bag ")
+    assert std.text.contains(query, "(loom_key_bag_it (store ((_ map loom_hkey_it)")
+    assert std.text.contains(query, "(= a11_f0 (store a10_f0")
+    assert std.text.contains(query, "(= a11_f1_text (store a10_f1_text")
+    assert std.text.contains(query, "(select a10_f0 loom_prefix_index)")
+    assert std.text.contains(query, "(select a10_f1_text loom_prefix_index)")
+}
+
+test fn pointwise_integer_bags_wait_for_later_count_requests() {
+    let copy = Predicate.Forall(-7, constant(integer(0)), variable(4), [
+            Predicate.IntegerCompare("==", IntegerTerm.Select(10, [], variable(-7)), IntegerTerm.Select(11, [], variable(-7)))
+        ])
+    let query = encoding([Obligation {
+                facts = [copy, Predicate.BagEqual(bag_column(11), variable(4), bag_column(12), variable(4))]
+                conclusion = Predicate.Variable(99)
+            }])
+    assert std.text.contains(query, "(declare-const a10 (Array Int Int))")
+    assert std.text.contains(query, "(=> (forall ((loom_bound Int))")
+    assert std.text.contains(query, "(= (loom_bag a10 (+ 0 (* 1 n4))) (loom_bag a11 (+ 0 (* 1 n4))))")
+}
+
+test fn integer_histogram_stores_include_keys_requested_after_the_write_fact() {
+    let query = encoding([Obligation {
+                facts = [Predicate.ArrayWrite(10, 11, [], variable(1), ArrayScalar.Integer(IntegerTerm.Linear(variable(2)))),
+                    Predicate.BagEqual(bag_column(10), variable(4), bag_column(12), variable(4))]
+                conclusion = Predicate.IntegerCompare("==", IntegerTerm.Select(11, [], variable(1)), IntegerTerm.Linear(variable(2)))
+            }])
+    assert std.text.contains(query, "(loom_bag (store a10 (+ 0 (* 1 n1)) (+ 0 (* 1 n2)))")
+    assert std.text.contains(query, "(= a11 (store a10 (+ 0 (* 1 n1)) (+ 0 (* 1 n2))))")
+}
+
+test fn histogram_tuple_sorts_follow_scalar_domains_without_binding_field_paths() {
+    let original = joint_test_column(10)
+    let projected = BagColumn {
+        contents = 11
+        fields = [BagField {
+                path = [3],
+                domain = ScalarDomain.Integer
+            },
+            BagField {
+                path = [4],
+                domain = ScalarDomain.Text
+            }]
+    }
+    let query = encoding([Obligation {
+                facts = []
+                conclusion = Predicate.BagEqual(original, variable(1), projected, variable(1))
+            }])
+    assert length(std.text.split(query, "(declare-datatype loom_hk_it ")) == 2
+    assert std.text.contains(query, "((_ map loom_hkey_it) a10_f0 a10_f1_text)")
+    assert std.text.contains(query, "((_ map loom_hkey_it) a11_f3 a11_f4_text)")
+    assert !std.text.contains(query, "loom_pk")
+    let boolean_column = BagColumn {
+        contents = 12
+        fields = [BagField {
+                path = [0],
+                domain = ScalarDomain.Boolean
+            },
+            BagField {
+                path = [1],
+                domain = ScalarDomain.Text
+            }]
+    }
+    let domains = encoding([Obligation {
+                facts = [Predicate.BagEqual(original, variable(1), projected, variable(1))]
+                conclusion = Predicate.BagEqual(boolean_column, variable(1), BagColumn {
+                        contents = 13,
+                        ..boolean_column
+                    }, variable(1))
+            }])
+    assert std.text.contains(domains, "(declare-datatype loom_hk_it ")
+    assert std.text.contains(domains, "(declare-datatype loom_hk_bt ")
+}
+
+test fn histogram_tuple_keys_reject_mismatched_domains_and_ieee_fields() {
+    let malformed = IntegerTerm.Count(joint_test_column(10), [PredicateKey.Integer(IntegerTerm.Linear(variable(1))),
+            PredicateKey.Text(TextValue.Literal("not an integer")), PredicateKey.Integer(IntegerTerm.Linear(variable(2)))])
+    assert match smt_query([Obligation {
+                facts = []
+                conclusion = Predicate.IntegerCompare("==", malformed, IntegerTerm.Linear(constant(integer(0))))
+            }]) {
+        Result.Err(_) => true
+        _ => false
+    }
+    let ieee = BagColumn {
+        contents = 10,
+        fields = [BagField {
+                path = [],
+                domain = ScalarDomain.Float
+            }]
+    }
+    assert match smt_query([Obligation {
+                facts = []
+                conclusion = Predicate.BagEqual(ieee, variable(1), BagColumn {
+                        contents = 11,
+                        ..ieee
+                    }, variable(1))
+            }]) {
+        Result.Err(_) => true
+        _ => false
+    }
 }

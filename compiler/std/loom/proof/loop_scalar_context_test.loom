@@ -1,0 +1,33 @@
+import std.text.contains
+
+test fn scalar_remainder_candidates_keep_read_facts_without_counted_premises_or_extra_queries() {
+    let calls = [0]
+    let shaped = [false]
+    let proof = verification(contract_fixture([], 0, literal("0"), [], []), empty_proof_program(),
+        ProofBackend {
+            enabled = true
+            context = ""
+            solve = fn(context Text, query Text) Result[Bool, Text] {
+                set(calls, 0, get(calls, 0) + 1)
+                set(shaped, 0, !contains(query, "loom_bag") && contains(query, "a10") && contains(query, "div"))
+                Result.Ok(false)
+            }
+        })
+    let counted = Predicate.BagEqual(bag_column(10), variable(2), bag_column(11), variable(2))
+    let read = Predicate.ArrayRead(10, [], constant(integer(0)),
+        ArrayScalar.Integer(IntegerTerm.Linear(variable(77))), [Predicate.Constant(true)])
+    let state = State {
+        heap = -1
+        locals = []
+        facts = [counted, read]
+        extents = []
+        observations = []
+    }
+    let goal = Predicate.IntegerCompare("==",
+        IntegerTerm.Apply("%", [IntegerTerm.Linear(variable(0)), IntegerTerm.Linear(variable(1))]),
+        IntegerTerm.Linear(constant(integer(0))))
+    assert !loop_entails(proof, goal, state)
+    assert get(calls, 0) == 1 && get(shaped, 0)
+    assert length(state.facts) == 2 && same(get(state.facts, 0), counted)
+    assert length(proof.query.obligations) == 0
+}

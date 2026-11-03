@@ -107,6 +107,87 @@ fn order_step(identity Int, value Predicate, negative Bool, depth Int) Option[Or
     }
 }
 
+record OrderEdges {
+    step OrderStep
+    guard Predicate
+}
+
+// An implication supplies an edge only where its guard holds. Conjunctions
+// may supply either edge; disjunctions require the other alternative false.
+fn guarded_order_step(identity Int, value Predicate, negative Bool, budget List[Int], depth Int) Option[OrderEdges] {
+    if depth >= 64 || get(budget, 0) <= 0 {
+        return Option.None
+    }
+    set(budget, 0, get(budget, 0) - 1)
+    match order_step(identity, value, negative, 0) {
+        Option.Some(step) => {
+            return Option.Some(OrderEdges {
+                    step = step
+                    guard = Predicate.Constant(true)
+                })
+        }
+        Option.None => {
+        }
+    }
+    match value {
+        Predicate.Not(values) => {
+            if length(values) == 1 {
+                return guarded_order_step(identity, get(values, 0), !negative, budget, depth + 1)
+            }
+        }
+        _ => {
+        }
+    }
+    let values = match value {
+        Predicate.And(values) => values
+        Predicate.Or(values) => values
+        _ => {
+            return Option.None
+        }
+    }
+    if length(values) != 2 {
+        return Option.None
+    }
+    let disjunction = match value {
+        Predicate.Or(_) => !negative
+        _ => negative
+    }
+    var side = 0
+    while side < 2 {
+        match guarded_order_step(identity, get(values, side), negative, budget, depth + 1) {
+            Option.Some(edge) => {
+                let guard = if disjunction {
+                    let other = if negative {
+                        get(values, 1 - side)
+                    } else {
+                        not(get(values, 1 - side))
+                    }
+                    Predicate.And([edge.guard, other])
+                } else {
+                    edge.guard
+                }
+                return Option.Some(OrderEdges {
+                        guard = guard
+                        ..edge
+                    })
+            }
+            Option.None => {
+            }
+        }
+        side = side + 1
+    }
+    Option.None
+}
+
+fn order_path_guard(writer SmtWriter, identity Int, offset Linear, guard Predicate) Result[Text, Text] {
+    let condition = smt_predicate(writer, guard, 0)?
+    let shift = smt_linear(writer, offset)?
+    let binding = concat("(let ((n", concat(std.int.to_text(identity),
+            concat(" (- loom_order_cursor ", concat(shift, concat("))) ", concat(condition, ")"))))))
+    Result.Ok(concat("(forall ((loom_order_cursor Int)) (=> (and (< loom_order_first loom_order_cursor) (<= loom_order_cursor loom_order_second)) ",
+            concat(binding, "))")))
+}
+
 fn smt_order_chain(writer SmtWriter, identity Int, start Linear, end Linear,
     predicate Predicate, premise Text) Result[Bool, Text] {
     if order_mentions(start, identity) || order_mentions(end, identity) {
@@ -119,12 +200,22 @@ fn smt_order_chain(writer SmtWriter, identity Int, start Linear, end Linear,
         }
         outer = outer + 1
     }
-    let step = match order_step(identity, predicate, false, 0) {
+    let edges = match guarded_order_step(identity, predicate, false, [256], 0) {
         Option.Some(value) => value
         Option.None => {
             return Result.Ok(true)
         }
     }
+    match edges.guard {
+        Predicate.Constant(true) => {
+        }
+        _ => if !writer.guarded_order {
+            // Optional base-theory guesses must not start nested guarded
+            // induction. Required obligations retain the complete order laws.
+            return Result.Ok(true)
+        }
+    }
+    let step = edges.step
     // Induction on q-p: the first edge is an instance of the premise;
     // extending the finite chain uses integer-order transitivity. Distinctness
     // and IEEE comparisons are excluded. Bounds, column and version stay exact.
@@ -135,7 +226,27 @@ fn smt_order_chain(writer SmtWriter, identity Int, start Linear, end Linear,
     let output = std.bytes.new()
     smt_append(output, concat("(=> ", concat(premise, " (forall ((loom_order_first Int) (loom_order_second Int)) (=> (and (<= ")))
     smt_append(output, concat(lower, " loom_order_first) (< loom_order_first loom_order_second) (< loom_order_second "))
-    smt_append(output, concat(upper, concat(")) (", relation)))
+    smt_append(output, upper)
+    match edges.guard {
+        Predicate.Constant(true) => {
+        }
+        _ => {
+            // The finite chain may cross only edges whose guards hold. This
+            // is a premise over each intervening index, never an assumed
+            // continuous range across an unchecked or disabled edge.
+            // Path guards introduce a nested quantified premise, like the
+            // existing conditional relation-induction rule.
+            set(writer.relation_search, 0, true)
+            smt_append(output, ") ")
+            smt_append(output, order_path_guard(writer, identity, step.offset, edges.guard)?)
+            smt_append(output, concat(") (", relation))
+        }
+    }
+    match edges.guard {
+        Predicate.Constant(true) => smt_append(output, concat(")) (", relation))
+        _ => {
+        }
+    }
     smt_append(output, concat(" (select ", concat(array, " loom_order_first) (select ")))
     smt_append(output, concat(array, " loom_order_second)))))"))
     var law = std.bytes.to_text(output)

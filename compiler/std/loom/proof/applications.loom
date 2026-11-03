@@ -212,6 +212,15 @@ fn predicate_function(program Program, target Int) Bool {
     if target < 0 || target >= length(program.functions) || function_identity(program, target) < 0 {
         return false
     }
+    pure_function_body(program, target)
+}
+
+// Syntax reuse needs a checked pure body, including for anonymous callbacks.
+// Opaque congruence additionally needs the nominal identity above.
+fn pure_function_body(program Program, target Int) Bool {
+    if target < 0 || target >= length(program.functions) {
+        return false
+    }
     let function = get(program.functions, target)
     if function.is_async || !predicate_immutable_type(program, function.result, 0) || function.runtime_name != "" ||
     length(function.result_cleanup) != 0 {

@@ -1,0 +1,883 @@
+// Arithmetic path conditions are proved without array premises before they
+// enter a sequence query. A failed auxiliary query supplies no assumption.
+record ArithmeticRange {
+    identity Int
+    start Linear
+    end Linear
+}
+
+record ArithmeticScan {
+    identity Int
+    step OrderStep
+    guard Predicate
+    scope List[ArithmeticRange]
+}
+
+record ArithmeticRead {
+    version Int
+    path List[Int]
+    index Linear
+    scope List[ArithmeticRange]
+}
+
+fn cut_integer(value IntegerTerm, budget List[Int]) Bool {
+    if get(budget, 0) <= 0 {
+        return false
+    }
+    set(budget, 0, get(budget, 0) - 1)
+    match value {
+        IntegerTerm.Linear(_) => true
+        IntegerTerm.Apply(_, values) => {
+            var index = 0
+            while index < length(values) {
+                if !cut_integer(get(values, index), budget) {
+                    return false
+                }
+                index = index + 1
+            }
+            true
+        }
+        IntegerTerm.Function(value) => {
+            var index = 0
+            while index < length(value.arguments) {
+                match get(value.arguments, index) {
+                    PredicateKey.Integer(value) => if !cut_integer(value, budget) {
+                        return false
+                    }
+                    _ => {
+                        return false
+                    }
+                }
+                index = index + 1
+            }
+            true
+        }
+        _ => false
+    }
+}
+
+fn cut_predicate(value Predicate, budget List[Int]) Bool {
+    if get(budget, 0) <= 0 {
+        return false
+    }
+    set(budget, 0, get(budget, 0) - 1)
+    match value {
+        Predicate.Constant(_) => true
+        Predicate.Variable(_) => true
+        Predicate.Compare(_, _) => true
+        Predicate.IntegerCompare(_, first, second) => cut_integer(first, budget) && cut_integer(second, budget)
+        Predicate.Not(values) => cut_predicates(values, budget)
+        Predicate.And(values) => cut_predicates(values, budget)
+        Predicate.Or(values) => cut_predicates(values, budget)
+        Predicate.Equal(values) => cut_predicates(values, budget)
+        _ => false
+    }
+}
+
+fn cut_predicates(values List[Predicate], budget List[Int]) Bool {
+    var index = 0
+    while index < length(values) {
+        if !cut_predicate(get(values, index), budget) {
+            return false
+        }
+        index = index + 1
+    }
+    true
+}
+
+fn cut_division(value IntegerTerm) Bool {
+    match value {
+        IntegerTerm.Apply(operator, values) => {
+            if integer_division(operator) {
+                return true
+            }
+            var index = 0
+            while index < length(values) {
+                if cut_division(get(values, index)) {
+                    return true
+                }
+                index = index + 1
+            }
+            false
+        }
+        _ => false
+    }
+}
+
+fn cut_division(value Predicate) Bool {
+    match value {
+        Predicate.IntegerCompare(_, first, second) => cut_division(first) || cut_division(second)
+        Predicate.Not(values) => cut_divisions(values)
+        Predicate.And(values) => cut_divisions(values)
+        Predicate.Or(values) => cut_divisions(values)
+        Predicate.Equal(values) => cut_divisions(values)
+        _ => false
+    }
+}
+
+fn cut_divisions(values List[Predicate]) Bool {
+    var index = 0
+    while index < length(values) {
+        if cut_division(get(values, index)) {
+            return true
+        }
+        index = index + 1
+    }
+    false
+}
+
+// Extract only consequences of a fact. An arithmetic conjunct may survive
+// removal of an array conjunct; a disjunction or negation stays complete.
+fn cut_fact(value Predicate, facts List[Predicate], budget List[Int]) {
+    if get(budget, 0) <= 0 {
+        return
+    }
+    set(budget, 0, get(budget, 0) - 1)
+    match value {
+        Predicate.And(values) => {
+            if length(values) != 2 {
+                return
+            }
+            var index = 0
+            while index < length(values) {
+                cut_fact(get(values, index), facts, budget)
+                index = index + 1
+            }
+        }
+        _ => if cut_predicate(value, [256]) {
+            push(facts, value)
+        }
+    }
+}
+
+fn cut_scan(value Predicate, scope List[ArithmeticRange], scans List[ArithmeticScan], budget List[Int]) {
+    cut_scan(value, scope, scans, budget, [])
+}
+
+// A path needs two actual observations from the same immutable column. Keep
+// unrelated historical scans from filling the existing eight-scan capacity.
+fn cut_scan_relevant(step OrderStep, reads List[ArithmeticRead]) Bool {
+    if length(reads) == 0 {
+        return true
+    }
+    var first = -1
+    var index = 0
+    while index < length(reads) && index < 16 {
+        let read = get(reads, index)
+        if read.version == step.version && same_projection(read.path, step.path) {
+            if first < 0 {
+                first = index
+            } else if !cut_same_linear(get(reads, first).index, read.index) {
+                return true
+            }
+        }
+        index = index + 1
+    }
+    false
+}
+
+fn cut_scan_add(scans List[ArithmeticScan], value ArithmeticScan) {
+    var index = 0
+    while index < length(scans) {
+        let previous = get(scans, index)
+        if previous.identity == value.identity && previous.step.version == value.step.version &&
+        previous.step.relation == value.step.relation && same_projection(previous.step.path, value.step.path) &&
+        cut_same_linear(previous.step.offset, value.step.offset) && same(previous.guard, value.guard) &&
+        length(previous.scope) == length(value.scope) {
+            match cut_scope(previous.scope, value.scope) {
+                Option.Some(_) => {
+                    return
+                }
+                Option.None => {
+                }
+            }
+        }
+        index = index + 1
+    }
+    push(scans, value)
+}
+
+fn cut_scan(value Predicate, scope List[ArithmeticRange], scans List[ArithmeticScan], budget List[Int], reads List[ArithmeticRead]) {
+    if get(budget, 0) <= 0 || length(scans) >= 8 {
+        return
+    }
+    set(budget, 0, get(budget, 0) - 1)
+    match value {
+        Predicate.Forall(identity, start, end, values) => {
+            var shadowed = false
+            var index = 0
+            while index < length(scope) {
+                shadowed = shadowed || get(scope, index).identity == identity
+                index = index + 1
+            }
+            if !shadowed && length(values) == 1 {
+                match guarded_order_step(identity, get(values, 0), false, [256], 0) {
+                    Option.Some(edges) => if cut_predicate(edges.guard, [256]) && cut_division(edges.guard) &&
+                    cut_scan_relevant(edges.step, reads) {
+                        cut_scan_add(scans, ArithmeticScan {
+                                identity = identity
+                                step = edges.step
+                                guard = edges.guard
+                                scope = scope
+                            })
+                    }
+                    Option.None => {
+                    }
+                }
+            }
+            let nested = std.list.clone(scope)
+            push(nested, ArithmeticRange {
+                    identity = identity
+                    start = start
+                    end = end
+                })
+            index = 0
+            while index < length(values) {
+                cut_scan(get(values, index), nested, scans, budget, reads)
+                index = index + 1
+            }
+        }
+        Predicate.Not(values) => cut_scans(values, scope, scans, budget, reads)
+        Predicate.And(values) => cut_scans(values, scope, scans, budget, reads)
+        Predicate.Or(values) => cut_scans(values, scope, scans, budget, reads)
+        Predicate.Equal(values) => cut_scans(values, scope, scans, budget, reads)
+        _ => {
+        }
+    }
+}
+
+fn cut_scans(values List[Predicate], scope List[ArithmeticRange], scans List[ArithmeticScan], budget List[Int]) {
+    cut_scans(values, scope, scans, budget, [])
+}
+
+fn cut_scans(values List[Predicate], scope List[ArithmeticRange], scans List[ArithmeticScan], budget List[Int], reads List[ArithmeticRead]) {
+    var index = 0
+    while index < length(values) {
+        cut_scan(get(values, index), scope, scans, budget, reads)
+        index = index + 1
+    }
+}
+
+fn cut_same_linear(first Linear, second Linear) Bool {
+    compare(first.constant, second.constant) == 0 && same_terms(first.terms, second.terms)
+}
+
+fn cut_scope(first List[ArithmeticRange], second List[ArithmeticRange]) Option[List[ArithmeticRange]] {
+    var index = 0
+    while index < length(first) && index < length(second) {
+        let a = get(first, index)
+        let b = get(second, index)
+        if a.identity != b.identity || !cut_same_linear(a.start, b.start) || !cut_same_linear(a.end, b.end) {
+            return Option.None
+        }
+        index = index + 1
+    }
+    Option.Some(if length(first) >= length(second) {
+            first
+        } else {
+            second
+        })
+}
+
+fn cut_read(read ArithmeticRead, reads List[ArithmeticRead]) {
+    if length(reads) >= 16 {
+        return
+    }
+    var index = 0
+    while index < length(reads) {
+        let prior = get(reads, index)
+        if read.version == prior.version && same_projection(read.path, prior.path) && cut_same_linear(read.index, prior.index) &&
+        length(read.scope) == length(prior.scope) {
+            match cut_scope(read.scope, prior.scope) {
+                Option.Some(_) => {
+                    return
+                },
+                Option.None => {
+                }
+            }
+        }
+        index = index + 1
+    }
+    push(reads, read)
+}
+
+fn cut_reads(value IntegerTerm, scope List[ArithmeticRange], reads List[ArithmeticRead], budget List[Int]) {
+    if get(budget, 0) <= 0 {
+        return
+    }
+    set(budget, 0, get(budget, 0) - 1)
+    match value {
+        IntegerTerm.Select(version, path, index) => cut_read(ArithmeticRead {
+                version = version
+                path = path
+                index = index
+                scope = scope
+            }, reads)
+        IntegerTerm.Apply(_, values) => {
+            var index = 0
+            while index < length(values) {
+                cut_reads(get(values, index), scope, reads, budget)
+                index = index + 1
+            }
+        }
+        _ => {
+        }
+    }
+}
+
+fn cut_reads(value Predicate, scope List[ArithmeticRange], reads List[ArithmeticRead], quantified Bool, budget List[Int]) {
+    if get(budget, 0) <= 0 {
+        return
+    }
+    set(budget, 0, get(budget, 0) - 1)
+    match value {
+        Predicate.Forall(identity, start, end, values) => if quantified {
+            let nested = std.list.clone(scope)
+            push(nested, ArithmeticRange {
+                    identity = identity
+                    start = start
+                    end = end
+                })
+            cut_read_predicates(values, nested, reads, quantified, budget)
+        }
+        Predicate.IntegerCompare(_, first, second) => {
+            cut_reads(first, scope, reads, budget)
+            cut_reads(second, scope, reads, budget)
+        }
+        Predicate.ArrayRead(version, path, index, value, _) => {
+            cut_read(ArithmeticRead {
+                    version = version
+                    path = path
+                    index = index
+                    scope = scope
+                }, reads)
+            match value {
+                ArrayScalar.Integer(term) => cut_reads(term, scope, reads, budget),
+                _ => {
+                }
+            }
+        }
+        Predicate.ArrayWrite(_, _, _, _, value) => match value {
+            ArrayScalar.Integer(term) => cut_reads(term, scope, reads, budget)
+            _ => {
+            }
+        }
+        Predicate.Not(values) => cut_read_predicates(values, scope, reads, quantified, budget)
+        Predicate.And(values) => cut_read_predicates(values, scope, reads, quantified, budget)
+        Predicate.Or(values) => cut_read_predicates(values, scope, reads, quantified, budget)
+        Predicate.Equal(values) => cut_read_predicates(values, scope, reads, quantified, budget)
+        _ => {
+        }
+    }
+}
+
+fn cut_read_predicates(values List[Predicate], scope List[ArithmeticRange], reads List[ArithmeticRead], quantified Bool, budget List[Int]) {
+    var index = 0
+    while index < length(values) {
+        cut_reads(get(values, index), scope, reads, quantified, budget)
+        index = index + 1
+    }
+}
+
+fn cut_mentions(value IntegerTerm, identity Int) Bool {
+    match value {
+        IntegerTerm.Linear(value) => order_mentions(value, identity)
+        IntegerTerm.Apply(_, values) => {
+            var index = 0
+            while index < length(values) {
+                if cut_mentions(get(values, index), identity) {
+                    return true
+                }
+                index = index + 1
+            }
+            false
+        }
+        IntegerTerm.Function(value) => {
+            var index = 0
+            while index < length(value.arguments) {
+                match get(value.arguments, index) {
+                    PredicateKey.Integer(value) => if cut_mentions(value, identity) {
+                        return true
+                    }
+                    _ => {
+                        return true
+                    }
+                }
+                index = index + 1
+            }
+            false
+        }
+        _ => true
+    }
+}
+
+fn cut_mentions(value Predicate, identity Int) Bool {
+    match value {
+        Predicate.Constant(_) => false
+        Predicate.Variable(id) => id == identity
+        Predicate.Compare(_, value) => order_mentions(value, identity)
+        Predicate.IntegerCompare(_, first, second) => cut_mentions(first, identity) || cut_mentions(second, identity)
+        Predicate.Not(values) => cut_predicate_mentions(values, identity)
+        Predicate.And(values) => cut_predicate_mentions(values, identity)
+        Predicate.Or(values) => cut_predicate_mentions(values, identity)
+        Predicate.Equal(values) => cut_predicate_mentions(values, identity)
+        _ => true
+    }
+}
+
+fn cut_predicate_mentions(values List[Predicate], identity Int) Bool {
+    var index = 0
+    while index < length(values) {
+        if cut_mentions(get(values, index), identity) {
+            return true
+        }
+        index = index + 1
+    }
+    false
+}
+
+fn cut_capture(scope List[ArithmeticRange], original List[ArithmeticRange], value Linear) Bool {
+    var index = length(original)
+    while index < length(scope) {
+        if order_mentions(value, get(scope, index).identity) {
+            return true
+        }
+        index = index + 1
+    }
+    false
+}
+
+// Executed reads often appear in the goal as saved scalar values. Discover
+// those observations before unrelated reads can fill the bounded key list.
+fn cut_goal_scalars(value IntegerTerm, goals List[Linear], budget List[Int]) {
+    if !conjunction_step(budget) {
+        return
+    }
+    match value {
+        IntegerTerm.Linear(term) => push(goals, term)
+        IntegerTerm.Apply(_, values) => {
+            var index = 0
+            while index < length(values) {
+                cut_goal_scalars(get(values, index), goals, budget)
+                index = index + 1
+            }
+        }
+        _ => {
+        }
+    }
+}
+
+fn cut_goal_scalars(value Predicate, goals List[Linear], budget List[Int]) {
+    if !conjunction_step(budget) {
+        return
+    }
+    match value {
+        Predicate.Compare(_, term) => push(goals, term)
+        Predicate.IntegerCompare(_, first, second) => {
+            cut_goal_scalars(first, goals, budget)
+            cut_goal_scalars(second, goals, budget)
+        }
+        _ => {
+            let values = match value {
+                Predicate.Not(values) => values
+                Predicate.And(values) => values
+                Predicate.Or(values) => values
+                Predicate.Equal(values) => values
+                Predicate.Forall(_, _, _, values) => values
+                _ => {
+                    return
+                }
+            }
+            var index = 0
+            while index < length(values) {
+                cut_goal_scalars(get(values, index), goals, budget)
+                index = index + 1
+            }
+        }
+    }
+}
+
+fn cut_linked_goals(value Predicate, roots List[Linear], goals List[Linear], budget List[Int]) {
+    if !conjunction_step(budget) {
+        return
+    }
+    match value {
+        Predicate.Compare(_, term) => if length(term.terms) == 2 {
+            var root = 0
+            var linked = false
+            while root < length(roots) && !linked {
+                var part = 0
+                while part < length(term.terms) && !linked {
+                    linked = order_mentions(get(roots, root), get(term.terms, part).id)
+                    part = part + 1
+                }
+                root = root + 1
+            }
+            if linked {
+                push(goals, term)
+            }
+        }
+        Predicate.And(parts) => {
+            cut_linked_goals(get(parts, 0), roots, goals, budget)
+            cut_linked_goals(get(parts, 1), roots, goals, budget)
+        }
+        Predicate.Or(parts) => {
+            // These are observation priorities, never assumed branch facts.
+            cut_linked_goals(get(parts, 0), roots, goals, budget)
+            cut_linked_goals(get(parts, 1), roots, goals, budget)
+        }
+        Predicate.Not(parts) => cut_linked_goals(get(parts, 0), roots, goals, budget)
+        _ => {
+        }
+    }
+}
+
+fn cut_goal_reads(conclusion Predicate, facts List[Predicate], reads List[ArithmeticRead]) {
+    let goals = new[Linear]()
+    cut_goal_scalars(conclusion, goals, [256])
+    cut_saved_reads(goals, facts, reads)
+    // Two snapshots of the same current cell may have different saved scalar
+    // names. Follow that observation identity before looking for a pivot used
+    // only in a comparison with the selected value.
+    let aliases = [256]
+    var observed = length(facts)
+    while observed > 0 && conjunction_step(aliases) {
+        observed = observed - 1
+        match get(facts, observed) {
+            Predicate.ArrayRead(version, path, index, ArrayScalar.Integer(IntegerTerm.Linear(value)), _) => {
+                var read = 0
+                var matched = false
+                while read < length(reads) && !matched {
+                    let previous = get(reads, read)
+                    matched = previous.version == version && same_projection(previous.path, path) &&
+                    cut_same_linear(previous.index, index)
+                    read = read + 1
+                }
+                if matched {
+                    push(goals, value)
+                }
+            }
+            _ => {
+            }
+        }
+    }
+    let roots = std.list.clone(goals)
+    let linked_budget = [256]
+    var prior = length(facts)
+    while prior > 0 && get(linked_budget, 0) > 0 {
+        prior = prior - 1
+        cut_linked_goals(get(facts, prior), roots, goals, linked_budget)
+    }
+    cut_saved_reads(goals, facts, reads)
+}
+
+fn cut_saved_reads(goals List[Linear], facts List[Predicate], reads List[ArithmeticRead]) {
+    var index = length(facts)
+    while index > 0 && length(reads) < 16 {
+        index = index - 1
+        match get(facts, index) {
+            Predicate.ArrayRead(_, _, _, ArrayScalar.Integer(IntegerTerm.Linear(value)), _) => {
+                var goal = 0
+                var relevant = false
+                while goal < length(goals) && !relevant {
+                    var term = 0
+                    while term < length(value.terms) && !relevant {
+                        relevant = order_mentions(get(goals, goal), get(value.terms, term).id)
+                        term = term + 1
+                    }
+                    goal = goal + 1
+                }
+                if relevant {
+                    cut_reads(get(facts, index), [], reads, false, [128])
+                }
+            }
+            _ => {
+            }
+        }
+    }
+}
+
+fn cut_path(scan ArithmeticScan, first ArithmeticRead, second ArithmeticRead) Option[Predicate] {
+    if first.version != scan.step.version || second.version != scan.step.version ||
+    !same_projection(first.path, scan.step.path) || !same_projection(second.path, scan.step.path) ||
+    cut_same_linear(first.index, second.index) || order_mentions(first.index, scan.identity) || order_mentions(second.index, scan.identity) {
+        return Option.None
+    }
+    let read_scope = match cut_scope(first.scope, second.scope) {
+        Option.Some(value) => value,
+        Option.None => {
+            return Option.None
+        }
+    }
+    let scope = match cut_scope(read_scope, scan.scope) {
+        Option.Some(value) => value,
+        Option.None => {
+            return Option.None
+        }
+    }
+    if cut_capture(scope, first.scope, first.index) || cut_capture(scope, second.scope, second.index) || cut_capture(scope, scan.scope, scan.step.offset) {
+        return Option.None
+    }
+    var index = 0
+    while index < length(scope) {
+        let identity = get(scope, index).identity
+        if identity == scan.identity || (index >= length(scan.scope) && cut_mentions(scan.guard, identity)) {
+            return Option.None
+        }
+        index = index + 1
+    }
+    let offset = scale(scan.step.offset, integer(-1))
+    var upper = add(add(second.index, offset), constant(integer(1)))
+    var retained = length(scope)
+    if retained > length(scan.scope) {
+        let outer = get(scope, retained - 1)
+        var term = 0
+        while term < length(second.index.terms) {
+            let coefficient = get(second.index.terms, term)
+            if coefficient.id == outer.identity && compare(coefficient.factor, integer(1)) == 0 &&
+            !order_mentions(first.index, outer.identity) && !order_mentions(offset, outer.identity) &&
+            !order_mentions(outer.end, outer.identity) && !cut_mentions(scan.guard, outer.identity) {
+                // Prove the stronger path all the way to this target range's
+                // end. Every target index is smaller than that end, so the
+                // resulting guard fact covers its path without another binder.
+                // The stronger fact itself still needs the scalar solver proof.
+                let projected = add(add(outer.end, add(second.index,
+                            scale(variable(outer.identity), integer(-1)))), offset)
+                if !order_mentions(projected, outer.identity) {
+                    upper = projected
+                    retained = retained - 1
+                }
+            }
+            term = term + 1
+        }
+    }
+    var condition = Predicate.Forall(scan.identity,
+        add(add(first.index, offset), constant(integer(1))),
+        upper, [scan.guard])
+    index = retained
+    while index > 0 {
+        index = index - 1
+        let range = get(scope, index)
+        condition = Predicate.Forall(range.identity, range.start, range.end, [condition])
+    }
+    Option.Some(condition)
+}
+
+// A proved guard interval and an unconditional source scan establish ordinary
+// adjacent order on their contained interval. Conditional scans cannot supply
+// that premise, and no failed scalar query installs its proposed condition.
+fn cut_order(scan ArithmeticScan, condition Predicate, facts List[Predicate]) Option[Predicate] {
+    let budget = [512]
+    var established = false
+    var index = 0
+    while index < length(facts) && conjunction_step(budget) {
+        established = established || same(condition, get(facts, index))
+        index = index + 1
+    }
+    if !established {
+        return Option.None
+    }
+    match condition {
+        Predicate.Forall(identity, first, last, body) => {
+            if identity != scan.identity || length(body) != 1 || !same(get(body, 0), scan.guard) {
+                return Option.None
+            }
+            index = 0
+            while index < length(facts) && conjunction_step(budget) {
+                match get(facts, index) {
+                    Predicate.Forall(other, lower, upper, source) => if other == identity && length(source) == 1 {
+                        match guarded_order_step(other, get(source, 0), false, [256], 0) {
+                            Option.Some(edges) => if edges.step.version == scan.step.version &&
+                            edges.step.relation == scan.step.relation && same_projection(edges.step.path, scan.step.path) &&
+                            cut_same_linear(edges.step.offset, scan.step.offset) && same(edges.guard, scan.guard) {
+                                let contained = Predicate.And([
+                                        Predicate.Compare("<=", add(lower, scale(first, integer(-1)))),
+                                        Predicate.Compare("<=", add(last, scale(upper, integer(-1))))])
+                                if holds(contained, facts) || difference_holds(contained, facts) {
+                                    let next = add(variable(identity), scan.step.offset)
+                                    let edge = Predicate.IntegerCompare(scan.step.relation,
+                                        IntegerTerm.Select(scan.step.version, scan.step.path, add(next, constant(integer(-1)))),
+                                        IntegerTerm.Select(scan.step.version, scan.step.path, next))
+                                    return Option.Some(Predicate.Forall(identity, first, last, [edge]))
+                                }
+                            }
+                            _ => {
+                            }
+                        }
+                    }
+                    _ => {
+                    }
+                }
+                index = index + 1
+            }
+            Option.None
+        }
+        _ => Option.None
+    }
+}
+
+// A path cut needs a quantified source with a quotient/remainder guard.
+// Rule out other contexts before building read aliases and scalar projections.
+// Exhaustion preserves the ordinary discovery path; this gate adds no query,
+// candidate or fact and leaves every existing discovery limit unchanged.
+fn cut_possible_scan(value Predicate, budget List[Int]) Bool {
+    if !conjunction_step(budget) {
+        return true
+    }
+    match value {
+        Predicate.Forall(_, _, _, values) => {
+            var index = 0
+            while index < length(values) {
+                let child = get(values, index)
+                if cut_division(child) || cut_possible_scan(child, budget) {
+                    return true
+                }
+                index = index + 1
+            }
+            false
+        }
+        Predicate.Not(values) => cut_possible_scans(values, budget)
+        Predicate.And(values) => cut_possible_scans(values, budget)
+        Predicate.Or(values) => cut_possible_scans(values, budget)
+        Predicate.Equal(values) => cut_possible_scans(values, budget)
+        _ => false
+    }
+}
+
+fn cut_possible_scans(values List[Predicate], budget List[Int]) Bool {
+    var index = 0
+    while index < length(values) {
+        if cut_possible_scan(get(values, index), budget) {
+            return true
+        }
+        index = index + 1
+    }
+    false
+}
+
+fn arithmetic_cuts(backend ProofBackend, obligations List[Obligation]) List[Obligation] {
+    if !backend.enabled {
+        return obligations
+    }
+    let output = new[Obligation]()
+    var obligation_index = 0
+    while obligation_index < length(obligations) {
+        let obligation = get(obligations, obligation_index)
+        // Array quantifiers must not crowd out a standalone arithmetic goal.
+        // Removing premises is safe; success here proves the original goal.
+        if cut_predicate(obligation.conclusion, [256]) && cut_division(obligation.conclusion) {
+            let scalar = new[Predicate]()
+            var mixed = false
+            var fact = 0
+            while fact < length(obligation.facts) {
+                let value = get(obligation.facts, fact)
+                mixed = mixed || !cut_predicate(value, [256])
+                cut_fact(value, scalar, [256])
+                fact = fact + 1
+            }
+            if mixed {
+                match smt_arithmetic_query([Obligation {
+                            facts = scalar
+                            conclusion = obligation.conclusion
+                        }]) {
+                    Result.Ok(query) => match backend.solve(backend.context, query) {
+                        Result.Ok(true) => {
+                            obligation_index = obligation_index + 1
+                            continue
+                        }
+                        _ => {
+                        }
+                    }
+                    Result.Err(_) => {
+                    }
+                }
+            }
+        }
+        if !cut_possible_scans(obligation.facts, [256]) {
+            push(output, obligation)
+            obligation_index = obligation_index + 1
+            continue
+        }
+        let reads = new[ArithmeticRead]()
+        cut_reads(obligation.conclusion, [], reads, true, [256])
+        cut_goal_reads(obligation.conclusion, obligation.facts, reads)
+        let scalar = new[Predicate]()
+        let scalar_budget = [512]
+        var index = length(obligation.facts)
+        while index > 0 {
+            index = index - 1
+            cut_reads(get(obligation.facts, index), [], reads, false, [128])
+            cut_fact(get(obligation.facts, index), scalar, scalar_budget)
+        }
+        let scans = new[ArithmeticScan]()
+        let scan_budget = [512]
+        cut_scans(obligation.facts, [], scans, scan_budget, reads)
+        if length(scans) == 0 {
+            cut_scans(obligation.facts, [], scans, scan_budget)
+        }
+        if length(scans) == 0 {
+            push(output, obligation)
+            obligation_index = obligation_index + 1
+            continue
+        }
+        let facts = std.list.clone(obligation.facts)
+        var attempts = 0
+        var scan_index = 0
+        while scan_index < length(scans) && attempts < 8 {
+            let scan = get(scans, scan_index)
+            var priority = 0
+            while priority < 2 && attempts < 8 {
+                var first = 0
+                while first < length(reads) && attempts < 8 {
+                    var second = 0
+                    while second < length(reads) && attempts < 8 {
+                        let origin = get(reads, first)
+                        let target = get(reads, second)
+                        let directed = length(origin.scope) == 0 && length(target.scope) != 0
+                        if directed != (priority == 0) {
+                            second = second + 1
+                            continue
+                        }
+                        match cut_path(scan, origin, target) {
+                            Option.Some(condition) => {
+                                attempts = attempts + 1
+                                let query = smt_arithmetic_query([Obligation {
+                                            facts = scalar
+                                            conclusion = condition
+                                        }])
+                                match query {
+                                    Result.Ok(query) => match backend.solve(backend.context, query) {
+                                        Result.Ok(true) => {
+                                            distinct_fact(facts, condition)
+                                            match cut_order(scan, condition, facts) {
+                                                Option.Some(ordered) => distinct_fact(facts, ordered)
+                                                Option.None => {
+                                                }
+                                            }
+                                        }
+                                        _ => {
+                                        }
+                                    }
+                                    Result.Err(_) => {
+                                    }
+                                }
+                            }
+                            Option.None => {
+                            }
+                        }
+                        second = second + 1
+                    }
+                    first = first + 1
+                }
+                priority = priority + 1
+            }
+            scan_index = scan_index + 1
+        }
+        push(output, Obligation {
+                facts = facts
+                conclusion = obligation.conclusion
+            })
+        obligation_index = obligation_index + 1
+    }
+    output
+}

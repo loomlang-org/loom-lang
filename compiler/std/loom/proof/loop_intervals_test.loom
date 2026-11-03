@@ -1,0 +1,104 @@
+fn interval_order_body(contents Int) Predicate {
+    Predicate.IntegerCompare("<=", IntegerTerm.Select(contents, [],
+            add(variable(-1), constant(integer(-1)))), IntegerTerm.Select(contents, [], variable(-1)))
+}
+
+test fn universal_bodies_can_use_established_scalar_alternatives_without_generalizing_a_sample() {
+    let outside = Predicate.Compare(">=", add(variable(4), scale(variable(5), integer(-1))))
+    let body = Predicate.Or([outside, interval_order_body(10)])
+    let goal = Predicate.Forall(-1, constant(integer(1)), variable(6), [body])
+    assert loop_interval_root(goal, [outside])
+    assert !loop_interval_root(goal, [])
+    let sample = Predicate.Compare("<", variable(-1))
+    assert !loop_interval_root(Predicate.Forall(-1, constant(integer(1)), variable(6),
+            [Predicate.Or([sample, interval_order_body(10)])]), [sample])
+    assert !loop_interval_scalar_holds(body, -1, [outside], [0])
+}
+
+test fn scalar_disjunctions_can_cover_a_universal_without_sampling_its_binder() {
+    let phase = Predicate.Variable(5)
+    let outside = Predicate.Compare("<", variable(4))
+    let boundary = Predicate.IntegerCompare("==", IntegerTerm.Apply("%", [IntegerTerm.Linear(variable(4)),
+                IntegerTerm.Linear(variable(6))]), IntegerTerm.Linear(constant(integer(0))))
+    let aligned = Predicate.Or([not(phase), Predicate.Or([outside, boundary])])
+    let point = interval_order_body(10)
+    let all = Predicate.Forall(-1, constant(integer(1)), variable(7),
+        [Predicate.Or([Predicate.Or([outside, boundary]), point])])
+    let goal = Predicate.Or([not(phase), all])
+    assert loop_interval_root(goal, [aligned])
+    let clipped = Predicate.Or([not(phase), Predicate.Or([
+                    Predicate.Or([outside, Predicate.Compare(">=", add(variable(4), scale(variable(8), integer(-1))))]), boundary])])
+    let inside = Predicate.Compare("<", add(variable(4), scale(variable(8), integer(-1))))
+    assert loop_interval_root(goal, [clipped, inside])
+    assert !loop_interval_root(goal, [clipped])
+    let noisy = [clipped, inside]
+    var index = 0
+    while index < 13 {
+        push(noisy, Predicate.Or([phase, Predicate.Forall(-4, constant(integer(1)), variable(7),
+                        [interval_order_body(100 + index)])]))
+        index = index + 1
+    }
+    push(noisy, Predicate.Or([Predicate.Compare("==", variable(20)), Predicate.Compare("==", variable(21))]))
+    push(noisy, Predicate.Or([Predicate.Compare("==", variable(22)), Predicate.Compare("==", variable(23))]))
+    assert loop_interval_root(goal, noisy)
+    assert !loop_interval_root(all, [aligned])
+    assert !loop_interval_root(goal, [])
+    let sampled = Predicate.Or([not(phase), Predicate.Compare("<", variable(-1))])
+    let dependent = Predicate.Or([not(phase), Predicate.Forall(-1, constant(integer(1)), variable(7),
+                [Predicate.Or([Predicate.Compare("<", variable(-1)), point])])])
+    assert !loop_interval_root(dependent, [sampled])
+    assert !loop_interval_holds(goal, [aligned], [0])
+}
+
+test fn local_universal_intervals_keep_the_same_body_and_storage_version() {
+    let body = interval_order_body(10)
+    let available = Predicate.Forall(-1, constant(integer(1)), variable(4), [body])
+    let requested = Predicate.Forall(-1, constant(integer(2)), variable(5), [body])
+    let equality = Predicate.Compare("==", add(variable(4), scale(variable(5), integer(-1))))
+    let facts = [available, equality]
+    assert loop_interval_root(requested, facts)
+    assert !loop_interval_root(requested, [available])
+    let outside = Predicate.Forall(-1, constant(integer(0)), variable(5), [body])
+    assert !loop_interval_root(outside, facts)
+    let extended = Predicate.Forall(-1, constant(integer(2)), add(variable(5), constant(integer(1))), [body])
+    assert !loop_interval_root(extended, facts)
+    let changed = Predicate.Forall(-1, constant(integer(2)), variable(5), [interval_order_body(11)])
+    assert !loop_interval_root(changed, facts)
+    assert !loop_interval_holds(requested, facts, [0])
+    assert length(facts) == 2
+}
+
+test fn conditional_universal_intervals_need_the_actual_scalar_branch_fact() {
+    let body = interval_order_body(10)
+    let available = Predicate.Forall(-1, constant(integer(1)), variable(4), [body])
+    let requested = Predicate.Forall(-1, constant(integer(2)), variable(5), [body])
+    let equality = Predicate.Compare("==", add(variable(4), scale(variable(5), integer(-1))))
+    let guard = Predicate.Variable(3)
+    let conditional = Predicate.Or([not(guard), available])
+    assert loop_interval_root(requested, [conditional, guard, equality])
+    assert !loop_interval_root(requested, [conditional, equality])
+    assert !loop_interval_root(requested, [conditional, not(guard), equality])
+    assert loop_interval_root(Predicate.And([requested, equality]), [available, equality])
+    assert loop_interval_root(Predicate.Or([guard, requested]), [available, equality])
+}
+
+test fn universal_interval_bodies_use_only_established_branches_and_requested_bounds() {
+    let first = interval_order_body(10)
+    let second = interval_order_body(11)
+    let guard = Predicate.Variable(3)
+    let body = Predicate.And([Predicate.Or([not(guard), first]), Predicate.Or([guard, second])])
+    let available = Predicate.Forall(-1, constant(integer(1)), variable(4), [body])
+    let requested = Predicate.Forall(-1, constant(integer(2)), variable(5), [first])
+    let equality = Predicate.Compare("==", add(variable(4), scale(variable(5), integer(-1))))
+    assert loop_interval_root(requested, [available, equality, guard])
+    assert !loop_interval_root(requested, [available, equality])
+    assert !loop_interval_root(requested, [available, equality, not(guard)])
+    let wrong_version = Predicate.Forall(-1, constant(integer(2)), variable(5), [second])
+    assert !loop_interval_root(wrong_version, [available, equality, guard])
+    let edge = Predicate.Compare("<", add(variable(-1), constant(integer(-2))))
+    let guarded = Predicate.Forall(-1, constant(integer(1)), variable(4), [Predicate.Or([edge, first])])
+    let inside = Predicate.Forall(-1, constant(integer(3)), variable(5), [first])
+    assert loop_interval_root(inside, [guarded, equality])
+    let uncovered = Predicate.Forall(-1, constant(integer(1)), variable(5), [first])
+    assert !loop_interval_root(uncovered, [guarded, equality])
+}

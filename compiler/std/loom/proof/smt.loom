@@ -30,6 +30,9 @@ fn smt_binder(value SmtBinder, condition Text) Text {
 
 record SmtWriter {
     extended Bool
+    guarded_order Bool
+    abstract_remainder Bool
+    abstracted List[Bool]
     support_keys List[SmtSupportKey]
     support_laws List[SmtSupportLaw]
     declarations Bytes
@@ -39,6 +42,7 @@ record SmtWriter {
     columns List[SmtColumn]
     prefixes List[SmtPrefix]
     histograms List[BagColumn]
+    pointwise_bags List[SmtPointwiseBag]
     writes List[SmtWrite]
     assertions std.map.Map[Text, Bool]
     quantifiers List[SmtBinder]
@@ -287,8 +291,9 @@ fn smt_mentions(value Text, name Text) Bool {
 }
 
 // forall i. (P(i) && Q(i)) is the conjunction of the two quantifiers. Keep
-// unrelated scalar columns out of one multi-pattern; each clause can match its
-// own select/store terms. No source evaluation or safety obligation is removed.
+// unrelated scalar constraints out of one multi-pattern. Direct scalar copies
+// can share their exact range and index; this keeps independent historical
+// copies from competing for instantiation. Every clause and side law remains.
 fn smt_quantified(writer SmtWriter, identity Int, start Linear, end Linear,
     predicate Predicate, depth Int) Result[Text, Text] {
     discard smt_step(writer, depth)?
@@ -311,6 +316,9 @@ fn smt_quantified(writer SmtWriter, identity Int, start Linear, end Linear,
                     ..writer
                 }, predicate, depth + 1)?
             discard smt_relation_chain(writer, identity, start, end, predicate, condition, quantified)?
+            if pointwise_copy(predicate, identity, [256]) {
+                return Result.Ok(smt_binder(get(binders, length(binders) - 1), condition))
+            }
             return Result.Ok(quantified)
         }
         _ => {
@@ -348,9 +356,12 @@ fn smt_quantified(writer SmtWriter, identity Int, start Linear, end Linear,
     if length(writer.counts) != 0 {
         match pointwise_bag(Predicate.Forall(identity, start, end, [predicate])) {
             Option.Some(bag) => {
-                let law = concat("(=> ", concat(quantified,
-                        concat(" ", concat(smt_predicate(writer, bag, depth + 1)?, ")"))))
-                smt_assert(writer, bag_bound_scope(law, end))
+                push(writer.pointwise_bags, SmtPointwiseBag {
+                        reference = quantified
+                        bag = bag
+                        size = end
+                        quantifiers = writer.quantifiers
+                    })
             }
             Option.None => {
             }
@@ -430,6 +441,16 @@ fn smt_integer(writer SmtWriter, value IntegerTerm, depth Int) Result[Text, Text
             }
             let first = smt_integer(writer, get(inputs, 0), depth + 1)?
             let second = smt_integer(writer, get(inputs, 1), depth + 1)?
+            if operator == "%" && writer.abstract_remainder {
+                if !get(writer.abstracted, 0) {
+                    set(writer.abstracted, 0, true)
+                    smt_append(writer.declarations, "(declare-fun loom_integer_remainder (Int Int) Int)\n")
+                }
+                // Any concrete remainder interpretation is a model of this
+                // weaker function theory. Unsat here therefore proves the
+                // original obligation; no arithmetic law is assumed.
+                return Result.Ok(concat("(loom_integer_remainder ", concat(first, concat(" ", concat(second, ")")))))
+            }
             if integer_division(operator) {
                 return Result.Ok(smt_truncated_division(operator, first, second))
             }
@@ -549,19 +570,9 @@ fn smt_predicate(writer SmtWriter, value Predicate, depth Int) Result[Text, Text
                         quantifiers = writer.quantifiers
                     })
             }
-            if length(writer.counts) == 0 || domain != ScalarDomain.Integer {
-                return Result.Ok(equation)
-            }
-            let output = std.bytes.new()
-            smt_append(output, concat("(and ", equation))
-            var extent = 0
-            while extent < length(writer.counts) {
-                smt_append(output, " ")
-                smt_append(output, smt_bag_store(writer, integer_bag(previous), stored, position, term, get(writer.counts, extent))?)
-                extent = extent + 1
-            }
-            smt_append(output, ")")
-            Result.Ok(std.bytes.to_text(output))
+            // Histogram laws are emitted after the requested column vocabulary
+            // is complete. An observed integer cell need not be a counted key.
+            Result.Ok(equation)
         }
     }
 }
@@ -603,6 +614,37 @@ fn smt_query(obligations List[Obligation]) Result[Text, Text] {
 }
 
 fn smt_query(obligations List[Obligation], extended Bool) Result[Text, Text] {
+    smt_query(obligations, extended, true)
+}
+
+fn smt_query(obligations List[Obligation], extended Bool, guarded_order Bool) Result[Text, Text] {
+    let encoded = smt_encoding(obligations, extended, guarded_order, false)?
+    Result.Ok(encoded.text)
+}
+
+record SmtEncoding {
+    text Text
+    theory Text
+    abstracted Bool
+}
+
+fn smt_encoding(obligations List[Obligation], extended Bool, guarded_order Bool,
+    abstract_remainder Bool) Result[SmtEncoding, Text] {
+    smt_encoding(obligations, extended, guarded_order, abstract_remainder, false)
+}
+
+fn smt_arithmetic_query(obligations List[Obligation]) Result[Text, Text] {
+    let encoded = smt_encoding(obligations, false, false, false, true)?
+    Result.Ok(encoded.text)
+}
+
+fn smt_encoding(obligations List[Obligation], extended Bool, guarded_order Bool,
+    abstract_remainder Bool, scalar_normalization Bool) Result[SmtEncoding, Text] {
+    smt_encoding(obligations, extended, guarded_order, abstract_remainder, scalar_normalization, false)
+}
+
+fn smt_encoding(obligations List[Obligation], extended Bool, guarded_order Bool,
+    abstract_remainder Bool, scalar_normalization Bool, witness_normalization Bool) Result[SmtEncoding, Text] {
     let budget = new[Int]()
     push(budget, 65536)
     let counts = new[Linear]()
@@ -615,6 +657,9 @@ fn smt_query(obligations List[Obligation], extended Bool) Result[Text, Text] {
     }
     let writer = SmtWriter {
         extended = extended
+        guarded_order = guarded_order
+        abstract_remainder = abstract_remainder
+        abstracted = [false]
         support_keys = []
         support_laws = []
         declarations = std.bytes.new()
@@ -624,6 +669,7 @@ fn smt_query(obligations List[Obligation], extended Bool) Result[Text, Text] {
         columns = new[SmtColumn]()
         prefixes = new[SmtPrefix]()
         histograms = []
+        pointwise_bags = []
         writes = []
         assertions = std.map.new[Text, Bool]()
         quantifiers = []
@@ -661,7 +707,12 @@ fn smt_query(obligations List[Obligation], extended Bool) Result[Text, Text] {
     // out their value laws. This changes search only: retain every obligation,
     // source premise and theory law, with the host's ordinary time budget.
     discard smt_support_instances(writer)?
-    discard smt_histogram_frames(writer)?
+    var known_histograms = -1
+    while known_histograms != length(writer.histograms) {
+        known_histograms = length(writer.histograms)
+        discard smt_histogram_frames(writer)?
+        discard smt_pointwise_bags(writer)?
+    }
     discard smt_prefix_frames(writer)?
     discard smt_joint_writes(writer)?
     let options = if get(writer.relation_search, 0) {
@@ -669,6 +720,23 @@ fn smt_query(obligations List[Obligation], extended Bool) Result[Text, Text] {
     } else {
         ""
     }
-    smt_append(body, ")))\n(check-sat-using (then simplify solve-eqs simplify (or-else split-clause skip) solve-eqs simplify aig simplify default))\n")
-    Result.Ok(concat(options, concat(std.bytes.to_text(writer.declarations), std.bytes.to_text(body))))
+    smt_append(body, ")))\n")
+    let theory = concat(options, concat(std.bytes.to_text(writer.declarations), std.bytes.to_text(body)))
+    let command = if scalar_normalization {
+        // Open existential counterexample witnesses before arithmetic
+        // substitution, so their interval bounds participate in rewriting.
+        // This is the same obligation and the same host time limit.
+        "(check-sat-using (then simplify snf simplify solve-eqs simplify smt))\n"
+    } else if witness_normalization {
+        // Open quantified counterexamples before branch substitution. All
+        // source premises and theory laws remain in the same single query.
+        "(check-sat-using (then simplify snf simplify solve-eqs simplify (or-else split-clause skip) solve-eqs simplify aig simplify default))\n"
+    } else {
+        "(check-sat-using (then simplify solve-eqs simplify (or-else split-clause skip) solve-eqs simplify aig simplify default))\n"
+    }
+    Result.Ok(SmtEncoding {
+            text = concat(theory, command)
+            theory = theory
+            abstracted = get(writer.abstracted, 0)
+        })
 }

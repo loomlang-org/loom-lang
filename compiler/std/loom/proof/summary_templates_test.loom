@@ -1,0 +1,161 @@
+test fn scalar_summary_templates_resample_data_results_at_each_call_boundary() {
+    let types = new[Type]()
+    var index = 0
+    while index < 6 {
+        push(types, publication_shape(TypeKind.Int, []))
+        index = index + 1
+    }
+    let record_shape = publication_shape(TypeKind.Record, [])
+    push(types, Type {
+            fields = [Field {
+                    name = "first"
+                    ty = 1
+                }, Field {
+                    name = "next"
+                    ty = 1
+                }]
+            ..record_shape
+        })
+    let result_slot = expression(ExprKind.Local, 6, "", 2, [])
+    let first = expression(ExprKind.Field, 1, "first", 0, [result_slot])
+    let next = expression(ExprKind.Field, 1, "next", 1, [result_slot])
+    let body = expression(ExprKind.Record, 6, "", -1,
+        [expression(ExprKind.Field, 1, "first", 0, [local(0)]),
+            expression(ExprKind.Field, 1, "next", 1, [operation("+", local(0), literal("1"))])])
+    let base = contract_fixture([1], 6, body,
+        [operation("&&", operation(">=", local(0), literal("0")), operation("<", local(0), literal("9223372036854775807")))],
+        [operation("==", first, local(0)), operation("==", next, operation("+", local(0), literal("1")))])
+    let helper = Function {
+        locals = [get(base.locals, 0), Local {
+                name = "unused"
+                ty = 1
+                mutable = false
+                is_scoped = false
+            }, get(base.locals, 1)]
+        result_local = 2
+        ..base
+    }
+    let program = Program {
+        types = types
+        ..proof_helpers([helper])
+    }
+    let proof = verification(contract_fixture([], 6, body, [], []), program,
+        ProofBackend {
+            enabled = true
+            context = ""
+            solve = failed_solver
+        })
+    let entry = State {
+        heap = -1
+        locals = [Value.Number(constant(integer(1)))]
+        facts = []
+        extents = []
+        observations = []
+    }
+    let bindings = [ExpansionBinding {
+            local = 0
+            value = local(0)
+        }]
+    let one = match applied_summary(proof, helper_call(0, 6, [literal("1")]), helper, entry,
+        [get(entry.locals, 0)], bindings, 0, 64) {
+        Result.Ok(paths) => paths
+        Result.Err(_) => new[Outcome]()
+    }
+    assert length(one) == 1 && length(proof.summary_templates) == 1
+    assert match get(proof.summary_templates, 0).template {
+        Option.Some(_) => true
+        Option.None => false
+    }
+    let remaining = get(proof.budget, 0)
+    let changed = assigned(entry, 0, Value.Number(constant(integer(2))))
+    let two = match applied_summary(proof, helper_call(0, 6, [literal("2")]), helper, changed,
+        [get(changed.locals, 0)], bindings, 0, 64) {
+        Result.Ok(paths) => paths
+        Result.Err(_) => new[Outcome]()
+    }
+    assert length(two) == 1 && get(proof.budget, 0) == remaining
+    assert match get(one, 0).value {
+        Value.Record(fields) => match get(fields, 1) {
+            Value.Number(value) => length(value.terms) == 0 && compare(value.constant, integer(2)) == 0
+            _ => false
+        }
+        _ => false
+    }
+    assert match get(two, 0).value {
+        Value.Record(fields) => match get(fields, 1) {
+            Value.Number(value) => length(value.terms) == 0 && compare(value.constant, integer(3)) == 0
+            _ => false
+        }
+        _ => false
+    }
+    assert length(get(one, 0).state.locals) == 0 && length(get(two, 0).state.locals) == 0
+    assert length(proof.query.obligations) == 0
+}
+
+test fn scalar_summary_logic_keeps_disjunctions_and_falls_back_on_unproved_evaluations() {
+    let state = State {
+        heap = -1
+        locals = [Value.Number(variable(0)), Value.Number(variable(1))]
+        facts = []
+        extents = []
+        observations = []
+    }
+    let choice = Evaluation {
+        guard = proof_bool(local(0), true)
+        value = operation("||", operation("==", local(0), literal("0")), operation("==", local(0), literal("1")))
+        required = true
+        universal = false
+    }
+    let current = match summary_logical_state([choice], state) {
+        Option.Some(value) => value
+        Option.None => state
+    }
+    assert length(current.facts) == 1
+    assert !holds(Predicate.Compare("==", variable(0)), current.facts)
+    assert !holds(Predicate.Compare("==", add(variable(0), constant(integer(-1)))), current.facts)
+    let partial = Evaluation {
+        guard = proof_bool(local(0), true)
+        value = operation("+", local(0), local(1))
+        required = false
+        universal = false
+    }
+    assert match summary_logical_state([choice, partial], state) {
+        Option.None => true
+        _ => false
+    }
+    assert length(state.facts) == 0 && length(state.locals) == 2
+}
+
+test fn scalar_summary_logic_uses_established_transitive_endpoint_bounds() {
+    let state = State {
+        heap = -1
+        locals = [Value.Number(variable(0)), Value.Number(variable(1)), Value.Number(variable(2))]
+        facts = [Predicate.Compare(">=", variable(0))]
+        extents = []
+        observations = []
+    }
+    let first = Evaluation {
+        guard = proof_bool(local(0), true)
+        value = operation(">", local(1), local(0))
+        required = true
+        universal = false
+    }
+    let second = Evaluation {
+        value = operation(">=", local(2), local(1))
+        ..first
+    }
+    let distance = Evaluation {
+        value = operation("-", local(2), local(1))
+        required = false
+        ..first
+    }
+    assert match summary_logical_state([first, second, distance], state) {
+        Option.Some(_) => true
+        Option.None => false
+    }
+    assert match summary_logical_state([second, distance], state) {
+        Option.Some(_) => false
+        Option.None => true
+    }
+    assert length(state.facts) == 1
+}

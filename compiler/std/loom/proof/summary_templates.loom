@@ -1,0 +1,290 @@
+// Reuse expanded contract syntax for scalar inputs and immutable data results.
+// Each invocation still samples a fresh result, applies its own effects, checks
+// every pre/post evaluation, and creates fresh lexical binders. No proof result,
+// value, observation, assumption or invocation outcome is cached here.
+record SummaryTemplate {
+    entry CallTemplate
+    returned CallTemplate
+}
+
+record SummaryTemplateEntry {
+    target Int
+    template Option[SummaryTemplate]
+}
+
+fn summary_template_type(program Program, ty Int, depth Int) Bool {
+    if scalar_type(ty) {
+        return true
+    }
+    if depth >= 16 || ty < 6 || ty >= length(program.types) {
+        return false
+    }
+    let shape = get(program.types, ty)
+    if shape.kind == TypeKind.Refined && length(shape.fields) == 1 {
+        return summary_template_type(program, get(shape.fields, 0).ty, depth + 1)
+    }
+    if shape.kind != TypeKind.Record && shape.kind != TypeKind.Tuple {
+        return false
+    }
+    var index = 0
+    while index < length(shape.fields) {
+        if !summary_template_type(program, get(shape.fields, index).ty, depth + 1) {
+            return false
+        }
+        index = index + 1
+    }
+    true
+}
+
+fn summary_template_expression(value Expr, locals Int, binders Int, budget List[Int]) Bool {
+    if !conjunction_step(budget) || length(value.arms) != 0 {
+        return false
+    }
+    if value.kind == ExprKind.Local {
+        return value.index >= 0 && value.index < locals && length(value.children) == 0
+    }
+    if bound_expression(value) || quantified_expression(value) {
+        if value.index >= 0 || value.index < -binders {
+            return false
+        }
+    } else if value.kind != ExprKind.Integer && value.kind != ExprKind.Float &&
+    value.kind != ExprKind.Bool && value.kind != ExprKind.Text && value.kind != ExprKind.Unary &&
+    value.kind != ExprKind.Binary && value.kind != ExprKind.If && value.kind != ExprKind.Coerce &&
+    value.kind != ExprKind.Intrinsic && value.kind != ExprKind.Record && value.kind != ExprKind.Field {
+        return false
+    }
+    if observation_expression(value) || entry_observation_expression(value) || predicate_application(value) ||
+    function_layout(value) || fresh_cell_initialization(value) || function_cell_snapshot(value) ||
+    type_guard_expression(value) || list_read_expression(value) || list_length_expression(value) || cell_read_expression(value) {
+        return false
+    }
+    var index = 0
+    while index < length(value.children) {
+        if !summary_template_expression(get(value.children, index), locals, binders, budget) {
+            return false
+        }
+        index = index + 1
+    }
+    true
+}
+
+fn summary_template_valid(value CallTemplate, locals Int, budget List[Int]) Bool {
+    if !bounded_contract(value.value) || !summary_template_expression(value.value, locals, value.binders, budget) {
+        return false
+    }
+    var index = 0
+    while index < length(value.checks) {
+        let check = get(value.checks, index)
+        if !summary_template_expression(check.guard, locals, value.binders, budget) ||
+        !summary_template_expression(check.value, locals, value.binders, budget) {
+            return false
+        }
+        index = index + 1
+    }
+    true
+}
+
+fn prepare_summary_template(proof Verification, function Function) Option[SummaryTemplate] {
+    let bindings = new[ExpansionBinding]()
+    var index = 0
+    while index < length(function.params) {
+        push(bindings, ExpansionBinding {
+                local = index
+                value = proof_expr(function.body, ExprKind.Local, get(function.params, index), "", index, [])
+            })
+        index = index + 1
+    }
+    let budget = [256]
+    let entry_binders = [0]
+    let entry = Expansion {
+        program = proof.program
+        list_lengths = false
+        budget = budget
+        active = []
+        checks = []
+        observations = []
+        origins = []
+        binders = entry_binders
+    }
+    match summary_conditions(entry, function, function.preconditions, bindings) {
+        Result.Err(_) => {
+            return Option.None
+        }
+        Result.Ok(_) => {
+        }
+    }
+    let reference = proof_expr(function.body, ExprKind.Local, function.result, "", length(function.params), [])
+    let post_bindings = std.list.clone(bindings)
+    push(post_bindings, ExpansionBinding {
+            local = function.result_local
+            value = reference
+        })
+    let returned_binders = [0]
+    let returned = Expansion {
+        checks = []
+        binders = returned_binders
+        ..entry
+    }
+    match summary_conditions(returned, function, function.postconditions, post_bindings) {
+        Result.Err(_) => {
+            return Option.None
+        }
+        Result.Ok(_) => {
+        }
+    }
+    let path = proof_expr(function.body, ExprKind.Local, function.result, "", function.result_local, [])
+    let value = match summarized_value(returned, function, path, reference, post_bindings, 0) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            return Option.None
+        }
+    }
+    let prepared = SummaryTemplate {
+        entry = CallTemplate {
+            value = proof_bool(function.body, true)
+            checks = entry.checks
+            binders = get(entry_binders, 0)
+        }
+        returned = CallTemplate {
+            value = value
+            checks = returned.checks
+            binders = get(returned_binders, 0)
+        }
+    }
+    let validation = [4096]
+    if !summary_template_valid(prepared.entry, length(function.params) + 1, validation) ||
+    !summary_template_valid(prepared.returned, length(function.params) + 1, validation) {
+        return Option.None
+    }
+    let cost = 256 - get(budget, 0)
+    if get(proof.budget, 0) < cost {
+        return Option.None
+    }
+    set(proof.budget, 0, get(proof.budget, 0) - cost)
+    Option.Some(prepared)
+}
+
+fn summary_template(proof Verification, target Int, function Function) Option[SummaryTemplate] {
+    if proof.shared || function.is_async || function.runtime_name != "" || function.result == 0 ||
+    function.result_local < 0 || !summary_template_type(proof.program, function.result, 0) {
+        return Option.None
+    }
+    var index = 0
+    while index < length(function.params) {
+        if !scalar_type(get(function.params, index)) {
+            return Option.None
+        }
+        index = index + 1
+    }
+    index = 0
+    while index < length(proof.summary_templates) {
+        let previous = get(proof.summary_templates, index)
+        if previous.target == target {
+            return previous.template
+        }
+        index = index + 1
+    }
+    if length(proof.summary_templates) >= 8 {
+        return Option.None
+    }
+    let prepared = prepare_summary_template(proof, function)
+    push(proof.summary_templates, SummaryTemplateEntry {
+            target = target
+            template = prepared
+        })
+    prepared
+}
+
+fn summary_template_at(proof Verification, value CallTemplate, boundary Int) CallTemplate {
+    let offset = get(proof.fresh, 0)
+    set(proof.fresh, 0, offset + value.binders)
+    let checks = new[Evaluation]()
+    var index = 0
+    while index < length(value.checks) {
+        let check = get(value.checks, index)
+        push(checks, Evaluation {
+                guard = call_template_at(check.guard, boundary, offset)
+                value = call_template_at(check.value, boundary, offset)
+                required = check.required
+                universal = check.universal
+            })
+        index = index + 1
+    }
+    CallTemplate {
+        value = call_template_at(value.value, boundary, offset)
+        checks = checks
+        binders = value.binders
+    }
+}
+
+// These checks contain only immutable scalar/data expressions. When their
+// original evaluations are locally proved defined, retain a required Boolean
+// as one normal-return fact. An unsupported or unproved evaluation uses the
+// original executor from the incoming state, with every check still present.
+fn summary_evaluation_defined(value Expr, state State) Bool {
+    // Most scalar checks already have direct bounds or contain total
+    // operations. Build transitive endpoint bounds only when those ordinary
+    // definedness checks need them; never omit an original evaluation check.
+    match defined(value, state) {
+        Result.Ok(_) => true
+        Result.Err(_) => match defined(value, difference_facts(state)) {
+            Result.Ok(_) => true
+            Result.Err(_) => false
+        }
+    }
+}
+
+fn summary_logical_state(checks List[Evaluation], state State) Option[State] {
+    var current = state
+    var index = 0
+    while index < length(checks) {
+        let check = get(checks, index)
+        if check.universal {
+            return Option.None
+        }
+        let value = if check.required {
+            guarded_value(check.guard, check.value)
+        } else {
+            check.guard
+        }
+        if !summary_evaluation_defined(value, current) {
+            return Option.None
+        }
+        if check.required {
+            let predicate = match normalized_predicate(value) {
+                Result.Ok(value) => value
+                Result.Err(_) => {
+                    return Option.None
+                }
+            }
+            match pure(predicate, current) {
+                Result.Ok(Value.Boolean(fact)) => {
+                    current = assume(current, fact)
+                }
+                _ => {
+                    return Option.None
+                }
+            }
+        } else {
+            let guard = match pure(check.guard, current) {
+                Result.Ok(Value.Boolean(fact)) => fact
+                _ => {
+                    return Option.None
+                }
+            }
+            if !summary_evaluation_defined(check.value, assume(current, guard)) {
+                return Option.None
+            }
+        }
+        index = index + 1
+    }
+    Option.Some(current)
+}
+
+fn summary_established_checks(proof Verification, checks List[Evaluation], state State,
+    depth Int) Result[List[Outcome], Text] {
+    match summary_logical_state(checks, state) {
+        Option.Some(current) => Result.Ok(outcomes(current, Value.Empty))
+        Option.None => established_checks(proof, checks, state, depth)
+    }
+}

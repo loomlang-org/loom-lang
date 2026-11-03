@@ -1,5 +1,7 @@
 fn loop_storage_primitive(proof Verification, value Expr) Text {
-    if value.kind == ExprKind.Intrinsic { return sequence_operation(value.text) }
+    if value.kind == ExprKind.Intrinsic {
+        return sequence_operation(value.text)
+    }
     if value.kind == ExprKind.Call && value.index >= 0 && value.index < length(proof.program.functions) {
         return sequence_operation(forwarded_list_operation(proof.program.functions,
                 get(proof.program.functions, value.index), 0))
@@ -13,23 +15,94 @@ record LoopStorageTargets {
     extent_preserved Bool
 }
 
-fn loop_storage_writes(proof Verification, value Expr, entry State, resized List[Int],
-    modified List[Int], callbacks List[Int], depth Int) Result[Bool, Text] {
+record LoopStoragePlan {
+    expression Expr
+    depth Int
+    sites List[Expr]
+}
+
+// Cache checked syntax only. Every application resolves receivers, callback
+// exposure and callee effects against the current symbolic state/program.
+// The first traversal pays its ordinary work cost and validates the same depth.
+fn loop_storage_nodes(proof Verification, value Expr, sites List[Expr], depth Int) Result[Bool, Text] {
     discard loop_step(proof)?
     if depth <= 0 {
         return Result.Err("loop extent analysis budget exhausted")
     }
     if cell_store_expression(proof.program, value) {
-        return loop_storage_writes(proof, cell_store_view(value), entry, resized, modified, callbacks, depth - 1)
+        return loop_storage_nodes(proof, cell_store_view(value), sites, depth - 1)
     }
+    let kind = value.kind
+    if kind == ExprKind.Call || kind == ExprKind.Intrinsic || kind == ExprKind.IndirectCall ||
+    kind == ExprKind.FrameStore || kind == ExprKind.Await || kind == ExprKind.Suspend {
+        push(sites, value)
+    }
+    var index = 0
+    while index < length(value.children) {
+        discard loop_storage_nodes(proof, get(value.children, index), sites, depth - 1)?
+        index = index + 1
+    }
+    index = 0
+    while index < length(value.arms) {
+        let body = get(value.arms, index).body
+        var item = 0
+        while item < length(body) {
+            discard loop_storage_nodes(proof, get(body, item), sites, depth - 1)?
+            item = item + 1
+        }
+        index = index + 1
+    }
+    Result.Ok(true)
+}
+
+fn loop_storage_sites(proof Verification, value Expr, depth Int) Result[List[Expr], Text] {
+    discard loop_step(proof)?
+    var index = 0
+    while index < length(proof.loop_storage_plans) {
+        let plan = get(proof.loop_storage_plans, index)
+        if depth >= plan.depth && exact_expression(value, plan.expression) {
+            return Result.Ok(plan.sites)
+        }
+        index = index + 1
+    }
+    let sites = new[Expr]()
+    discard loop_storage_nodes(proof, value, sites, depth)?
+    if length(proof.loop_storage_plans) < 64 {
+        push(proof.loop_storage_plans, LoopStoragePlan {
+                expression = value
+                depth = depth
+                sites = sites
+            })
+    }
+    Result.Ok(sites)
+}
+
+fn loop_storage_writes(proof Verification, value Expr, entry State, resized List[Int],
+    modified List[Int], callbacks List[Int], depth Int) Result[Bool, Text] {
+    let sites = loop_storage_sites(proof, value, depth)?
+    var index = 0
+    while index < length(sites) {
+        discard loop_storage_write(proof, get(sites, index), entry, resized, modified, callbacks)?
+        index = index + 1
+    }
+    Result.Ok(true)
+}
+
+fn loop_storage_write(proof Verification, value Expr, entry State, resized List[Int],
+    modified List[Int], callbacks List[Int]) Result[Bool, Text] {
+    discard loop_step(proof)?
     if value.kind == ExprKind.FrameStore {
         push(resized, -1)
         push(modified, -1)
     }
     let primitive = loop_storage_primitive(proof, value)
     if value.kind == ExprKind.Call && primitive == "" {
-        if !extent_preserving(proof.program, value) { push(resized, -1) }
-        if !elements_preserving(proof.program, value) { push(modified, -1) }
+        if !extent_preserving(proof.program, value) {
+            push(resized, -1)
+        }
+        if !elements_preserving(proof.program, value) {
+            push(modified, -1)
+        }
     }
     if value.kind == ExprKind.IndirectCall {
         var index = 0
@@ -54,25 +127,10 @@ fn loop_storage_writes(proof Verification, value Expr, entry State, resized List
             }
             Result.Err(_) => -1
         }
-        if resize { push(resized, identity) }
-        push(modified, identity)
-    }
-    var index = 0
-    while index < length(value.children) {
-        discard loop_storage_writes(proof, get(value.children, index), entry,
-            resized, modified, callbacks, depth - 1)?
-        index = index + 1
-    }
-    index = 0
-    while index < length(value.arms) {
-        let body = get(value.arms, index).body
-        var item = 0
-        while item < length(body) {
-            discard loop_storage_writes(proof, get(body, item), entry,
-                resized, modified, callbacks, depth - 1)?
-            item = item + 1
+        if resize {
+            push(resized, identity)
         }
-        index = index + 1
+        push(modified, identity)
     }
     Result.Ok(true)
 }
@@ -93,7 +151,11 @@ fn loop_storage_targets(proof Verification, value Expr, entry State, writes List
         if get(writes, index) && loop_list_type(proof, get(proof.function.locals, index).ty, 0) {
             // A rebound receiver can target a different alias on later iterations.
             return Result.Ok(LoopStorageTargets {
-                    resized = if preserved { resized } else { [-1] }
+                    resized = if preserved {
+                        resized
+                    } else {
+                        [-1]
+                    }
                     modified = [-1]
                     extent_preserved = preserved
                 })
@@ -103,7 +165,11 @@ fn loop_storage_targets(proof Verification, value Expr, entry State, writes List
     let callbacks = loop_callback_targets(proof, value, entry, writes)
     discard loop_storage_writes(proof, value, entry, resized, modified, callbacks, 64)?
     Result.Ok(LoopStorageTargets {
-            resized = if preserved { [] } else { resized }
+            resized = if preserved {
+                []
+            } else {
+                resized
+            }
             modified = modified
             extent_preserved = preserved
         })

@@ -1,0 +1,37 @@
+test fn copied_loop_headers_keep_current_root_relations_without_fixed_entry_guesses() {
+    let source = literal("0")
+    let proof = Verification {
+        loop_goals = LoopGoals {
+            values = [proof_bool(source, true)]
+            remaining = [8]
+        }
+        ..verification(contract_fixture([], 0, source, [], []), empty_proof_program())
+    }
+    let entry = State {
+        heap = -1
+        locals = [Value.List(10), Value.List(20), Value.Empty]
+        facts = []
+        extents = []
+        observations = []
+    }
+    let body = expression(ExprKind.Block, 0, "", -1, [
+            expression(ExprKind.Let, 0, "", 2, [local(0)]),
+            expression(ExprKind.Assign, 0, "", 0, [local(1)]),
+            expression(ExprKind.Assign, 0, "", 1, [local(2)]),
+        ])
+    let candidates = [LoopCandidate.Header(0, [], 10), LoopCandidate.Header(1, [], 20),
+        LoopCandidate.Unreachable(0, [], 20), LoopCandidate.Unreachable(0, [], 30),
+        LoopCandidate.RootFrame(0, [], 1, [])]
+    let retained = loop_binding_candidates(proof, body, candidates, entry)
+    assert length(retained) == 2
+    assert match get(retained, 0) {
+        LoopCandidate.Unreachable(0, _, 30) => true
+        _ => false
+    }
+    assert match get(retained, 1) {
+        LoopCandidate.RootFrame(0, _, 1, _) => true
+        _ => false
+    }
+    assert length(entry.facts) == 0 && length(proof.function.postconditions) == 0
+    assert length(loop_binding_candidates(verification(proof.function, proof.program), body, candidates, entry)) == 5
+}

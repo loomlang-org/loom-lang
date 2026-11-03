@@ -1,0 +1,105 @@
+fn remainder_identity_obligation() Obligation {
+    let input = IntegerTerm.Linear(variable(0))
+    let divisor = IntegerTerm.Linear(constant(integer(3)))
+    let quotient = IntegerTerm.Apply("/", [input, divisor])
+    Obligation {
+        facts = []
+        conclusion = Predicate.IntegerCompare("==", IntegerTerm.Apply("%", [input, divisor]),
+            IntegerTerm.Apply("-", [input, IntegerTerm.Apply("*", [quotient, divisor])]))
+    }
+}
+
+test fn remainder_abstraction_keeps_exact_fallback_within_two_main_queries() {
+    let calls = [0]
+    let backend = ProofBackend {
+        enabled = true
+        context = ""
+        solve = fn(context Text, query Text) Result[Bool, Text] {
+            set(calls, 0, get(calls, 0) + 1)
+            if std.text.contains(query, "loom_integer_remainder") {
+                return Result.Err("SMT solver returned unknown or timed out; required proof was not established")
+            }
+            assert std.text.contains(query, "(then simplify snf simplify solve-eqs")
+            Result.Ok(true)
+        }
+    }
+    let query = proof_query(backend)
+    push(query.obligations, remainder_identity_obligation())
+    assert match discharge(query) {
+        Result.Ok(true) => true
+        _ => false
+    }
+    assert get(calls, 0) == 2
+    assert length(get(query.obligations, 0).facts) == 0
+}
+
+test fn unproved_remainder_abstractions_and_exact_queries_never_establish_a_required_proof() {
+    let calls = [0]
+    let query = proof_query(ProofBackend {
+            enabled = true
+            context = ""
+            solve = fn(context Text, query Text) Result[Bool, Text] {
+                set(calls, 0, get(calls, 0) + 1)
+                Result.Ok(false)
+            }
+        })
+    push(query.obligations, remainder_identity_obligation())
+    assert match discharge(query) {
+        Result.Err(_) => true
+        _ => false
+    }
+    assert get(calls, 0) == 2
+}
+
+test fn remainder_abstraction_preserves_cancellation_and_exact_encoder_defaults() {
+    let calls = [0]
+    let query = proof_query(ProofBackend {
+            enabled = true
+            context = ""
+            solve = fn(context Text, query Text) Result[Bool, Text] {
+                set(calls, 0, get(calls, 0) + 1)
+                Result.Err("cancelled by caller")
+            }
+        })
+    push(query.obligations, remainder_identity_obligation())
+    assert match discharge(query) {
+        Result.Err(message) => message == "cancelled by caller"
+        _ => false
+    }
+    assert get(calls, 0) == 1
+    let original = match smt_query(query.obligations, false) {
+        Result.Ok(value) => value
+        Result.Err(_) => ""
+    }
+    let weaker = match smt_encoding(query.obligations, false, true, true) {
+        Result.Ok(value) => value
+        Result.Err(_) => SmtEncoding {
+            text = ""
+            theory = ""
+            abstracted = false
+        }
+    }
+    assert std.text.contains(original, "loom_magnitude") && !std.text.contains(original, "loom_integer_remainder")
+    assert weaker.abstracted && std.text.contains(weaker.text, "(declare-fun loom_integer_remainder (Int Int) Int)")
+}
+
+test fn witness_normalization_does_not_add_a_query_when_the_theory_is_unchanged() {
+    let calls = [0]
+    let query = proof_query(ProofBackend {
+            enabled = true
+            context = ""
+            solve = fn(context Text, query Text) Result[Bool, Text] {
+                set(calls, 0, get(calls, 0) + 1)
+                Result.Ok(false)
+            }
+        })
+    push(query.obligations, Obligation {
+            facts = [],
+            conclusion = Predicate.Variable(7)
+        })
+    assert match discharge(query) {
+        Result.Err(_) => true
+        _ => false
+    }
+    assert get(calls, 0) == 1
+}

@@ -46,8 +46,8 @@ test fn helper_proofs_do_not_assume_goal_requires_or_skip_eager_arguments() {
     }
 }
 
-test fn unsupported_helper_control_flow_and_expansion_budgets_keep_checked_results() {
-    let definitions = "import std.result.Result\nimport std.result.ConstraintError\nfn looping(value Int) Bool { var remaining = value\nwhile remaining > 0 { remaining = remaining - 1 }\ntrue }\nfn recursive(value Int) Bool { recursive(value) }\nfn square(value Int) Bool { value * value >= 0 }\nfn branch(value Int) Bool { if value >= 0 { true } else { false } }\ntype Whole = Int where true\ntype Loop = Int where looping(self)\ntype Recursive = Int where recursive(self)\ntype Square = Int where square(self)\ntype Branch = Int where branch(self)\n"
+test fn unproved_or_partial_helpers_and_expansion_budgets_keep_checked_results() {
+    let definitions = "import std.result.Result\nimport std.result.ConstraintError\nfn looping(value Int) Bool { var remaining = value\nwhile remaining > 0 { remaining = remaining - 2 }\nremaining == 0 }\nfn recursive(value Int) Bool { recursive(value) }\nfn square(value Int) Bool { value * value >= 0 }\nfn branch(value Int) Bool { if value >= 0 { true } else { false } }\ntype Whole = Int where true\ntype Loop = Int where looping(self)\ntype Recursive = Int where recursive(self)\ntype Square = Int where square(self)\ntype Branch = Int where branch(self)\n"
     let program = flow_program(concat(definitions, "pub fn loops(value Whole) Result[Loop, ConstraintError] { Loop(value) }\npub fn recursion(value Whole) Result[Recursive, ConstraintError] { Recursive(value) }\npub fn nonlinear(value Whole) Result[Square, ConstraintError] { Square(value) }\npub fn conditional(value Whole) Result[Branch, ConstraintError] { Branch(value) }"))
     var index = 0
     while index < 4 {
@@ -64,4 +64,19 @@ test fn unsupported_helper_control_flow_and_expansion_budgets_keep_checked_resul
     let bounded = flow_program(concat(prefix, concat(duplicated, " >= 0\npub fn checked(value Whole) Result[Huge, ConstraintError] { Huge(value) }")))
     assert get(get(bounded.functions, 0).body.children, 0).kind == ExprKind.Block
     rejects("fn wrong(value Int) Bool ensures result { false }\ntype Invalid = Int where wrong(self)")
+}
+
+test fn bounded_true_scan_helpers_can_establish_direct_refinement_construction() {
+    // The unit decrement is defined for every entered iteration and reaches
+    // zero. Simplifying the true quantified body does not omit scan safety.
+    discard flow_program("""
+        fn looping(value Int) Bool {
+            var remaining = value
+            while remaining > 0 { remaining = remaining - 1 }
+            true
+        }
+        type Whole = Int where true
+        type Loop = Int where looping(self)
+        pub fn proved(value Whole) Loop { Loop(value) }
+        """)
 }

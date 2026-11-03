@@ -11,6 +11,7 @@ import std.option.Option
 enum LoopCandidate {
     Entry(Int, List[Int], Text, Value)
     Guard(Expr, Bool)
+    Goal(Expr, List[Int])
     Header(Int, List[Int], Int)
     Unpublished(Int, List[Int])
     Born(Int, List[Int], Int)
@@ -225,6 +226,7 @@ fn loop_predicate(candidate LoopCandidate, state State) Result[Predicate, Text] 
             boolean(binary(relation, value, initial)?)
         }
         LoopCandidate.Guard(expr, _) => Result.Ok(bag_fact(boolean(pure(expr, state)?)?, state.facts))
+        LoopCandidate.Goal(expr, _) => Result.Ok(bag_fact(boolean(pure(expr, state)?)?, state.facts))
         LoopCandidate.Header(local, path, identity) => match loop_local_value(get(state.locals, local), path)? {
             Value.List(current) => Result.Ok(Predicate.Constant(current == identity))
             _ => Result.Err("loop header invariant needs a tracked List")
@@ -266,7 +268,16 @@ fn loop_predicate(candidate LoopCandidate, state State) Result[Predicate, Text] 
 }
 
 fn loop_holds(fact Predicate, state State) Bool {
-    holds(fact, state.facts) || difference_holds(fact, state.facts)
+    if holds(fact, state.facts) || difference_holds(fact, state.facts) {
+        return true
+    }
+    if loop_interval_root(fact, state.facts) {
+        return true
+    }
+    match fact {
+        Predicate.Constant(value) => !value && inequality_holds("<", constant(integer(0)), state.facts)
+        _ => false
+    }
 }
 
 fn add_loop_candidate(candidates List[LoopCandidate], candidate LoopCandidate, entry State) Result[Bool, Text] {
@@ -549,19 +560,45 @@ fn entered_loop(proof Verification, expr Expr, entry State, writes List[Bool], d
     }
     let observed = loop_histogram_entry(suggestions, expr, loop_query_views(proof, clauses, entry))
     let proposed = loop_proposal_entry(proof, body, observed)
+    let translations = loop_translations(suggestions, body, proposed)
     let targets = loop_storage_targets(proof, expr, observed, writes)?
     let resized = targets.resized
     var candidates = match loop_candidates(suggestions, loop_candidate_guard(proof, guard), writes, resized, proposed) {
         Result.Ok(values) => values
         Result.Err(_) => new[LoopCandidate]()
     }
+    candidates = loop_goal_counter_candidates(proof, guard, body, candidates)
     // Reserve storage identities and explicit source relations before optional
     // derived candidates. Every proposal still needs entry/backedge proof.
     discard loop_header_candidates(suggestions, candidates, writes, proposed)
+    candidates = loop_binding_candidates(proof, body, candidates, proposed)
     var headers = loop_header_count(candidates)
     loop_assertion_candidates(suggestions, guard, body, candidates, proposed)
+    loop_copy_candidates(suggestions, body, candidates, writes, proposed)
     loop_histogram_candidates(suggestions, expr, candidates, writes, proposed)
     loop_quantified_candidates(suggestions, clauses, candidates, writes, expr, proposed)
+    if !proof.defer_loop_goals && length(proof.preservation) == 0 && length(proof.loop_goals.values) != 0 &&
+    get(proof.loop_goals.remaining, 0) > 0 {
+        let goals = loop_postconditions(Verification {
+                function = Function {
+                    postconditions = proof.loop_goals.values
+                    ..proof.function
+                }
+                ..proof
+            })
+        // Caller templates are optional guesses. Discover only candidates
+        // already established by local entry facts; mandatory backedge/exit
+        // validation below still uses the complete ordinary proof backend.
+        let local = Verification {
+            goal_candidates = true
+            query = proof_query(proof.query.backend)
+            ..suggestions
+        }
+        let segmented = loop_segmented_candidates(local, goals, candidates, writes, translations, expr, proposed)
+        if !segmented {
+            loop_quantified_candidates(local, goals, candidates, writes, expr, proposed)
+        }
+    }
     var storage = forget_modified_extents(proof, observed, resized)
     if storage.heap >= 0 && !graph_readonly_expression(proof.program, expr) {
         storage = changed_heap(proof, storage)
@@ -581,8 +618,11 @@ fn entered_loop(proof Verification, expr Expr, entry State, writes List[Bool], d
     discard loop_affine_candidates(suggestions, guard, body, candidates, writes, proposed)
     discard loop_observation_candidates(suggestions, expr, candidates, writes, resized, proposed)
     discard loop_affine_bounds(suggestions, candidates, proposed)
+    candidates = loop_translation_candidates(candidates, translations, proposed)
     var head = loop_head(proof, writes, storage, candidates, headers)?
     head = loop_query_views(proof, clauses, head)
+    var nested_goals_ready = proof.defer_loop_goals || length(proof.loop_goals.values) == 0 ||
+    !loop_goal_nested(body, [256])
     while true {
         discard loop_step(proof)?
         let viewed = loop_candidate_views(proof, candidates, head)
@@ -620,7 +660,12 @@ fn entered_loop(proof Verification, expr Expr, entry State, writes List[Bool], d
         // A nested loop gets a separate context; immutable verification values
         // restore the enclosing target on return. Each inference pass starts
         // fresh, so exits proved using a removed candidate cannot escape.
-        let iteration = with_loop_returns(with_loop_control(proof, Option.Some(control)))
+        let contextual = loop_iteration_goals(proof, candidates)
+        let staged = Verification {
+            defer_loop_goals = proof.defer_loop_goals || !nested_goals_ready
+            ..contextual
+        }
+        let iteration = with_loop_returns(with_loop_control(staged, Option.Some(control)))
         let backedges = control.backedges
         let exits = control.exits
         var index = 0
@@ -639,6 +684,13 @@ fn entered_loop(proof Verification, expr Expr, entry State, writes List[Bool], d
         index = 0
         while index < length(candidates) {
             let candidate = get(candidates, index)
+            if loop_goal_candidate(candidate) {
+                // A failed cheap hypothesis already forces another pass. Do
+                // not spend the optional goal-query allowance in that state.
+                push(survivors, candidate)
+                index = index + 1
+                continue
+            }
             match candidate {
                 LoopCandidate.Born(local, path, floor) => {
                     let bound = match loop_birth_floor(local, path, floor, backedges) {
@@ -669,6 +721,39 @@ fn entered_loop(proof Verification, expr Expr, entry State, writes List[Bool], d
         }
         let published = loop_publications(observed, head, backedges)
         let graph_losses = loop_graph_losses(proof, observed, head, backedges)?
+        if !birth_changed && length(survivors) == length(candidates) && length(published) == 0 && length(graph_losses) == 0 {
+            if !nested_goals_ready {
+                // First stabilize cheap enclosing hypotheses without assuming
+                // or returning any nested caller-goal candidates. Replay the
+                // body with those goals enabled only after that fixed point;
+                // early exits/returns from this preliminary pass cannot escape.
+                nested_goals_ready = true
+                continue
+            }
+            let validated = new[LoopCandidate]()
+            let joint = new[Bool]()
+            var edge = 0
+            while edge < length(backedges) {
+                push(joint, loop_goal_batch(proof, survivors, get(backedges, edge).state))
+                edge = edge + 1
+            }
+            index = 0
+            while index < length(survivors) {
+                let candidate = get(survivors, index)
+                var preserved = true
+                var edge = 0
+                while loop_goal_candidate(candidate) && edge < length(backedges) && preserved {
+                    preserved = get(joint, edge) ||
+                    quantified_candidate_preserved(proof, candidate, get(backedges, edge).state)
+                    edge = edge + 1
+                }
+                if preserved {
+                    push(validated, candidate)
+                }
+                index = index + 1
+            }
+            survivors = validated
+        }
         if !birth_changed && length(survivors) == length(candidates) && length(published) == 0 && length(graph_losses) == 0 {
             if proof.capture_returns {
                 discard append(proof.returns, iteration.returns)?

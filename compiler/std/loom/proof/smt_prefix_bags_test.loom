@@ -19,3 +19,26 @@ test fn histogram_frame_scope_unions_binders_without_arithmetic_cancellation() {
             }])
     assert contains(query, "(assert (forall ((n-7 Int)(n-8 Int)) (=> (and (loom_prefix_0 n-7) (<= 0 (+ 0 (* 1 n-8))) (<= (+ 0 (* 1 n-8)) (+ 0 (* 1 n-7))))")
 }
+
+fn prefix_store_query(index Linear, size Linear) Text {
+    encoding([Obligation {
+                facts = [Predicate.ArrayWrite(10, 11, [], index,
+                        ArrayScalar.Integer(IntegerTerm.Linear(variable(2))))]
+                conclusion = Predicate.BagEqual(bag_column(10), size, bag_column(11), size)
+            }])
+}
+
+test fn histogram_frontier_store_requires_the_exact_preceding_prefix_and_keeps_its_guard() {
+    let cursor = variable(1)
+    let end = add(cursor, constant(integer(1)))
+    let appended = "(store (loom_bag a10 (+ 0 (* 1 n1))) (+ 0 (* 1 n2)) (+ (select (loom_bag a10 (+ 0 (* 1 n1))) (+ 0 (* 1 n2))) 1))"
+    let query = prefix_store_query(cursor, end)
+    assert contains(query, appended)
+    assert contains(query, "(ite (and (<= 0 (+ 0 (* 1 n1))) (< (+ 0 (* 1 n1)) (+ 1 (* 1 n1))))")
+    assert !contains(prefix_store_query(cursor, cursor), appended)
+    assert !contains(prefix_store_query(variable(3), end), appended)
+    let empty = prefix_store_query(constant(integer(-1)), constant(integer(0)))
+    assert contains(empty, "(ite (and (<= 0 (+ (- 1))) (< (+ (- 1)) (+ 0)))")
+    let bound = prefix_store_query(variable(-7), add(variable(-7), constant(integer(1))))
+    assert contains(bound, "(forall ((n-7 Int)) (= (loom_bag (store a10")
+}

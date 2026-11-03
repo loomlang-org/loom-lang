@@ -75,6 +75,15 @@ fn numeric(operator Text, a Linear, b Linear) Result[Value, Text] {
         return integer_operation(operator, IntegerTerm.Linear(a), IntegerTerm.Linear(b))
     }
     if operator == "/" || operator == "%" {
+        if length(b.terms) == 0 && compare(b.constant, integer(1)) == 0 {
+            // Positive one is defined even at MIN. Keep the separate source
+            // evaluation obligations; in particular MIN / -1 is not reduced.
+            return Result.Ok(Value.Number(if operator == "/" {
+                        a
+                    } else {
+                        constant(integer(0))
+                    }))
+        }
         if length(a.terms) != 0 || length(b.terms) != 0 {
             return integer_operation(operator, IntegerTerm.Linear(a), IntegerTerm.Linear(b))
         }

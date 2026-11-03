@@ -1,6 +1,18 @@
 // A loop may retain private storage across unknown callbacks only when all
 // possible publication is accounted for. Mutable stores, unstable callees and
 // unmodelled effects fall back to the ordinary whole-heap write set.
+fn loop_closed_readonly_call(proof Verification, value Expr) Bool {
+    if value.kind != ExprKind.Call || value.index < 0 || value.index >= length(proof.program.functions) {
+        return false
+    }
+    let function = get(proof.program.functions, value.index)
+    function.runtime_name == "" && !function.is_async &&
+    length(value.children) == length(function.params) &&
+    closed_storage_inputs(proof.program, function.params) &&
+    immutable_storage_type(proof.program, function.result, 0) &&
+    graph_readonly_function(proof.program, value.index)
+}
+
 fn loop_callback_graph(proof Verification, value Expr, entry State, writes List[Bool],
     graph Publication, budget List[Int], depth Int) Bool {
     if depth >= 32 || !conjunction_step(budget) {
@@ -46,7 +58,7 @@ fn loop_callback_graph(proof Verification, value Expr, entry State, writes List[
         } else if primitive != "list_get" && primitive != "list_len" {
             if value.kind == ExprKind.Call || value.kind == ExprKind.Intrinsic {
                 let operation = proof_operation(value)
-                if operation.arity < 0 || operation.heap {
+                if (operation.arity < 0 || operation.heap) && !loop_closed_readonly_call(proof, value) {
                     return false
                 }
             } else if !storage_expression(value) || value.kind == ExprKind.Defer ||

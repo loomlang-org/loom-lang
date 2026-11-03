@@ -1,0 +1,38 @@
+record SmtPointwiseBag {
+    reference Text
+    bag Predicate
+    size Linear
+    quantifiers List[SmtBinder]
+}
+
+// Pointwise copying supplies a histogram law only when that column is needed.
+// Defer until all source facts are encoded, so later count requests still close
+// across copy edges without introducing unrelated integer-bag theories.
+fn smt_pointwise_bags(writer SmtWriter) Result[Bool, Text] {
+    var selected = 0
+    while selected < length(writer.histograms) {
+        let column = get(writer.histograms, selected)
+        var index = 0
+        while index < length(writer.pointwise_bags) {
+            discard smt_step(writer, 0)?
+            let copy = get(writer.pointwise_bags, index)
+            match copy.bag {
+                Predicate.BagEqual(first, _, second, _) => {
+                    if same_bag_column(column, first) || same_bag_column(column, second) {
+                        let relation = smt_predicate(SmtWriter {
+                                quantifiers = copy.quantifiers
+                                ..writer
+                            }, copy.bag, 0)?
+                        let law = smt_boolean_pair("=>", copy.reference, relation)
+                        smt_assert(writer, bag_bound_scope(law, copy.size))
+                    }
+                }
+                _ => {
+                }
+            }
+            index = index + 1
+        }
+        selected = selected + 1
+    }
+    Result.Ok(true)
+}

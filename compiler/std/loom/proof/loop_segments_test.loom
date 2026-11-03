@@ -1,0 +1,40 @@
+test fn segment_alignment_candidates_check_moving_and_clipped_boundaries() {
+    let bound = expression(ExprKind.Intrinsic, 1, "proof_bound", -1, [])
+    let disabled = operation("==", operation("%", bound, local(1)), literal("0"))
+    let read = expression(ExprKind.Intrinsic, 1, "list_get", -1, [local(2), bound])
+    let relation = operation("<=", read, read)
+    let all = quantified_value(bound, -1, literal("1"), literal("11"), operation("||", disabled, relation))
+    let original = verification(contract_fixture([1, 1, 6], 0, bound, [], []), empty_proof_program())
+    let proof = Verification {
+        goal_candidates = true
+        ..original
+    }
+    let entry = State {
+        heap = -1
+        locals = [Value.Number(constant(integer(0))), Value.Number(constant(integer(2))), Value.Empty]
+        facts = []
+        extents = []
+        observations = []
+    }
+    let candidates = new[LoopCandidate]()
+    loop_segment_alignment(proof, all, candidates, [true, true, false], [], entry, proof_bool(bound, true), [256])
+    assert length(candidates) == 1
+    let candidate = get(candidates, 0)
+    assert quantified_candidate_preserved(proof, candidate, entry)
+    assert quantified_candidate_preserved(proof, candidate, assigned(entry, 0, Value.Number(constant(integer(4)))))
+    assert quantified_candidate_preserved(proof, candidate, assigned(entry, 0, Value.Number(constant(integer(11)))))
+    assert !quantified_candidate_preserved(proof, candidate, assigned(entry, 0, Value.Number(constant(integer(3)))))
+    assert length(entry.facts) == 0 && length(proof.function.postconditions) == 0
+    assert get(proof.loop_goals.remaining, 0) == 8
+    let first_edge = quantified_value(bound, -1, literal("1"), literal("11"),
+        operation("||", operation("<=", bound, literal("0")), relation))
+    let ordinary = new[LoopCandidate]()
+    loop_segment_alignment(proof, first_edge, ordinary, [true, true, false], [], entry, proof_bool(bound, true), [256])
+    assert length(ordinary) == 0
+    let unit = [LoopTranslation {
+            values = [integer(1), integer(0), integer(0)]
+            known = [true, true, false]
+        }]
+    loop_segment_alignment(proof, all, ordinary, [true, true, false], unit, entry, proof_bool(bound, true), [256])
+    assert length(ordinary) == 0
+}
