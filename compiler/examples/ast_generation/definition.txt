@@ -1,0 +1,5 @@
+fn sum(value Point) Int
+ensures result == value.x + value.y
+{
+    value.x + value.y
+}

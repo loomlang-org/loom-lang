@@ -238,25 +238,154 @@ fn main() {{
 #[test]
 fn source_ast_tool_generates_a_normally_checked_package() {
     let temporary = tempfile::tempdir().unwrap();
+    let source = temporary.path().join("compiler-client");
+    for name in [
+        "main.loom",
+        "loom.toml",
+        "definition.txt",
+        "emitter/emitter.loom",
+    ] {
+        let target = source.join(name);
+        fs::create_dir_all(target.parent().unwrap()).unwrap();
+        fs::copy(
+            common::root()
+                .join("compiler/examples/ast_generation")
+                .join(name),
+            target,
+        )
+        .unwrap();
+    }
     let generator = common::executable(temporary.path(), "generator");
-    success(
-        &common::command(&["build", "compiler/examples/ast_generation"])
+    let cache = temporary.path().join("generator-cache");
+    let receipt = temporary.path().join("generator.receipt");
+    let build = |level: &str| {
+        let output = common::command(&["build", source.to_str().unwrap()])
+            .arg("--frontend-cache")
+            .arg(&cache)
+            .arg("--receipt")
+            .arg(&receipt)
             .arg("--output")
             .arg(&generator)
+            .env("LOOM_OPT_LEVEL", level)
             .output()
-            .unwrap(),
+            .unwrap();
+        success(&output);
+        assert!(
+            fs::read_to_string(&receipt)
+                .unwrap()
+                .contains("\ninput-count 1\n")
+        );
+    };
+    let generate = || {
+        let output = Command::new(&generator)
+            .env("LOOM_GC_STRESS", "1")
+            .output()
+            .unwrap();
+        success(&output);
+        output.stdout
+    };
+    let mut initial = None;
+    for level in ["0", "2"] {
+        build(level);
+        let generated = generate();
+        if let Some(expected) = &initial {
+            assert_eq!(&generated, expected);
+        } else {
+            initial = Some(generated);
+        }
+    }
+    let initial = initial.unwrap();
+    let input = source.join("definition.txt");
+    let retained = fs::read(&input).unwrap();
+    fs::remove_file(&input).unwrap();
+    assert_eq!(
+        generate(),
+        initial,
+        "generator reopened a captured build input"
     );
-    let generated = Command::new(generator).output().unwrap();
-    success(&generated);
+    fs::write(input, retained).unwrap();
     let package = temporary.path().join("generated");
     fs::create_dir(&package).unwrap();
-    fs::write(package.join("main.loom"), generated.stdout).unwrap();
+    let generated_file = package.join("main.loom");
+    fs::write(&generated_file, &initial).unwrap();
+    let generated_cache = temporary.path().join("generated-cache");
+    let checked = |operation: &str| {
+        common::command(&[operation, package.to_str().unwrap()])
+            .arg("--frontend-cache")
+            .arg(&generated_cache)
+            .output()
+            .unwrap()
+    };
     for operation in ["check", "test", "run"] {
-        success(
-            &common::command(&[operation])
-                .arg(&package)
-                .output()
-                .unwrap(),
-        );
+        let output = checked(operation);
+        success(&output);
+        if operation == "test" {
+            assert_eq!(output.stdout, b"1 tests passed\n");
+        }
     }
+
+    let declaration = source.join("definition.txt");
+    let original = fs::read_to_string(&declaration).unwrap();
+    let invalid = original.replace(
+        "result == value.x + value.y",
+        "result == value.x + value.y + 1",
+    );
+    assert_ne!(invalid, original);
+    fs::write(&declaration, invalid).unwrap();
+    build("0");
+    let changed = generate();
+    assert_ne!(
+        changed, initial,
+        "tracked input edit reused the old generator"
+    );
+    fs::write(&generated_file, changed).unwrap();
+    let rejected = checked("check");
+    assert!(
+        !rejected.status.success(),
+        "invalid generated postcondition was proved"
+    );
+    assert!(String::from_utf8_lossy(&rejected.stderr).contains("postcondition"));
+    fs::write(&declaration, original).unwrap();
+    build("0");
+    assert_eq!(generate(), initial);
+
+    let emitter = source.join("emitter/emitter.loom");
+    let original = fs::read_to_string(&emitter).unwrap();
+    let changed = original.replace("    y Int\n", "    y Int\n    z Int\n");
+    assert_ne!(changed, original);
+    fs::write(&emitter, changed).unwrap();
+    build("0");
+    let changed = generate();
+    assert!(String::from_utf8_lossy(&changed).contains("z Int"));
+    fs::write(&generated_file, changed).unwrap();
+    let rejected = checked("check");
+    assert!(
+        !rejected.status.success(),
+        "missing reflected field was accepted"
+    );
+    assert!(String::from_utf8_lossy(&rejected.stderr).contains("field"));
+    fs::write(&emitter, original).unwrap();
+    build("0");
+    assert_eq!(generate(), initial);
+
+    let main = source.join("main.loom");
+    let original = fs::read_to_string(&main).unwrap();
+    fs::write(
+        &main,
+        format!("import ast_generation.emitter.field_names\n{original}"),
+    )
+    .unwrap();
+    let rejected = common::loom(&[
+        "check",
+        source.to_str().unwrap(),
+        "--frontend-cache",
+        cache.to_str().unwrap(),
+    ]);
+    assert!(!rejected.status.success());
+    assert!(String::from_utf8_lossy(&rejected.stderr).contains("accessible declaration"));
+    fs::write(&main, original).unwrap();
+    build("0");
+    assert_eq!(generate(), initial);
+    fs::write(&generated_file, initial).unwrap();
+    success(&checked("test"));
 }
