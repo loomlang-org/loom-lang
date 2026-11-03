@@ -1,4 +1,5 @@
 import std.reflect.functions.comptime_callable
+import std.reflect.functions.read_only_callable
 import std.list.push
 import std.list.length
 import std.io.write_text
@@ -43,6 +44,60 @@ fn no_result() {
     push(values, 2)
 }
 
+fn observe(values List[Int]) Int {
+    values[0]
+}
+
+fn overwrite(values List[Int]) List[Int] {
+    values[0] = 0
+    values
+}
+
+fn observed_capture(start Int) fn() List[Int] {
+    let values = [start]
+    fn() List[Int] {
+        values
+    }
+}
+
+fn inspect_observer(comptime action fn() List[Int]) {
+    let shared = action()
+    assert read_only_callable(action)
+    shared[0] = 9
+    assert read_only_callable(action)
+    assert action()[0] == 9
+}
+
+fn read_only_capability_stable() Bool
+ensures result {
+    read_only_callable(observe)
+}
+
+record LegacyRow {
+    id Int
+    amount Int
+}
+
+type Positive = Int where self > 0
+
+record ConvertedRow {
+    id Int
+    amount Positive
+}
+
+fn convert(row LegacyRow) ConvertedRow
+ensures result.id == row.id && result.amount > 0 {
+    let amount Positive = if row.amount <= 0 {
+        Positive(1)
+    } else {
+        Positive(row.amount)
+    }
+    ConvertedRow {
+        id = row.id
+        amount = amount
+    }
+}
+
 fn numeric_callback_works() Bool
 ensures result {
     comptime_callable(increment)
@@ -63,6 +118,7 @@ fn forward[T](value T) T {
 fn inspected_counter(comptime action fn() Int) (Int, Bool, Int) {
     let before = action()
     let admitted = comptime_callable(forward(action))
+    assert !read_only_callable(forward(action))
     (before, admitted, action())
 }
 
@@ -74,6 +130,19 @@ requires comptime_callable(action) {
 
 pub fn selected[T](value T, comptime action fn(T) T) T {
     comptime if comptime_callable(action) {
+        action(value)
+    } else {
+        value
+    }
+}
+
+pub fn read_only_apply[Ts..., R](comptime action fn(Ts...) R, values Ts...) R
+requires read_only_callable(action) {
+    action(values...)
+}
+
+pub fn selected_read_only[T](value T, comptime action fn(T) T) T {
+    comptime if read_only_callable(action) {
         action(value)
     } else {
         value
@@ -104,6 +173,28 @@ fn main() {
     assert comptime {
         comptime_callable(increment) && !comptime_callable(noisy)
     }
+    assert read_only_capability_stable()
+    assert read_only_callable(increment)
+    assert read_only_callable(guarded)
+    assert read_only_callable(forever)
+    assert !read_only_callable(extend)
+    assert !read_only_callable(overwrite)
+    assert !read_only_callable(noisy)
+    assert !read_only_callable(dispatch)
+    assert !read_only_callable(queued)
+    assert !read_only_callable(3)
+    let shared = [7]
+    shared[0] = 9
+    inspect_observer(observed_capture(7))
+    let retained = selected_read_only(shared, overwrite)
+    assert retained[0] == 9 && shared[0] == 9
+    assert read_only_apply(observe, shared) == 9
+    let legacy = LegacyRow {
+        id = 3
+        amount = 0
+    }
+    let converted = read_only_apply(convert, legacy)
+    assert converted.id == 3 && converted.amount == 1
 }
 
 test fn inspecting_callables_neither_runs_nor_resets_them() {

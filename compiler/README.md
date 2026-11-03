@@ -4325,6 +4325,14 @@ input-isolation guarantee. CTFE can mutate supplied data. Selected bodies still
 need ordinary typing and required proofs, and cyclic inspection rejects. See
 [callable reflection](examples/callable_reflection).
 
+`std.reflect.functions.read_only_callable` adds the existing bounded read-only
+graph check, including input and capture reads and function entry conditions.
+It excludes shared writes, I/O, tasks, cleanup and erased dispatch. Known
+callback identities follow ordinary compile-time argument rules; live captures
+stay shared, and results may alias them. The query supplies no frozen state,
+invocation domain, result fact or termination proof. Unsupported effects remain
+unproved, and invalid required contracts remain errors.
+
 ### Explicit build options
 
 ```loom

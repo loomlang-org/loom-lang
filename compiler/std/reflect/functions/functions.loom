@@ -4,3 +4,8 @@
 // not establish argument availability, definedness, termination, input isolation
 // or read-only captures. Compile-time evaluation can mutate its supplied data.
 pub intrinsic fn comptime_callable[F](comptime callback F) Bool
+
+// A bounded closed call graph whose inputs and captures are only read. The
+// query does not execute the callback, freeze its inputs, or establish a result,
+// successful evaluation or termination. False includes unproved effects.
+pub intrinsic fn read_only_callable[F](comptime callback F) Bool

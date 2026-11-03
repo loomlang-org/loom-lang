@@ -1,0 +1,99 @@
+fn read_only_program(source Text) Result[std.loom.typed.Program, Failure] {
+    callable_program(concat("import std.reflect.functions.read_only_callable\n", source),
+        "pub intrinsic fn comptime_callable[F](comptime callback F) Bool\npub intrinsic fn read_only_callable[F](comptime callback F) Bool", true)
+}
+
+test fn read_only_queries_inspect_checked_bodies_without_running_or_retaining_them() {
+    let program = match read_only_program("""
+        record Row { id Int; amount Int }
+        fn divide(value Int) Int { 1 / value }
+        fn forever(value Int) Int { forever(value) }
+        fn field(value Row) Int { value.amount }
+        fn dispatch(value Int, action fn(Int) Int) Int { action(value) }
+        fn counter() fn() Int {
+            var value = 0
+            fn() Int { value = value + 1
+                value }
+        }
+        fn observer() fn() Int {
+            let value = (3, 4)
+            fn() Int { value.0 }
+        }
+        fn main() {
+            assert comptime { read_only_callable(divide) }
+            assert comptime { read_only_callable(forever) }
+            assert comptime { read_only_callable(field) }
+            assert comptime { !read_only_callable(dispatch) }
+            assert comptime { !read_only_callable(7) }
+            assert read_only_callable(observer())
+            assert !read_only_callable(counter())
+            assert comptime_callable(counter())
+        }
+        """) {
+        Result.Ok(value) => value
+        Result.Err(failed) => {
+            discard std.io.write_error(failed.diagnostic.message)
+            assert false
+            return
+        }
+    }
+    assert length(program.functions) == 1
+}
+
+test fn read_only_queries_preserve_contract_errors_and_cross_query_recursion() {
+    let required = read_only_program("""
+        fn wrong(value Int) Int ensures result > value { value }
+        fn main() { discard read_only_callable(wrong) }
+        """)
+    assert match required {
+        Result.Err(failed) => std.text.contains(failed.diagnostic.message, "postcondition")
+        _ => false
+    }
+    let recursive = read_only_program("""
+        fn first() Bool { comptime_callable(second) }
+        fn second() Bool { read_only_callable(first) }
+        fn main() { discard read_only_callable(first) }
+        """)
+    assert match recursive {
+        Result.Err(failed) => failed.diagnostic.message == "recursive callable reflection"
+        _ => false
+    }
+}
+
+test fn read_only_queries_need_the_trusted_comptime_bool_model() {
+    let source = "import std.reflect.functions.read_only_callable\nfn action() Int { 1 }\nfn main() { discard read_only_callable(action) }"
+    let declarations = [
+        "pub intrinsic fn comptime_callable[F](comptime callback F) Bool\npub intrinsic fn read_only_callable[F](callback F) Bool",
+        "pub intrinsic fn comptime_callable[F](comptime callback F) Bool\npub intrinsic fn read_only_callable[F](comptime callback F) Int"
+    ]
+    var index = 0
+    while index < length(declarations) {
+        assert match callable_program(source, get(declarations, index), true) {
+            Result.Err(_) => true
+            _ => false
+        }
+        index = index + 1
+    }
+    assert match callable_program(source,
+        "pub intrinsic fn comptime_callable[F](comptime callback F) Bool\npub intrinsic fn read_only_callable[F](comptime callback F) Bool", false) {
+        Result.Err(failed) => std.text.contains(failed.diagnostic.message, "trusted standard-library")
+        _ => false
+    }
+}
+
+test fn read_only_capability_never_supplies_definedness_or_result_facts() {
+    let sources = [
+        "fn divide(value Int) Int { 1 / value }\nfn bad(value Int) Bool requires read_only_callable(divide) ensures divide(value) == divide(value) { true }\nfn main() { }",
+        "fn identity(value Int) Int { value }\nfn bad(value Int) Int requires read_only_callable(identity) ensures result > value { value }\nfn main() { }",
+        "fn counter() fn() Int { var value = 0\nfn() Int { value = value + 1\nvalue } }\nfn confused(comptime action fn() Int) Bool requires comptime_callable(action) ensures result { read_only_callable(action) }\nfn main() { discard confused(counter()) }"
+    ]
+    var index = 0
+    while index < length(sources) {
+        assert match read_only_program(get(sources, index)) {
+            Result.Err(failed) => std.text.contains(failed.diagnostic.message, "proof") ||
+            std.text.contains(failed.diagnostic.message, "proved")
+            _ => false
+        }
+        index = index + 1
+    }
+}

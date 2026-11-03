@@ -210,6 +210,13 @@ fn changed_heap(proof Verification, state State) State {
     }
 }
 
+// Classify checked IR with the same closed graph/operation rules used to frame
+// heap observations. This establishes no argument isolation or evaluation
+// success. Callers must supply an ordinarily checked program.
+pub fn read_only_function(program Program, target Int) Bool {
+    graph_readonly_function(program, target)
+}
+
 fn graph_readonly_function(program Program, target Int) Bool {
     if target < 0 || target >= length(program.functions) {
         return false

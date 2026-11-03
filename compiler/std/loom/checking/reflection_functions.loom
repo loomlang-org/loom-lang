@@ -1,9 +1,10 @@
 import std.loom.eval.validate_closed
+import std.loom.proof.read_only_function
 import std.list.transfer.take_last
 
 fn callable_intrinsic(env Environment, owner Int) Bool {
     let item = symbol(env, owner)
-    if item.name != "comptime_callable" || !has(item.node, NodeKind.Intrinsic) {
+    if (item.name != "comptime_callable" && item.name != "read_only_callable") || !has(item.node, NodeKind.Intrinsic) {
         return false
     }
     let file = get(env.source.files, item.file)
@@ -11,13 +12,16 @@ fn callable_intrinsic(env Environment, owner Int) Bool {
     package_label(env.source.modules, env.source.packages, file.package) == "std.reflect.functions"
 }
 
-fn inspect_callable(context Context, node Node, value StaticValue) Result[Bool, Failure] {
+fn inspect_callable(context Context, node Node, value StaticValue, read_only Bool) Result[Bool, Failure] {
     // Resolve the exact source identity in a private queue. Capture *types* are
     // enough to check the operation closure; neither their values nor the
     // callback execute, and no reference enters native reachability.
     let stage = staging(context, node)?
     let reference = reify_function(stage, node, value.ty, value.number, value.arguments)?
     let program = prepared(stage)?
+    if read_only {
+        return Result.Ok(std.loom.proof.read_only_function(program, reference.index))
+    }
     let function = get(program.functions, reference.index)
     let arguments = new[Expr]()
     var index = 0
@@ -34,7 +38,7 @@ fn inspect_callable(context Context, node Node, value StaticValue) Result[Bool, 
     }
 }
 
-fn callable_description(context Context, node Node, value StaticValue) Result[Expr, Failure] {
+fn callable_description(context Context, node Node, value StaticValue, read_only Bool) Result[Expr, Failure] {
     if !value.known || !concrete(context.env, value.ty) {
         if abstract_context(context) {
             return Result.Ok(expression(ExprKind.Deferred, 2, node, "$typeguard", -1, [], true))
@@ -53,7 +57,7 @@ fn callable_description(context Context, node Node, value StaticValue) Result[Ex
             index = index + 1
         }
         push(active, value)
-        let inspected = inspect_callable(context, node, value)
+        let inspected = inspect_callable(context, node, value, read_only)
         discard take_last(active)
         // Never turn recursive inspection or an invalid required contract into
         // false: doing so could select a different effectful source body.
