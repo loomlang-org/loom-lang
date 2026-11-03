@@ -28,6 +28,7 @@ import std.text.contains
 import std.text.ends_with
 
 record Resolution {
+    owner Text
     id Text
     path Text
     name Text
@@ -81,6 +82,7 @@ fn declarations(files List[File]) Result[List[Identity], Text] {
                 previous = previous + 1
             }
             push(found, Identity {
+                    owner = ""
                     id = ""
                     path = file.path
                     kind = node.kind
@@ -95,7 +97,7 @@ fn declarations(files List[File]) Result[List[Identity], Text] {
 }
 
 fn same_declaration(left Identity, right Identity) Bool {
-    left.path == right.path && left.kind == right.kind && left.name == right.name && left.key == right.key
+    left.owner == right.owner && left.path == right.path && left.kind == right.kind && left.name == right.name && left.key == right.key
 }
 
 fn identity_at(identities List[Identity], id Text) Int {
@@ -110,10 +112,14 @@ fn identity_at(identities List[Identity], id Text) Int {
 }
 
 fn candidate_at(candidates List[Identity], path Text, kind NodeKind, name Text, key Text) Int {
+    candidate_at(candidates, "", path, kind, name, key)
+}
+
+fn candidate_at(candidates List[Identity], owner Text, path Text, kind NodeKind, name Text, key Text) Int {
     var index = 0
     while index < length(candidates) {
         let value = get(candidates, index)
-        if value.path == path && value.kind == kind && value.name == name && value.key == key {
+        if value.owner == owner && value.path == path && value.kind == kind && value.name == name && value.key == key {
             return index
         }
         index = index + 1
@@ -123,7 +129,14 @@ fn candidate_at(candidates List[Identity], path Text, kind NodeKind, name Text, 
 
 fn fresh_id(package_name Text, candidate Identity, sequence Int) Text {
     let bytes = std.bytes.new()
-    frame(bytes, "loom-stable-id-v1")
+    frame(bytes, if candidate.owner == "" {
+            "loom-stable-id-v1"
+        } else {
+            "loom-member-id-v1"
+        })
+    if candidate.owner != "" {
+        frame(bytes, candidate.owner)
+    }
     frame(bytes, package_name)
     frame(bytes, candidate.path)
     frame(bytes, kind_name(candidate.kind))
@@ -232,6 +245,7 @@ fn initialize(package_name Text, directory Text) Result[Text, Text] {
         let candidate = get(candidates, index)
         let id = fresh_id(package_name, candidate, next)
         push(identities, Identity {
+                owner = ""
                 id = id
                 path = candidate.path
                 kind = candidate.kind
@@ -243,11 +257,12 @@ fn initialize(package_name Text, directory Text) Result[Text, Text] {
         next = next + 1
         index = index + 1
     }
-    let updated = sidecar(Revision {
+    let root_sidecar = sidecar(Revision {
             package_name = package_name
             files = files
             identities = identities
         }, next)
+    let updated = complete_member_sidecar("", root_sidecar, files, new[Resolution](), new[Derivation](), false)?
     Result.Ok(concat(publish_sidecar(directory, "", updated, files, false)?, changes))
 }
 
@@ -263,26 +278,41 @@ fn resolutions(args List[Text], start Int) Result[(List[Resolution], Bool, List[
             index = index + 1
             continue
         }
-        if option == "--derive" {
-            if index + 4 >= length(args) {
-                return Result.Err("--derive needs PARENT_ID NEW_FILE NEW_NAME KEY; repeat a target for multiple parents")
+        let member = option == "--derive-member" || option == "--move-member"
+        let shift = if member {
+            1
+        } else {
+            0
+        }
+        if option == "--derive" || option == "--derive-member" {
+            if index + 4 + shift >= length(args) {
+                return Result.Err("derivation needs PARENT_ID [OWNER_ID for --derive-member] NEW_FILE NEW_NAME KEY")
+            }
+            let owner = if member {
+                get(args, index + 2)
+            } else {
+                ""
+            }
+            if member && !lifecycle_word(owner) {
+                return Result.Err("member derivation requires an explicit owner ID")
             }
             push(derivations, Derivation {
+                    owner = owner
                     parent = get(args, index + 1)
-                    path = get(args, index + 2)
-                    name = get(args, index + 3)
-                    key = get(args, index + 4)
+                    path = get(args, index + 2 + shift)
+                    name = get(args, index + 3 + shift)
+                    key = get(args, index + 4 + shift)
                 })
-            index = index + 5
+            index = index + 5 + shift
             continue
         }
         let deletion = option == "--delete"
-        if (!deletion && option != "--move") || index + if deletion {
+        if (!deletion && option != "--move" && option != "--move-member") || index + if deletion {
             1
         } else {
-            4
+            4 + shift
         } >= length(args) {
-            return Result.Err("refresh options are --draft, --move ID FILE NAME KEY, --derive PARENT FILE NAME KEY or --delete ID; scan DIR lists keys")
+            return Result.Err("refresh options are --draft, --move ID FILE NAME KEY, --move-member ID OWNER FILE NAME KEY, --derive PARENT FILE NAME KEY, --derive-member PARENT OWNER FILE NAME KEY or --delete ID; scan DIR lists keys")
         }
         let id = get(args, index + 1)
         var previous = 0
@@ -292,29 +322,38 @@ fn resolutions(args List[Text], start Int) Result[(List[Resolution], Bool, List[
             }
             previous = previous + 1
         }
+        let owner = if member {
+            get(args, index + 2)
+        } else {
+            ""
+        }
+        if member && !lifecycle_word(owner) {
+            return Result.Err("member move requires an explicit owner ID")
+        }
         push(output, Resolution {
+                owner = owner
                 id = id
                 path = if deletion {
                     ""
                 } else {
-                    get(args, index + 2)
+                    get(args, index + 2 + shift)
                 }
                 name = if deletion {
                     ""
                 } else {
-                    get(args, index + 3)
+                    get(args, index + 3 + shift)
                 }
                 key = if deletion {
                     ""
                 } else {
-                    get(args, index + 4)
+                    get(args, index + 4 + shift)
                 }
                 deletion = deletion
             })
         index = index + if deletion {
             2
         } else {
-            5
+            5 + shift
         }
     }
     Result.Ok((output, draft, derivations))
@@ -324,15 +363,17 @@ fn refresh(directory Text, options List[Resolution], save_draft Bool) Result[Tex
     refresh(directory, options, save_draft, new[Derivation]())
 }
 
-fn refresh(directory Text, options List[Resolution], save_draft Bool,
-    derivations List[Derivation]) Result[Text, Text] {
+fn refresh(directory Text, supplied List[Resolution], save_draft Bool,
+    supplied_derivations List[Derivation]) Result[Text, Text] {
     let state = read_state(directory)?
     let loaded = state.0
     if state.1.draft != "" && state.1.draft != files_stamp(loaded.revision.files) && !save_draft {
         return Result.Err("identity draft is stale; run refresh --draft before resolution")
     }
-    let previous = loaded.revision.identities
+    let previous = root_identities(loaded.revision.identities)
     let candidates = declarations(loaded.revision.files)?
+    let options = root_resolutions(loaded.revision.identities, supplied)
+    let derivations = root_derivations(supplied_derivations)
     let selected = new[Text]()
     let old_used = new[Bool]()
     var index = 0
@@ -388,6 +429,9 @@ fn refresh(directory Text, options List[Resolution], save_draft Bool,
     index = 0
     while index < length(options) {
         let option = get(options, index)
+        if option.owner != "" {
+            return Result.Err("--move-member requires an existing method identity")
+        }
         let prior_index = identity_at(previous, option.id)
         if prior_index < 0 || get(old_used, prior_index) {
             return Result.Err("explicit resolution needs an unmatched existing identity")
@@ -408,7 +452,7 @@ fn refresh(directory Text, options List[Resolution], save_draft Bool,
         index = index + 1
     }
     let history = std.list.clone(state.1.lineage)
-    let derived_targets = derivation_candidates(previous, history, candidates, selected, derivations)?
+    let derived_targets = derivation_candidates(loaded.revision.identities, history, candidates, selected, derivations)?
     var remaining_old = 0
     var unresolved = false
     index = 0
@@ -431,7 +475,8 @@ fn refresh(directory Text, options List[Resolution], save_draft Bool,
         if length(derivations) != 0 {
             return Result.Err("resolve pending identities before recording derivation choices")
         }
-        let updated = draft_sidecar(loaded, previous, candidates, selected, old_used, history)
+        let root_sidecar = draft_sidecar(loaded, previous, candidates, selected, old_used, history)
+        let updated = complete_member_sidecar(loaded.sidecar, root_sidecar, loaded.revision.files, supplied, supplied_derivations, save_draft)?
         let notice = concat("identity draft retained; unresolved declarations: ", concat(to_text(remaining_old), "\n"))
         if updated == loaded.sidecar {
             return Result.Ok(notice)
@@ -469,6 +514,7 @@ fn refresh(directory Text, options List[Resolution], save_draft Bool,
                             concat(candidate.path, concat(" ", concat(candidate.name, "\n")))))))
         }
         push(identities, Identity {
+                owner = ""
                 id = id
                 path = candidate.path
                 kind = candidate.kind
@@ -497,12 +543,17 @@ fn refresh(directory Text, options List[Resolution], save_draft Bool,
         files = loaded.revision.files
         identities = identities
     }
-    let updated = sidecar(revised, next, normalized_lineage(history)?)
+    let root_sidecar = sidecar(revised, next, normalized_lineage(history)?)
+    let updated = complete_member_sidecar(loaded.sidecar, root_sidecar, loaded.revision.files, supplied, supplied_derivations, save_draft)?
     if updated == loaded.sidecar {
         return Result.Ok("identities unchanged\n")
     }
     let published = publish_sidecar(directory, loaded.sidecar, updated, loaded.revision.files, true)?
-    Result.Ok(concat(published, changes))
+    Result.Ok(concat(published, concat(changes, if header(updated, "updated identities")?.draft == "" {
+                    ""
+                } else {
+                    "identity draft retained; explicit member resolution required\n"
+                })))
 }
 
 fn refresh_command(args List[Text]) Result[Text, Text] {
@@ -511,13 +562,43 @@ fn refresh_command(args List[Text]) Result[Text, Text] {
 }
 
 fn scan(directory Text) Result[Text, Text] {
-    let candidates = declarations(read_files(directory)?)?
+    let files = read_files(directory)?
+    let candidates = declarations(files)?
+    match entry_kind(path(directory, ".loom-ids")) {
+        Result.Ok(FileKind.File) => {
+            let state = read_state(directory)?
+            let owners = new[Identity]()
+            var index = 0
+            while index < length(state.0.revision.identities) {
+                let identity = get(state.0.revision.identities, index)
+                if identity.owner == "" && !pending_identity(state.1.pending, identity.id) {
+                    push(owners, identity)
+                }
+                index = index + 1
+            }
+            let members = member_declarations(files, owners)?
+            index = 0
+            while index < length(members) {
+                push(candidates, get(members, index))
+                index = index + 1
+            }
+        }
+        Result.Err(FsError.NotFound) => {
+        }
+        _ => {
+            return Result.Err("scan identities must be absent or a regular sidecar")
+        }
+    }
     var output = ""
     var index = 0
     while index < length(candidates) {
         let candidate = get(candidates, index)
-        output = concat(output, concat(kind_name(candidate.kind), concat(" ", concat(candidate.name,
-                        concat(" ", concat(candidate.path, concat(" ", concat(candidate.key, "\n"))))))))
+        let locator = identity_locator(candidate)
+        output = concat(output, concat(slice(locator, 0, length(locator) - 1), concat(if candidate.owner == "" {
+                        ""
+                    } else {
+                        concat(" owner=", candidate.owner)
+                    }, "\n")))
         index = index + 1
     }
     Result.Ok(output)

@@ -40,6 +40,7 @@ fn key_in(source Text, name Text) Text {
 fn identities(amount_path Text, source Text, app Text) List[Identity] {
     let bindings = new[Identity]()
     push(bindings, Identity {
+            owner = ""
             id = "amount-id"
             path = amount_path
             kind = NodeKind.Function
@@ -51,6 +52,7 @@ fn identities(amount_path Text, source Text, app Text) List[Identity] {
                 }, "amount")
         })
     push(bindings, Identity {
+            owner = ""
             id = "entry-id"
             path = "app.loom"
             kind = NodeKind.Function
@@ -155,6 +157,7 @@ fn pick(value Bool) Int {
         })
     let ids = new[Identity]()
     push(ids, Identity {
+            owner = ""
             id = "int-id"
             path = "overloads.loom"
             kind = NodeKind.Function
@@ -162,6 +165,7 @@ fn pick(value Bool) Int {
             key = key("fn pick(value Int) Int { 1 }")
         })
     push(ids, Identity {
+            owner = ""
             id = "bool-id"
             path = "overloads.loom"
             kind = NodeKind.Function
@@ -169,6 +173,7 @@ fn pick(value Bool) Int {
             key = key("fn pick(value Bool) Int { 2 }")
         })
     push(ids, Identity {
+            owner = ""
             id = "source-id"
             path = "source.loom"
             kind = NodeKind.Function
@@ -176,6 +181,7 @@ fn pick(value Bool) Int {
             key = "-"
         })
     push(ids, Identity {
+            owner = ""
             id = "caller-id"
             path = caller_path
             kind = NodeKind.Function
@@ -234,6 +240,7 @@ test fn a_carrier_addition_and_an_independent_body_edit_merge() {
     let moved = revision("app.loom", "",
         "// destination note\nfn amount() Int { 1 }\nfn entry() Int { amount() }\nfn extra() Int { 9 }\n")
     push(moved.identities, Identity {
+            owner = ""
             id = "extra-id"
             path = "app.loom"
             kind = NodeKind.Function
@@ -270,6 +277,7 @@ fn added_declaration(name Text, kind NodeKind, declaration Text) Revision {
     let changed = revision("value.loom", concat("fn amount() Int { 1 }\n", declaration),
         "fn entry() Int { amount() }\n")
     push(changed.identities, Identity {
+            owner = ""
             id = "new-id"
             path = "value.loom"
             kind = kind
@@ -337,6 +345,7 @@ test fn disjoint_additions_combine_but_binding_sensitive_names_need_resolution()
     let left = revision("value.loom", "fn amount() Int { 1 }\nfn extra() Int { 3 }\n",
         "fn entry() Int { amount() }\n")
     push(left.identities, Identity {
+            owner = ""
             id = "extra-id"
             path = "value.loom"
             kind = NodeKind.Function
@@ -346,6 +355,7 @@ test fn disjoint_additions_combine_but_binding_sensitive_names_need_resolution()
     let right = revision("value.loom", "fn amount() Int { 1 }\n",
         "fn entry() Int { amount() }\nfn another() Int { 4 }\n")
     push(right.identities, Identity {
+            owner = ""
             id = "another-id"
             path = "app.loom"
             kind = NodeKind.Function
@@ -370,6 +380,7 @@ test fn disjoint_additions_combine_but_binding_sensitive_names_need_resolution()
             text = "fn amount(value Int) Int { value }\n"
         })
     push(reused.identities, Identity {
+            owner = ""
             id = "overload-id"
             path = "overload.loom"
             kind = NodeKind.Function
@@ -399,6 +410,7 @@ test fn deletion_conflicts_with_edit_or_move() {
         })
     let ids = new[Identity]()
     push(ids, Identity {
+            owner = ""
             id = "entry-id"
             path = "app.loom"
             kind = NodeKind.Function
@@ -437,6 +449,7 @@ test fn deleting_a_local_candidate_while_other_side_edits_a_call_is_not_a_safe_m
         })
     let ids = new[Identity]()
     push(ids, Identity {
+            owner = ""
             id = "entry-id"
             path = "app.loom"
             kind = NodeKind.Function
@@ -493,6 +506,7 @@ test fn signature_change_and_other_side_addition_need_resolution() {
     let added = revision("value.loom", "fn amount() Int { 1 }\n",
         "fn entry() Int { amount() }\nfn extra() Int { amount() }\n")
     push(added.identities, Identity {
+            owner = ""
             id = "extra-id"
             path = "app.loom"
             kind = NodeKind.Function
@@ -606,6 +620,7 @@ test fn test_only_helpers_cannot_satisfy_production_calls() {
         })
     let ids = new[Identity]()
     push(ids, Identity {
+            owner = ""
             id = "entry-id"
             path = "app.loom"
             kind = NodeKind.Function
@@ -613,6 +628,7 @@ test fn test_only_helpers_cannot_satisfy_production_calls() {
             key = "-"
         })
     push(ids, Identity {
+            owner = ""
             id = "helper-id"
             path = "app_test.loom"
             kind = NodeKind.Function
@@ -682,6 +698,7 @@ fn boundary_revision(path Text, production Text, testing Text) Revision {
         })
     let ids = new[Identity]()
     push(ids, Identity {
+            owner = ""
             id = "amount-id"
             path = path
             kind = NodeKind.Function
@@ -715,6 +732,7 @@ test fn source_paths_cannot_escape_the_package_directory() {
             text = "fn value() Int { 1 }\n"
         }]
     let ids = [Identity {
+            owner = ""
             id = "value-id"
             path = "../value.loom"
             kind = NodeKind.Function

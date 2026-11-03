@@ -12,6 +12,7 @@ record Lineage {
 }
 
 record Derivation {
+    owner Text
     parent Text
     path Text
     name Text
@@ -264,7 +265,7 @@ fn derivation_candidates(previous List[Identity], history List[Lineage], candida
         var candidate = 0
         while candidate < length(candidates) {
             let value = get(candidates, candidate)
-            if value.path == choice.path && value.name == choice.name && value.key == choice.key {
+            if value.owner == choice.owner && value.path == choice.path && value.name == choice.name && value.key == choice.key {
                 if target >= 0 {
                     return Result.Err("--derive target is ambiguous")
                 }

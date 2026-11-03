@@ -174,12 +174,73 @@ fn identity_before(left Identity, right Identity) Bool {
 
 fn placed_identity(entry Entry, path Text) Identity {
     Identity {
+        owner = ""
         id = entry.id
         path = path
         kind = entry.kind
         name = entry.name
         key = entry.key
     }
+}
+
+fn stored_member_id(source Indexed, owner Text, locator Text) Text {
+    let index = entry_index(source.entries, owner)
+    if index < 0 {
+        return ""
+    }
+    let members = get(source.entries, index).members
+    var member = 0
+    while member < length(members) {
+        let scope = get(members, member)
+        if scope.locator == locator {
+            return scope.id
+        }
+        member = member + 1
+    }
+    ""
+}
+
+fn joined_member_identity(base Indexed, left Indexed, right Indexed, owner Text, locator Text) Result[Text, Text] {
+    let original = stored_member_id(base, owner, locator)
+    let first = stored_member_id(left, owner, locator)
+    let second = stored_member_id(right, owner, locator)
+    if first == second {
+        return Result.Ok(first)
+    }
+    if first == original {
+        return Result.Ok(second)
+    }
+    if second == original {
+        return Result.Ok(first)
+    }
+    Result.Err(concat("conflicting member identity: ", concat(owner, concat(" / ", locator))))
+}
+
+import std.text.split
+
+fn placed_member_identities(output List[Identity], base Indexed, left Indexed, right Indexed, container Identity) Result[Bool, Text] {
+    let entry = chosen_entry(base, left, right, container.id)?
+    var member = 0
+    while member < length(entry.members) {
+        let scope = get(entry.members, member)
+        let id = joined_member_identity(base, left, right, container.id, scope.locator)?
+        if id != "" {
+            let locator = split(scope.locator, " ")
+            if length(locator) != 3 || get(locator, 0) != "fn" {
+                return Result.Err("stable member identity requires a checked method locator")
+            }
+            push(output, Identity {
+                    id = id
+                    owner = container.id
+                    path = container.path
+                    kind = NodeKind.Function
+                    name = get(locator, 1)
+                    key = get(locator, 2)
+                })
+        }
+        member = member + 1
+    }
+    Result.Ok(true)
 }
 
 // Merge declaration placement independently of file presentation. Re-indexing
@@ -227,5 +288,46 @@ fn joined_identities(base Indexed, left Indexed, right Indexed) Result[List[Iden
         push(output, get(ordered, index))
         index = index + 1
     }
-    Result.Ok(output)
+    let containers = length(output)
+    index = 0
+    while index < containers {
+        discard placed_member_identities(output, base, left, right, get(output, index))?
+        index = index + 1
+    }
+    // A legacy or hand-carried sidecar may interleave roots and owned methods.
+    // Keep all retained rows in their original order; sort only fresh IDs.
+    let retained = new[Identity]()
+    index = 0
+    while index < length(base.revision.identities) {
+        let original = get(base.revision.identities, index)
+        var candidate = 0
+        while candidate < length(output) {
+            let identity = get(output, candidate)
+            if identity.id == original.id {
+                push(retained, identity)
+            }
+            candidate = candidate + 1
+        }
+        index = index + 1
+    }
+    let additions = new[Identity]()
+    index = 0
+    while index < length(output) {
+        let identity = get(output, index)
+        var previous = 0
+        while previous < length(base.revision.identities) && get(base.revision.identities, previous).id != identity.id {
+            previous = previous + 1
+        }
+        if previous == length(base.revision.identities) {
+            push(additions, identity)
+        }
+        index = index + 1
+    }
+    let ordered_additions = sorted(additions, identity_before)
+    index = 0
+    while index < length(ordered_additions) {
+        push(retained, get(ordered_additions, index))
+        index = index + 1
+    }
+    Result.Ok(retained)
 }

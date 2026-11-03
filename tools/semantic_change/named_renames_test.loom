@@ -95,6 +95,7 @@ fn named_rename_revision(renamed Bool, moved Bool, changed Bool) Revision {
     while identity < length(revision.identities) {
         let item = get(revision.identities, identity)
         set(revision.identities, identity, Identity {
+                owner = ""
                 id = if item.kind == NodeKind.Function {
                     concat("fn:", item.name)
                 } else {
@@ -242,6 +243,7 @@ fn named_public_revisions(name Text, moved Bool, changed Bool) List[PackageRevis
         while identity < length(selected.revision.identities) {
             let item = get(selected.revision.identities, identity)
             set(selected.revision.identities, identity, Identity {
+                    owner = ""
                     id = concat(selected.revision.package_name, concat(":", if item.kind == NodeKind.Record {
                                 "type"
                             } else {

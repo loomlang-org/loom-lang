@@ -176,7 +176,7 @@ try {
   }
   run(loom, ["test", join(installed, "lib/loom/std/net/tls")], application, environment);
   verifyChangeCommand(loom, join(root, "tools/change/fixtures"),
-    join(temporary, "semantic change"), environment);
+    join(temporary, "semantic change"), environment, join(installed, "lib/loom/std"));
 
   mkdirSync(dirname(archive), { recursive: true });
   copyFileSync(temporaryArchive, archive, constants.COPYFILE_EXCL);

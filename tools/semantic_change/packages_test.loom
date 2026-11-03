@@ -18,6 +18,7 @@ fn package_fixture(label Text, directory Text, files List[File]) PackageRevision
                     }
                 }
                 push(identities, Identity {
+                        owner = ""
                         id = concat(label, concat(":", concat(node.value, key)))
                         path = file.path
                         kind = node.kind

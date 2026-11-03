@@ -49,6 +49,7 @@ fn pattern_rename_case(name Text, path Text, edited Bool, captured Bool) Revisio
             ..get(revision.identities, 1)
         })
     push(revision.identities, Identity {
+            owner = ""
             id = "pair-id"
             path = "app.loom"
             kind = NodeKind.Record
@@ -56,6 +57,7 @@ fn pattern_rename_case(name Text, path Text, edited Bool, captured Bool) Revisio
             key = "-"
         })
     push(revision.identities, Identity {
+            owner = ""
             id = "choice-id"
             path = "app.loom"
             kind = NodeKind.Enum

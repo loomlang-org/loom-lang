@@ -1,0 +1,324 @@
+// Member candidates require an already identified container. Source similarity
+// and declaration order never select a container or preserve a method ID.
+fn member_declarations(files List[File], owners List[Identity]) Result[List[Identity], Text] {
+    let found = new[Identity]()
+    var file = 0
+    while file < length(files) {
+        let source = get(files, file)
+        let tree = match std.loom.parser.parse(source.text) {
+            Result.Ok(value) => value,
+            Result.Err(problem) => {
+                return Result.Err(problem.message)
+            }
+        }
+        var declaration = 0
+        while declaration < length(tree.children) {
+            let node = get(tree.children, declaration)
+            if node.kind == NodeKind.Concept || node.kind == NodeKind.Impl {
+                let selected = candidate_at(owners, source.path, node.kind, declaration_label(node), declaration_key(node)?)
+                if selected >= 0 {
+                    let owner = get(owners, selected)
+                    if !lifecycle_word(owner.id) {
+                        return Result.Err("member candidates require a resolved container identity")
+                    }
+                    var member = 0
+                    while member < length(node.children) {
+                        let method = get(node.children, member)
+                        if method.kind == NodeKind.Function {
+                            let candidate = Identity {
+                                id = ""
+                                owner = owner.id
+                                path = source.path
+                                kind = NodeKind.Function
+                                name = method.value
+                                key = declaration_key(method)?
+                            }
+                            if !lifecycle_word(candidate.name) || candidate_at(found, owner.id, candidate.path,
+                                candidate.kind, candidate.name, candidate.key) >= 0 {
+                                return Result.Err("container has an ambiguous or unnamed method")
+                            }
+                            push(found, candidate)
+                        }
+                        member = member + 1
+                    }
+                }
+            }
+            declaration = declaration + 1
+        }
+        file = file + 1
+    }
+    Result.Ok(found)
+}
+
+fn root_identities(identities List[Identity]) List[Identity] {
+    let roots = new[Identity]()
+    var index = 0
+    while index < length(identities) {
+        let identity = get(identities, index)
+        if identity.owner == "" {
+            push(roots, identity)
+        }
+        index = index + 1
+    }
+    roots
+}
+
+fn root_resolutions(previous List[Identity], choices List[Resolution]) List[Resolution] {
+    let selected = new[Resolution]()
+    var index = 0
+    while index < length(choices) {
+        let choice = get(choices, index)
+        let prior = identity_at(previous, choice.id)
+        if prior < 0 || get(previous, prior).owner == "" {
+            push(selected, choice)
+        }
+        index = index + 1
+    }
+    selected
+}
+
+fn root_derivations(choices List[Derivation]) List[Derivation] {
+    let selected = new[Derivation]()
+    var index = 0
+    while index < length(choices) {
+        let choice = get(choices, index)
+        if choice.owner == "" {
+            push(selected, choice)
+        }
+        index = index + 1
+    }
+    selected
+}
+
+import semantic_change.validate_identities
+
+// Plan both levels before publishing one source-bound sidecar. A pending
+// container retains its old children; new children never borrow another
+// container's IDs merely because their names and signatures match.
+fn complete_member_sidecar(previous_text Text, root_text Text, files List[File], choices List[Resolution], derivations List[Derivation], save_draft Bool) Result[Text, Text] {
+    let roots = header(root_text, "planned identities")?
+    let previous = header(if previous_text == "" {
+            concat("package ", concat(roots.package_name, "\nnext 1\n"))
+        } else {
+            previous_text
+        }, "previous identities")?
+    let resolved = new[Identity]()
+    var root = 0
+    while root < length(roots.identities) {
+        let identity = get(roots.identities, root)
+        if !pending_identity(roots.pending, identity.id) {
+            push(resolved, identity)
+        }
+        root = root + 1
+    }
+    let candidates = member_declarations(files, resolved)?
+    let members = new[Identity]()
+    var index = 0
+    while index < length(previous.identities) {
+        let identity = get(previous.identities, index)
+        if identity.owner != "" {
+            push(members, identity)
+        }
+        index = index + 1
+    }
+    let used = new[Bool]()
+    index = 0
+    while index < length(members) {
+        let member = get(members, index)
+        push(used, identity_at(roots.identities, member.owner) < 0)
+        index = index + 1
+    }
+    let selected = new[Text]()
+    index = 0
+    while index < length(candidates) {
+        let candidate = get(candidates, index)
+        var matched = -1
+        var prior = 0
+        while prior < length(members) {
+            let member = get(members, prior)
+            var deleted = false
+            var option = 0
+            while option < length(choices) {
+                deleted = deleted || (get(choices, option).id == member.id && get(choices, option).deletion)
+                option = option + 1
+            }
+            let directly_pending = pending_identity(previous.pending, member.id) && !pending_identity(previous.pending, member.owner)
+            if !deleted && !directly_pending && member.owner == candidate.owner &&
+            member.kind == candidate.kind && member.name == candidate.name && member.key == candidate.key {
+                if matched >= 0 {
+                    return Result.Err("member metadata has ambiguous identities")
+                }
+                matched = prior
+            }
+            prior = prior + 1
+        }
+        push(selected, if matched < 0 {
+                ""
+            } else {
+                get(members, matched).id
+            })
+        if matched >= 0 {
+            set(used, matched, true)
+        }
+        index = index + 1
+    }
+    index = 0
+    while index < length(choices) {
+        let choice = get(choices, index)
+        let prior = identity_at(members, choice.id)
+        if prior >= 0 {
+            let member = get(members, prior)
+            if get(used, prior) {
+                return Result.Err("explicit member resolution needs an unmatched identity")
+            }
+            if !choice.deletion {
+                let owner = if choice.owner == "" {
+                    member.owner
+                } else {
+                    choice.owner
+                }
+                let target = candidate_at(candidates, owner, choice.path, member.kind, choice.name, choice.key)
+                if target < 0 || get(selected, target) != "" {
+                    return Result.Err("member move requires an unmatched method in its identified container")
+                }
+                set(selected, target, member.id)
+            }
+            set(used, prior, true)
+        }
+        index = index + 1
+    }
+    let nested_derivations = new[Derivation]()
+    index = 0
+    while index < length(derivations) {
+        let choice = get(derivations, index)
+        if choice.owner != "" {
+            push(nested_derivations, choice)
+        }
+        index = index + 1
+    }
+    let history = std.list.clone(roots.lineage)
+    let derived = derivation_candidates(previous.identities, history, candidates, selected, nested_derivations)?
+    var remaining = 0
+    var additions = 0
+    let pending = std.list.clone(roots.pending)
+    let kept = std.list.clone(roots.identities)
+    index = 0
+    while index < length(members) {
+        let member = get(members, index)
+        if !get(used, index) {
+            if pending_identity(roots.pending, member.owner) {
+                push(kept, member)
+                push(pending, member.id)
+                set(used, index, true)
+            } else {
+                remaining = remaining + 1
+            }
+        }
+        index = index + 1
+    }
+    index = 0
+    while index < length(selected) {
+        if get(selected, index) == "" {
+            additions = additions + 1
+        }
+        index = index + 1
+    }
+    let ambiguous = remaining > 0 && (additions > 0 || length(previous.pending) > 0)
+    if ambiguous && !save_draft {
+        return Result.Err("possible method move or rename: resolve its explicit member ID with --move or --delete")
+    }
+    if ambiguous && length(nested_derivations) != 0 {
+        return Result.Err("resolve pending member identities before recording derivations")
+    }
+    var next = roots.next
+    index = 0
+    while index < length(candidates) {
+        let candidate = get(candidates, index)
+        var id = get(selected, index)
+        if id == "" && !ambiguous {
+            var allocated = false
+            while !allocated {
+                if next >= 9223372036854775806 {
+                    return Result.Err("member identity allocator exhausted")
+                }
+                id = fresh_id(roots.package_name, candidate, next)
+                next = next + 1
+                allocated = !lineage_known(previous.identities, history, id) && identity_at(kept, id) < 0
+            }
+        }
+        if id != "" {
+            push(kept, Identity {
+                    id = id,
+                    ..candidate
+                })
+            let parents = new[Text]()
+            var derivation = 0
+            while derivation < length(nested_derivations) {
+                if get(derived, derivation) == index {
+                    push(parents, get(nested_derivations, derivation).parent)
+                }
+                derivation = derivation + 1
+            }
+            if length(parents) != 0 {
+                push(history, Lineage {
+                        id = id
+                        parents = parents
+                    })
+            }
+        }
+        index = index + 1
+    }
+    if ambiguous {
+        index = 0
+        while index < length(members) {
+            if !get(used, index) {
+                push(kept, get(members, index))
+                push(pending, get(members, index).id)
+            }
+            index = index + 1
+        }
+    }
+    let revision = Revision {
+        package_name = roots.package_name
+        files = files
+        identities = kept
+    }
+    if length(pending) == 0 {
+        discard validate_identities(revision)?
+    }
+    var output = concat("package ", concat(roots.package_name, concat("\nnext ", concat(to_text(next), "\n"))))
+    index = 0
+    while index < length(kept) {
+        let identity = get(kept, index)
+        output = concat(output, identity_row(if pending_identity(pending, identity.id) {
+                    "pending"
+                } else {
+                    "id"
+                }, identity))
+        index = index + 1
+    }
+    output = concat(output, lineage_rows(normalized_lineage(history)?))
+    if length(pending) != 0 {
+        output = concat(output, concat("draft ", concat(files_stamp(files), "\n")))
+    }
+    let lines = split(root_text, "\n")
+    index = 0
+    while index < length(lines) {
+        if starts_with(get(lines, index), "candidate ") {
+            output = concat(output, concat(get(lines, index), "\n"))
+        }
+        index = index + 1
+    }
+    if ambiguous {
+        index = 0
+        while index < length(candidates) {
+            if get(selected, index) == "" {
+                let candidate = get(candidates, index)
+                let locator = identity_locator(candidate)
+                output = concat(output, concat("candidate ", concat(slice(locator, 0, length(locator) - 1), concat(" ", concat(candidate.owner, "\n")))))
+            }
+            index = index + 1
+        }
+    }
+    Result.Ok(output)
+}

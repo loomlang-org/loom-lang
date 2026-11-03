@@ -14,6 +14,7 @@ fn draft_candidate(words List[Text]) Result[Bool, Text] {
     if !lifecycle_word(get(words, 2)) || !lifecycle_leaf(get(words, 3)) || !lifecycle_word(get(words, 4)) {
         return Result.Err("invalid identity draft candidate")
     }
+    if length(words) == 6 && !lifecycle_word(get(words, 5)) { return Result.Err("invalid member draft candidate owner") }
     Result.Ok(true)
 }
 
@@ -23,7 +24,9 @@ fn identity_locator(value Identity) Text {
 }
 
 fn identity_row(tag Text, value Identity) Text {
-    concat(tag, concat(" ", concat(value.id, concat(" ", identity_locator(value)))))
+    let locator = identity_locator(value)
+    let line = concat(tag, concat(" ", concat(value.id, concat(" ", slice(locator, 0, length(locator) - 1)))))
+    concat(line, concat(if value.owner == "" { "" } else { concat(" ", value.owner) }, "\n"))
 }
 
 // Keep explicit choices and exact bindings, but reserve no new identities for

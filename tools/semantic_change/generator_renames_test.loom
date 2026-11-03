@@ -19,6 +19,7 @@ fn generator_revision(name Text, step Text, generator Text, imported Bool) Revis
                 }, generator)
         })
     push(revision.identities, Identity {
+            owner = ""
             id = "generator-id"
             path = "generator.loom"
             kind = NodeKind.Function

@@ -888,16 +888,24 @@ headers, contracts and member order. Inter-member whitespace/comments join by
 three-way equality, preserving bytes; conflicting gap edits and other container
 scaffolding changes require resolution. Retained regions keep
 their checked bindings across shifted body offsets. Same-method conflicts and
-member/interface changes still require resolution, not inferred member identity.
+other interface changes still require resolution, not inferred member identity.
 Symbolic impl/associated headers need no concrete caller;
 unexpanded pack queries retain their conservative boundary.
 Generic reference comparison requires checked abstract bodies and agreement
 with observed concrete instances; missing or ambiguous bindings and unselected
 static branches still reject.
 Type renames retain the IDs of affected function/impl locators and checked member
-scopes. Inline `test fn` declarations are excluded from production comparison,
-like colocated test files. Member renames, automatic identities, arbitrary edits
-and arbitrary package/import-graph changes remain open.
+scopes. Explicit method IDs now name their identified concept or impl owner.
+Initialization, refresh, scan, pending drafts and derivation preserve these IDs
+without matching methods across containers by spelling. Owned method renames
+compose with independent body edits and container moves through checked token
+normalization, retained bindings and concept/impl conformance-slot comparison.
+Public methods require complete module consumer coverage. Legacy root-only
+sidecars remain readable. Generic references with disagreeing concrete and
+abstract definitions, generated/unaccounted uses, competing renames and other
+interface edits still reject. Inline `test fn` declarations are excluded from
+production comparison, like colocated test files. General automatic identities,
+arbitrary edits and arbitrary package/import-graph changes remain open.
 
 The [SQLite migration trial](../../tools/deployment/sqlite_migration_trial/README.md)
 executes an offline orders upgrade, data-preserving downgrade and re-upgrade.

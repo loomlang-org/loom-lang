@@ -18,6 +18,7 @@ fn private_batch_case(name Text, path Text, body Text, caller Text) List[Package
     let selected = renamed_case(name, path, body,
         concat(caller, concat("\ntest fn embedded_private() { assert ", concat(name, "() > 0 }\n"))))
     push(selected.identities, Identity {
+            owner = ""
             id = "embedded-test-id"
             path = "app.loom"
             kind = NodeKind.Function
@@ -30,6 +31,7 @@ fn private_batch_case(name Text, path Text, body Text, caller Text) List[Package
     }
     push(selected.files, testing)
     push(selected.identities, Identity {
+            owner = ""
             id = "private-test-id"
             path = testing.path
             kind = NodeKind.Function

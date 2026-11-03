@@ -1,0 +1,203 @@
+fn member_metadata_revision() Revision {
+    Revision {
+        package_name = "sample"
+        files = new[File]()
+        identities = [Identity {
+                id = "read-owner"
+                owner = ""
+                path = "methods.loom"
+                kind = NodeKind.Concept
+                name = "Read"
+                key = "-"
+            }, Identity {
+                id = "read-method"
+                owner = "read-owner"
+                path = "methods.loom"
+                kind = NodeKind.Function
+                name = "read"
+                key = "method-key"
+            }]
+    }
+}
+
+test fn sidecars_preserve_explicit_member_owners_and_legacy_root_rows() {
+    let revision = member_metadata_revision()
+    let text = sidecar(revision, 3)
+    assert contains(text, "id read-owner concept Read methods.loom -\n")
+    assert contains(text, "id read-method fn read methods.loom method-key read-owner\n")
+    let parsed = match header(text, "memory") {
+        Result.Ok(value) => value,
+        Result.Err(_) => {
+            assert false
+            return
+        }
+    }
+    assert length(parsed.identities) == 2
+    assert get(parsed.identities, 0).owner == "" && get(parsed.identities, 1).owner == "read-owner"
+    assert sidecar(Revision {
+            identities = parsed.identities,
+            ..revision
+        }, parsed.next, parsed.lineage) == text
+    let basis = hex(std.text.to_bytes("source basis"))
+    let pending = concat(replace(text, "id read-method", "pending read-method"), concat("draft ", concat(basis, "\n")))
+    assert match header(pending, "memory") {
+        Result.Ok(value) => length(value.pending) == 1 && get(value.pending, 0) == "read-method" &&
+        get(value.identities, 1).owner == "read-owner",
+        Result.Err(_) => false
+    }
+    assert match header(replace(text, "method-key read-owner", "method-key read owner"), "memory") {
+        Result.Err(_) => true,
+        Result.Ok(_) => false
+    }
+}
+
+fn owned_method_lifecycle(staging Text) Result[Text, Text] {
+    let directory = path(staging, "package")
+    discard create_dir(directory)
+    let source = """
+        concept Read {
+            fn read(self Self) Int
+        }
+        impl Read for Int {
+            fn read(self Int) Int { self + 1 }
+        }
+        fn entry() Int {
+            let value = 7
+            value.read()
+        }
+        """
+    let file = path(directory, "main.loom")
+    discard std.file.write_text(file, source)
+    discard initialize("sample", directory)?
+    let initial = read_state(directory)?
+    assert length(initial.0.revision.identities) == 5
+    let methods = new[Identity]()
+    let moves = new[Resolution]()
+    var parent = ""
+    var index = 0
+    while index < length(initial.0.revision.identities) {
+        let identity = get(initial.0.revision.identities, index)
+        if identity.owner == "" {
+            push(moves, Resolution {
+                    owner = ""
+                    id = identity.id
+                    path = "moved.loom"
+                    name = identity.name
+                    key = identity.key
+                    deletion = false
+                })
+            if identity.kind == NodeKind.Concept {
+                parent = identity.id
+            }
+        } else {
+            push(methods, identity)
+        }
+        index = index + 1
+    }
+    assert length(methods) == 2
+    discard std.file.write_text(file, replace(source, "self + 1", "self + 2"))
+    discard refresh(directory, [], false)?
+    assert read_state(directory)?.0.next == initial.0.next
+    discard rename(file, path(directory, "moved.loom"))
+    discard refresh(directory, [], true)?
+    assert length(read_state(directory)?.1.pending) == 5
+    discard refresh(directory, moves, false)?
+    let moved = read_state(directory)?
+    assert length(moved.1.pending) == 0 && moved.0.next == initial.0.next
+    index = 0
+    while index < length(methods) {
+        let identity = get(methods, index)
+        let current = get(moved.0.revision.identities, identity_at(moved.0.revision.identities, identity.id))
+        assert current.owner == identity.owner && current.path == "moved.loom"
+        index = index + 1
+    }
+    let renamed = replace(replace(source, "self + 1", "self + 2"), "read(", "inspect(")
+    discard std.file.write_text(path(directory, "moved.loom"), renamed)
+    let before = text_at(path(directory, ".loom-ids"))
+    assert match refresh(directory, [], false) {
+        Result.Err(message) => contains(message, "explicit member ID"),
+        Result.Ok(_) => false
+    }
+    assert text_at(path(directory, ".loom-ids")) == before
+    discard refresh(directory, [], true)?
+    assert length(read_state(directory)?.1.pending) == 2
+    let renamed_methods = new[Resolution]()
+    index = 0
+    while index < length(methods) {
+        let identity = get(methods, index)
+        push(renamed_methods, Resolution {
+                owner = ""
+                id = identity.id
+                path = "moved.loom"
+                name = "inspect"
+                key = identity.key
+                deletion = false
+            })
+        index = index + 1
+    }
+    discard refresh(directory, renamed_methods, false)?
+    let resolved = read_state(directory)?
+    assert length(resolved.1.pending) == 0 && resolved.0.next == initial.0.next
+    index = 0
+    while index < length(methods) {
+        let identity = get(methods, index)
+        let current = get(resolved.0.revision.identities, identity_at(resolved.0.revision.identities, identity.id))
+        assert current.owner == identity.owner && current.name == "inspect"
+        index = index + 1
+    }
+    discard std.file.write_text(path(directory, "moved.loom"), concat(renamed, "\nconcept Other { fn inspect(self Self) Int }\n"))
+    discard refresh(directory, [], false, [Derivation {
+                owner = ""
+                parent = parent
+                path = "moved.loom"
+                name = "Other"
+                key = "-"
+            }])?
+    let copied = read_state(directory)?
+    assert length(copied.0.revision.identities) == 7
+    let copy = new[Identity]()
+    index = 0
+    while index < length(copied.0.revision.identities) {
+        let identity = get(copied.0.revision.identities, index)
+        if identity.owner != "" && identity.owner != get(methods, 0).owner && identity.owner != get(methods, 1).owner {
+            push(copy, identity)
+        }
+        index = index + 1
+    }
+    assert length(copy) == 1 && get(copy, 0).id != get(methods, 0).id && get(copy, 0).id != get(methods, 1).id
+    assert length(copied.1.lineage) == 1 && get(get(copied.1.lineage, 0).parents, 0) == parent
+    let copied_owner = get(copy, 0).owner
+    let original_method = get(copy, 0)
+    let extra = "\nconcept Other { fn inspect(self Self) Int\n    fn copied(self Self) Int }\n"
+    discard std.file.write_text(path(directory, "moved.loom"), concat(renamed, extra))
+    let before_derivation = text_at(path(directory, ".loom-ids"))
+    assert match refresh_command(["trial", "refresh", directory, "--derive-member", original_method.id,
+            "unknown-owner", "moved.loom", "copied", original_method.key]) {
+        Result.Err(_) => true
+        Result.Ok(_) => false
+    }
+    assert text_at(path(directory, ".loom-ids")) == before_derivation
+    discard refresh_command(["trial", "refresh", directory, "--derive-member", original_method.id,
+            copied_owner, "moved.loom", "copied", original_method.key])?
+    let derived = read_state(directory)?
+    let target = candidate_at(derived.0.revision.identities, copied_owner, "moved.loom", NodeKind.Function, "copied", original_method.key)
+    assert target >= 0
+    let derived_method = get(derived.0.revision.identities, target)
+    assert derived_method.id != original_method.id
+    assert get(get(derived.1.lineage, lineage_index(derived.1.lineage, derived_method.id)).parents, 0) == original_method.id
+    let destination = get(methods, 0).owner
+    let moved_extra = "\nconcept Other { fn inspect(self Self) Int }\n"
+    let relocated = replace(renamed, "concept Read {", "concept Read {\n    fn copied(self Self) Int")
+    discard std.file.write_text(path(directory, "moved.loom"), concat(relocated, moved_extra))
+    discard refresh_command(["trial", "refresh", directory, "--move-member", derived_method.id,
+            destination, "moved.loom", "copied", derived_method.key])?
+    let relocated_state = read_state(directory)?
+    assert get(relocated_state.0.revision.identities, identity_at(relocated_state.0.revision.identities, derived_method.id)).owner == destination
+    assert length(relocated_state.1.lineage) == 2
+    remove_module_fixture(staging)
+    Result.Ok("owned method lifecycle completed")
+}
+
+test fn owned_methods_keep_identity_through_refresh_moves_drafts_and_explicit_renames() {
+    assert successful(owned_method_lifecycle(module_test_directory("owned-methods"))) == "owned method lifecycle completed"
+}

@@ -65,6 +65,7 @@ test fn lineage_merge_retains_history_without_unifying_parent_and_child() {
         Result.Ok(_) => false
     }
     let previous = [Identity {
+            owner = ""
             id = "root"
             path = "value.loom"
             kind = NodeKind.Function
