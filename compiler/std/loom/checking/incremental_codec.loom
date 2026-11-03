@@ -92,6 +92,23 @@ fn cache_ints(output Bytes, values List[Int]) {
 
 fn cache_field(reader CacheReader) Result[Span, Text] {
     let start = get(reader.cursor, 0)
+    // Most numeric fields and short strings have a one-digit byte count.
+    // Decode that complete prefix directly; longer/noncanonical prefixes keep
+    // the ordinary checked parser and exactly the same accepted wire format.
+    if start + 1 < std.text.length(reader.text) {
+        let first = std.text.byte(reader.text, start)
+        if first >= 48 && first <= 57 && std.text.byte(reader.text, start + 1) == 10 {
+            let size = first - 48
+            if size > std.text.length(reader.text) - start - 2 {
+                return Result.Err("truncated cache field")
+            }
+            set(reader.cursor, 0, start + 2 + size)
+            return Result.Ok(Span {
+                    start = start + 2,
+                    end = start + 2 + size
+                })
+        }
+    }
     var end = start
     while end < std.text.length(reader.text) && std.text.byte(reader.text, end) != 10 {
         end = end + 1

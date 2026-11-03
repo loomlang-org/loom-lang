@@ -53,3 +53,71 @@ test fn snapshot_numbers_keep_the_canonical_counted_encoding() {
     }
     assert get(reader.cursor, 0) == std.text.length(reader.text)
 }
+
+test fn snapshot_fields_keep_short_long_empty_and_utf8_boundaries() {
+    let values = ["", "0", "123456789", "1234567890", "雪", "after"]
+    let output = std.bytes.new()
+    var index = 0
+    while index < length(values) {
+        cache_text(output, get(values, index))
+        index = index + 1
+    }
+    let reader = cache_reader(std.bytes.to_text(output))
+    index = 0
+    while index < length(values) {
+        assert match cache_read_text(reader) {
+            Result.Ok(value) => value == get(values, index)
+            Result.Err(_) => false
+        }
+        index = index + 1
+    }
+    assert get(reader.cursor, 0) == std.text.length(reader.text)
+}
+
+test fn snapshot_field_lengths_preserve_existing_noncanonical_decimal_inputs() {
+    let sources = ["+1\nx", "01\nx", "00\n", "-0\n"]
+    let expected = ["x", "x", "", ""]
+    var index = 0
+    while index < length(sources) {
+        let reader = cache_reader(get(sources, index))
+        assert match cache_read_text(reader) {
+            Result.Ok(value) => value == get(expected, index)
+            Result.Err(_) => false
+        }
+        assert get(reader.cursor, 0) == std.text.length(reader.text)
+        index = index + 1
+    }
+}
+
+test fn snapshot_fields_reject_truncation_and_invalid_sizes_before_advancing() {
+    let malformed = ["", "1", "-1\n", "x\nx", "9223372036854775807\nx",
+        "9223372036854775808\nx", "-9223372036854775809\nx"]
+    var index = 0
+    while index < length(malformed) {
+        let reader = cache_reader(get(malformed, index))
+        assert match cache_read_text(reader) {
+            Result.Err(_) => true
+            Result.Ok(_) => false
+        }
+        assert get(reader.cursor, 0) == 0
+        index = index + 1
+    }
+    let fields = ["", "123456789", "1234567890"]
+    index = 0
+    while index < length(fields) {
+        let output = std.bytes.new()
+        cache_text(output, get(fields, index))
+        let text = std.bytes.to_text(output)
+        var end = 0
+        while end < std.text.length(text) {
+            let reader = cache_reader(std.text.slice(text, 0, end))
+            assert match cache_read_text(reader) {
+                Result.Err(_) => true
+                Result.Ok(_) => false
+            }
+            assert get(reader.cursor, 0) == 0
+            end = end + 1
+        }
+        index = index + 1
+    }
+}
