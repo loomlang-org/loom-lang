@@ -761,6 +761,11 @@ fn smt_encoding(obligations List[Obligation], extended Bool, guarded_order Bool,
         // substitution, so their interval bounds participate in rewriting.
         // This is the same obligation and the same host time limit.
         "(check-sat-using (then simplify snf simplify solve-eqs simplify smt))\n"
+    } else if select_obligation {
+        // Split the explicit counterexample choice before normalization can
+        // introduce unrelated alternatives. Then open quantified witnesses in
+        // each case, retaining the same single query and host time limit.
+        "(check-sat-using (then (or-else split-clause skip) simplify snf simplify solve-eqs simplify aig simplify default))\n"
     } else if witness_normalization {
         // Open quantified counterexamples before branch substitution. All
         // source premises and theory laws remain in the same single query.
