@@ -56,9 +56,11 @@ fn dependency_trial_lifecycle(staging Text) Result[Text, Text] {
     index = 0
     while index < length(review.bindings) {
         let change = get(review.bindings, index)
+        assert change.view == DependencyBindingView.Lexical
+        assert length(change.before) == 1 && length(change.after) == 1
         private_test = private_test || (change.tests && ends_with(change.path, "_test.loom"))
-        assert ends_with(change.before.source.module.source, "library")
-        assert ends_with(change.after.source.module.source, "fork")
+        assert ends_with(get(change.before, 0).source.module.source, "library")
+        assert ends_with(get(change.after, 0).source.module.source, "fork")
         index = index + 1
     }
     assert private_test
@@ -75,8 +77,10 @@ fn dependency_trial_lifecycle(staging Text) Result[Text, Text] {
     index = 0
     while index < length(configuration.bindings) {
         let change = get(configuration.bindings, index)
-        assert change.before.source.path == change.after.source.path
-        assert change.before.source.digest == change.after.source.digest
+        assert change.view == DependencyBindingView.Lexical
+        assert length(change.before) == 1 && length(change.after) == 1
+        assert get(change.before, 0).source.path == get(change.after, 0).source.path
+        assert get(change.before, 0).source.digest == get(change.after, 0).source.digest
         index = index + 1
     }
     let configured_summary = preview_dependencies("compiler/std", before, after)?

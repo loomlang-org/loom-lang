@@ -48,8 +48,13 @@ path and digest stay identical. Separately copied local
 dependencies therefore conservatively appear as different origins. Production
 and every package's independent private test scope pass ordinary type/contract
 checks. The output inventories source origins/hashes and changed checked
-definition observations, including overload selections. File-granular hashes
-can report changes caused only by unrelated declarations or trivia; repeated
+definition observations, including overload selections. Each reference labels its
+`lexical` or `observed instances` view and prints the complete before/after target
+sets, their counts, and every source span. Generic references retain their
+independently checked abstract target and every distinct observed implementation,
+including those reached only by private nonentry callers. Empty observed sets
+are explicit; list order never pairs old and new implementations. File-granular
+hashes can report changes caused only by unrelated declarations or trivia; repeated
 contexts are labeled. It does not execute application code or tests, rewrite
 inputs, produce an apply token, or prove behavioral/deployment compatibility.
 Unknown/generated references, missing evidence and exported macro providers
@@ -399,9 +404,9 @@ each production/private-test view. One source token can be renamed
 only when every checked target requests the same spelling. Neither a concept
 family nor the abstract target substitutes for the observed implementations.
 Missing or ambiguous abstract evidence, changed observation sets and generated
-or unaccounted uses still require resolution. Dependency-change review retains
-its existing unique-definition requirement; this merge evidence does not widen
-that separate review format.
+or unaccounted uses still require resolution. Dependency-change review displays
+the separate lexical and observed target sets using the same complete source
+evidence; it does not infer compatibility between their members.
 
 Ambiguities may be saved without guessing an identity:
 

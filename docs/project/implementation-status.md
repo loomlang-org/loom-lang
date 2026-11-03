@@ -823,8 +823,10 @@ checks unchanged application sources against two offline dependency graphs,
 including each package's private tests. It reports source origins/hashes and
 changed explicit bindings without conflating same-named forks, configurations or project-local
 IDs. Required contracts still apply; incomplete/generated binding evidence
-rejects. It does not rewrite locks, run applications/tests, prove behavioral
-compatibility or authorize deployment.
+rejects. Generic references report separate lexical and complete observed target
+sets, including private nonentry callers; removed observations remain explicit
+empty sets without inferred old/new pairings. It does not rewrite locks, run
+applications/tests, prove behavioral compatibility or authorize deployment.
 
 `loom change` is the public semantic-change entry point. A full bootstrap and
 relocatable archives include its separate Loom-written command; development

@@ -14,11 +14,13 @@ fn dependency_fixture(origin Text, api Text, tests Bool, reordered Bool) Project
     }
     let child = 1
     let library = 2 - root
-    let own_module = ModuleInstance { configuration = []
+    let own_module = ModuleInstance {
+        configuration = []
         name = "sample"
         source = "/module"
     }
-    let dependency_module = ModuleInstance { configuration = []
+    let dependency_module = ModuleInstance {
+        configuration = []
         name = "library"
         source = origin
     }
@@ -113,15 +115,40 @@ fn dependency_api() Text {
 
 fn dependency_configured_fixture(values List[ConfigurationValue], tests Bool, reordered Bool) Project {
     let project = dependency_fixture("/cache/library", dependency_api(), tests, reordered)
-    let owner = if reordered { 0 } else { 1 }
-    set(project.modules, owner, ModuleInstance { configuration = values, ..get(project.modules, owner) })
+    let owner = if reordered {
+        0
+    } else {
+        1
+    }
+    set(project.modules, owner, ModuleInstance {
+            configuration = values,
+            ..get(project.modules, owner)
+        })
     project
 }
 
 test fn dependency_review_reports_configuration_changes_with_identical_source_bytes() {
-    let first = [ConfigurationValue { name = "mode" value = "search" }, ConfigurationValue { name = "empty" value = "" }]
-    let same = [ConfigurationValue { name = "empty" value = "" }, ConfigurationValue { name = "mode" value = "search" }]
-    let different = [ConfigurationValue { name = "mode" value = "export" }, ConfigurationValue { name = "empty" value = "" }]
+    let first = [ConfigurationValue {
+            name = "mode"
+            value = "search"
+        }, ConfigurationValue {
+            name = "empty"
+            value = ""
+        }]
+    let same = [ConfigurationValue {
+            name = "empty"
+            value = ""
+        }, ConfigurationValue {
+            name = "mode"
+            value = "search"
+        }]
+    let different = [ConfigurationValue {
+            name = "mode"
+            value = "export"
+        }, ConfigurationValue {
+            name = "empty"
+            value = ""
+        }]
     let before = dependency_configured_fixture(first, false, false)
     let before_tests = dependency_configured_fixture(first, true, false)
     let normalized = dependency_checked_review(before, before_tests,
@@ -133,10 +160,12 @@ test fn dependency_review_reports_configuration_changes_with_identical_source_by
     var index = 0
     while index < length(changed.bindings) {
         let change = get(changed.bindings, index)
-        assert change.before.source.path == change.after.source.path
-        assert change.before.source.digest == change.after.source.digest
-        assert same_configuration(change.before.source.module.configuration, first)
-        assert same_configuration(change.after.source.module.configuration, different)
+        assert change.view == DependencyBindingView.Lexical
+        assert length(change.before) == 1 && length(change.after) == 1
+        assert get(change.before, 0).source.path == get(change.after, 0).source.path
+        assert get(change.before, 0).source.digest == get(change.after, 0).source.digest
+        assert same_configuration(get(change.before, 0).source.module.configuration, first)
+        assert same_configuration(get(change.after, 0).source.module.configuration, different)
         index = index + 1
     }
 }
@@ -173,8 +202,10 @@ test fn dependency_review_uses_module_origins_not_analysis_local_ids() {
     var index = 0
     while index < length(fork.bindings) {
         let change = get(fork.bindings, index)
-        assert change.before.source.module.source == "/cache/library"
-        assert change.after.source.module.source == "/cache/fork"
+        assert change.view == DependencyBindingView.Lexical
+        assert length(change.before) == 1 && length(change.after) == 1
+        assert get(change.before, 0).source.module.source == "/cache/library"
+        assert get(change.after, 0).source.module.source == "/cache/fork"
         private_test = private_test || (change.tests && change.package == "child" &&
             ends_with(change.path, "_test.loom"))
         index = index + 1
@@ -238,9 +269,11 @@ test fn dependency_review_reports_new_overload_selection_and_same_path_edits() {
     var index = 0
     while index < length(selected.bindings) {
         let change = get(selected.bindings, index)
-        assert ends_with(change.before.source.path, "api.loom")
+        assert change.view == DependencyBindingView.Lexical
+        assert length(change.before) == 1 && length(change.after) == 1
+        assert ends_with(get(change.before, 0).source.path, "api.loom")
         root_call = root_call || (!change.tests && change.path == "/module/app.loom" &&
-            ends_with(change.after.source.path, "overload.loom"))
+            ends_with(get(change.after, 0).source.path, "overload.loom"))
         index = index + 1
     }
     assert root_call
@@ -250,9 +283,9 @@ test fn dependency_review_reports_new_overload_selection_and_same_path_edits() {
         dependency_fixture("/cache/library", edited_api, true, false))
     assert length(edited.bindings) > 0
     let change = get(edited.bindings, 0)
-    assert change.before.source.path == change.after.source.path
-    assert change.before.span.start == change.after.span.start
-    assert change.before.source.digest != change.after.source.digest
+    assert get(change.before, 0).source.path == get(change.after, 0).source.path
+    assert get(change.before, 0).span.start == get(change.after, 0).span.start
+    assert get(change.before, 0).source.digest != get(change.after, 0).source.digest
 }
 
 fn dependency_private_test(project Project) Project {
@@ -343,4 +376,195 @@ test fn dependency_review_does_not_hide_unselected_source_or_stale_ast() {
         Result.Err(message) => contains(message, "text and AST disagree")
         Result.Ok(_) => false
     }
+}
+
+fn dependency_generic_method_fixture(origin Text, tests Bool, reordered Bool) Project {
+    let api = """
+        pub concept Read { fn read(self Self) Int }
+        impl Read for Int { fn read(self Int) Int { self + 1 } }
+        impl Read for Bool { fn read(self Bool) Int { 7 } }
+        """
+    let project = dependency_fixture(origin, api, tests, reordered)
+    let owner = get(project.packages, project.root).instance
+    var index = 0
+    while index < length(project.files) {
+        let file = get(project.files, index)
+        if get(project.packages, file.package).instance == owner {
+            let relative = get(project.packages, file.package).relative
+            let text = if file.test_only {
+                "test fn checked_private_scope() { assert child() > 0 }\n"
+            } else if relative == "" {
+                """
+                import library.Read
+                fn generic_read[T Read](value T) Int { value.read() }
+                fn main() { assert generic_read(7) > 0 && generic_read(true) > 0 }
+                """
+            } else {
+                """
+                import library.Read
+                fn child_read[T Read](value T) Int { value.read() }
+                fn child() Int { child_read(7) + child_read(true) }
+                """
+            }
+            set(project.files, index, SourceFile {
+                    text = text,
+                    tree = package_tree(text),
+                    ..file
+                })
+        }
+        index = index + 1
+    }
+    project
+}
+
+test fn dependency_generic_method_review_keeps_lexical_and_all_instance_targets() {
+    let before = dependency_generic_method_fixture("/cache/library", false, false)
+    let before_tests = dependency_generic_method_fixture("/cache/library", true, false)
+    let unchanged = dependency_checked_review(before, before_tests,
+        dependency_generic_method_fixture("/cache/library", false, true),
+        dependency_generic_method_fixture("/cache/library", true, true))
+    assert length(unchanged.bindings) == 0
+    let changed = dependency_checked_review(before, before_tests,
+        dependency_generic_method_fixture("/cache/fork", false, true),
+        dependency_generic_method_fixture("/cache/fork", true, true))
+    var lexical = false
+    var observed = false
+    var private_test = false
+    var index = 0
+    while index < length(changed.bindings) {
+        let change = get(changed.bindings, index)
+        if change.view == DependencyBindingView.Lexical {
+            lexical = true
+        }
+        if change.view == DependencyBindingView.Observed {
+            observed = true
+            assert length(change.before) == 2 && length(change.after) == 2
+            private_test = private_test || (change.tests && change.root == "child")
+        }
+        let sides = [change.before, change.after]
+        var side = 0
+        while side < 2 {
+            let targets = get(sides, side)
+            var target = 0
+            while target < length(targets) {
+                assert get(targets, target).source.module.source == if side == 0 {
+                    "/cache/library"
+                } else {
+                    "/cache/fork"
+                }
+                target = target + 1
+            }
+            side = side + 1
+        }
+        index = index + 1
+    }
+    assert lexical && observed && private_test
+}
+
+fn dependency_default_methods(tests Bool) Project {
+    let project = dependency_generic_method_fixture("/cache/library", tests, true)
+    var index = 0
+    while index < length(project.files) {
+        let file = get(project.files, index)
+        if !dependency_owned(project, file.package) {
+            let text = """
+                pub concept Read { fn read(self Self) Int { 7 } }
+                impl Read for Int {}
+                impl Read for Bool {}
+                """
+            set(project.files, index, SourceFile {
+                    text = text,
+                    tree = package_tree(text),
+                    ..file
+                })
+        }
+        index = index + 1
+    }
+    project
+}
+
+test fn dependency_review_reports_removed_distinct_observations_without_pairing_defaults() {
+    let review = dependency_checked_review(
+        dependency_generic_method_fixture("/cache/library", false, false),
+        dependency_generic_method_fixture("/cache/library", true, false),
+        dependency_default_methods(false), dependency_default_methods(true))
+    var removed = false
+    var index = 0
+    while index < length(review.bindings) {
+        let change = get(review.bindings, index)
+        if change.view == DependencyBindingView.Observed {
+            assert length(change.before) == 2 && length(change.after) == 0
+            removed = true
+        }
+        index = index + 1
+    }
+    assert removed
+}
+
+fn dependency_generic_configuration(value Text, tests Bool, reordered Bool) Project {
+    let project = dependency_generic_method_fixture("/cache/library", tests, reordered)
+    var index = 0
+    while index < length(project.modules) {
+        let instance = get(project.modules, index)
+        if instance.name == "library" {
+            set(project.modules, index, ModuleInstance {
+                    configuration = [ConfigurationValue {
+                            name = "mode",
+                            value = value
+                        }],
+                    ..instance
+                })
+        }
+        index = index + 1
+    }
+    project
+}
+
+test fn dependency_generic_instances_keep_configuration_identity_with_equal_bytes() {
+    let review = dependency_checked_review(
+        dependency_generic_configuration("search", false, false),
+        dependency_generic_configuration("search", true, false),
+        dependency_generic_configuration("export", false, true),
+        dependency_generic_configuration("export", true, true))
+    var observed = false
+    var index = 0
+    while index < length(review.bindings) {
+        let change = get(review.bindings, index)
+        let count = if change.view == DependencyBindingView.Lexical {
+            1
+        } else {
+            2
+        }
+        assert length(change.before) == count && length(change.after) == count
+        observed = observed || change.view == DependencyBindingView.Observed
+        var target = 0
+        while target < count {
+            let before = get(change.before, target).source
+            let after = get(change.after, target).source
+            assert before.path == after.path && before.digest == after.digest
+            assert get(before.module.configuration, 0).value == "search"
+            assert get(after.module.configuration, 0).value == "export"
+            target = target + 1
+        }
+        index = index + 1
+    }
+    assert observed
+}
+
+test fn dependency_review_reports_added_distinct_observations_without_pairing_defaults() {
+    let review = dependency_checked_review(
+        dependency_default_methods(false), dependency_default_methods(true),
+        dependency_generic_method_fixture("/cache/library", false, false),
+        dependency_generic_method_fixture("/cache/library", true, false))
+    var added = false
+    var index = 0
+    while index < length(review.bindings) {
+        let change = get(review.bindings, index)
+        if change.view == DependencyBindingView.Observed {
+            assert length(change.before) == 0 && length(change.after) == 2
+            added = true
+        }
+        index = index + 1
+    }
+    assert added
 }

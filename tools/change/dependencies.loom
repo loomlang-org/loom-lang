@@ -1,6 +1,8 @@
 import semantic_change.review_dependencies
 import semantic_change.DependencyReview
 import semantic_change.DependencySource
+import semantic_change.DependencyTarget
+import semantic_change.DependencyBindingView
 import std.list.clone
 import std.list.set
 import std.text.join
@@ -83,12 +85,26 @@ fn preview_dependencies(standard Text, before Text, after Text) Result[Text, Tex
                     "production "
                 }, concat("root=", concat(change.root, concat(" package=", concat(change.package,
                                 concat(" ", concat(change.path, concat(":", concat(to_text(change.offset), "\n"))))))))))
-        push(output, concat("  before ", concat(dependency_source_line(change.before.source),
-                    concat(":", concat(to_text(change.before.span.start), "\n")))))
-        push(output, concat("  after  ", concat(dependency_source_line(change.after.source),
-                    concat(":", concat(to_text(change.after.span.start), "\n")))))
+        push(output, concat("  view ", concat(if change.view == DependencyBindingView.Lexical {
+                        "lexical"
+                    } else {
+                        "observed instances"
+                    }, "\n")))
+        discard dependency_target_lines(output, "before", change.before)
+        discard dependency_target_lines(output, "after", change.after)
         index = index + 1
     }
     push(output, concat("changed binding observations: ", concat(to_text(length(review.bindings)), "\n")))
     Result.Ok(join(output, ""))
+}
+
+fn dependency_target_lines(output List[Text], side Text, targets List[DependencyTarget]) Bool {
+    push(output, concat("  ", concat(side, concat(" targets: ", concat(to_text(length(targets)), "\n")))))
+    var index = 0
+    while index < length(targets) {
+        let target = get(targets, index)
+        push(output, concat("    ", concat(dependency_source_line(target.source), concat(":", concat(to_text(target.span.start), concat("..", concat(to_text(target.span.end), "\n")))))))
+        index = index + 1
+    }
+    true
 }

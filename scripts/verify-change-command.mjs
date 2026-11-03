@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { verifyMemberChangeCommand } from "./verify-member-change-command.mjs";
+import { verifyDependencyChangeCommand } from "./verify-dependency-change-command.mjs";
 
 // Exercise the delivered command, including argument forwarding and child exit
 // status, from a directory outside the checkout and toolchain.
@@ -44,5 +45,6 @@ export function verifyChangeCommand(loom, fixtures, directory, environment, stan
   assert.equal(tested.status, 0, tested.stderr);
   assert.equal(tested.stdout, "1 tests passed\n");
   verifyMemberChangeCommand(loom, join(directory, "owned methods"), environment, standard);
+  if (standard) verifyDependencyChangeCommand(loom, join(directory, "dependency review"), environment, standard);
   return { inputs, token };
 }
