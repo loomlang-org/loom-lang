@@ -48,8 +48,8 @@ fn entry() Int {
   assert.equal(roots.length, 3);
   assert.equal(methods.length, 2);
   assert.match(success(change("scan", base)), /owner=d-/);
-  cpSync(base, left, { recursive: true });
-  cpSync(base, right, { recursive: true });
+  cpSync(base, left, { recursive: true, filter: () => true });
+  cpSync(base, right, { recursive: true, filter: () => true });
   rmSync(join(left, "main.loom"));
   writeFileSync(join(left, "moved.loom"), source.replaceAll("read(", "inspect("));
   assert.equal(change("refresh", left).status, 1, "ambiguous move was guessed");
@@ -143,8 +143,8 @@ fn generic_read[T Read](value T) Int { value.read() }
     success(change("init", "sample.lib", join(moduleBase, "lib")));
     const publicMethods = readFileSync(join(moduleBase, "lib", ".loom-ids"), "utf8").split("\n")
       .map((row) => row.split(" ")).filter((row) => row[0] === "id" && row.length === 7);
-    cpSync(moduleBase, moduleLeft, { recursive: true });
-    cpSync(moduleBase, moduleRight, { recursive: true });
+    cpSync(moduleBase, moduleLeft, { recursive: true, filter: () => true });
+    cpSync(moduleBase, moduleRight, { recursive: true, filter: () => true });
     writeFileSync(join(moduleLeft, "lib", "api.loom"), publicLibrary.replaceAll("read(", "inspect("));
     writeFileSync(join(moduleLeft, "main.loom"), consumer.replaceAll(".read(", ".inspect("));
     success(change("refresh", moduleLeft));
