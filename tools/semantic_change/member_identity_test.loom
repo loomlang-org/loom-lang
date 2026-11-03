@@ -466,3 +466,72 @@ test fn owned_member_metadata_preserves_carried_row_order_and_batch_id_uniquenes
         Result.Ok(_) => false
     }
 }
+
+fn owned_named_revision(renamed Bool, moved Bool, edited Bool) Revision {
+    let revision = named_rename_revision(renamed, moved, edited)
+    let contents = match indexed(revision) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            assert false
+            return revision
+        }
+    }
+    var index = 0
+    while index < length(contents.entries) {
+        let entry = get(contents.entries, index)
+        if length(entry.members) == 1 {
+            let locator = split(get(entry.members, 0).locator, " ")
+            push(revision.identities, Identity {
+                    id = concat(entry.id, "-method")
+                    owner = entry.id
+                    path = entry.path
+                    kind = NodeKind.Function
+                    name = get(locator, 1)
+                    key = get(locator, 2)
+                })
+        }
+        index = index + 1
+    }
+    revision
+}
+
+test fn named_type_renames_refresh_explicit_owned_method_keys_without_changing_ids() {
+    let base = owned_named_revision(false, false, false)
+    let branches = [owned_named_revision(true, true, false), owned_named_revision(false, false, true)]
+    var order = 0
+    while order < 2 {
+        let merged = match merge(base, get(branches, order), get(branches, 1 - order)) {
+            Result.Ok(value) => value
+            Result.Err(message) => {
+                discard write_error(message)
+                assert false
+                return
+            }
+        }
+        assert contains(get(merged.files, 1).text, "record Product")
+        assert contains(get(merged.files, 2).text, "impl Count for Product")
+        assert contains(get(merged.files, 2).text, "other.amount + 1")
+        var index = 0
+        var methods = 0
+        while index < length(merged.identities) {
+            let identity = get(merged.identities, index)
+            if identity.owner != "" {
+                methods = methods + 1
+                assert identity.id == concat(identity.owner, "-method")
+                assert identity.name == "measure"
+                assert identity.path == if identity.owner == "concept" {
+                    "moved.loom"
+                } else {
+                    "impl.loom"
+                }
+            }
+            index = index + 1
+        }
+        assert methods == 2
+        assert match indexed(merged) {
+            Result.Ok(_) => true,
+            Result.Err(_) => false
+        }
+        order = order + 1
+    }
+}
