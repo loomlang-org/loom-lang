@@ -54,9 +54,11 @@ are unchanged. Whitespace and comments between members join independently by
 the same three-way equality rules, preserving their exact bytes. Conflicting
 edits to one gap or method still require resolution; other container scaffolding
 stays unchanged. Retained method bodies and headers keep their checked
-bindings even when another method changes length. This does not synthesize
-durable member IDs: member renames, interface/default-presence changes and
-ambiguous member slots still require resolution.
+bindings even when another method changes length. Explicit method IDs name their
+enclosing concept/impl owner and support checked method renames across complete
+selected-module consumers. Legacy snapshots without those IDs cannot infer them
+from spelling or signatures. Interface/default-presence changes and ambiguous
+member slots still require resolution.
 
 Import edges are rebuilt from each complete source tree with the ordinary
 loader's dependency rules. External module identities remain pinned: a same-named
@@ -78,15 +80,16 @@ baseline must match before normalization. Overloaded declarations are selected
 by stable identity and signature locator, not spelling. A rename may split or
 join an overload set only if checked calls and function references keep their
 identified targets; ambiguous or changed bindings still require resolution.
-Generic bodies require checked abstract bindings as well as agreement with any
-observed concrete instances; every retained reference still needs one checked
-definition. Unselected static branches, unsupported generic forms and missing
+Generic bodies retain a unique independently checked abstract binding and every
+distinct observed implementation target. Both sets must survive the merge;
+ordinary references still require one checked definition. Unselected static
+branches, unsupported generic forms and missing
 evidence require resolution.
 The compiler's public reference obligations supply the source forms and unknown
 ranges; this tool does not keep a second syntax whitelist. Explicit concept
 bounds, lexical cleanup and ordinary `comptime { ... }` blocks participate in
 binding comparison. Checked temporary function tables retain staged locals and
-closure captures; every reference still needs a unique checked definition.
+closure captures; each reference still needs complete checked binding evidence.
 Static branch selection and generated forms retain unknown ranges. This is
 explicit-name coverage, not a proof of implicit effects or behavior compatibility.
 Default-method bodies participate through their implicit generic `Self` scope.
@@ -104,8 +107,8 @@ bindings must agree in production and effective private-test scope. Conflicting
 same-file import scaffolds still require resolution rather than a guessed text
 merge. Type renames refresh affected function
 and impl locators while retaining their explicit IDs and checked member scopes.
-Single-package public renames, member renames and moves across package identities
-remain unsupported.
+Single-package public renames and moves across package identities remain
+unsupported.
 This does not update unknown external consumers or prove API compatibility.
 Rename composition also rejects packages exporting a macro generator:
 generated Text/AST can bind private helpers in the definition context, outside
@@ -137,9 +140,18 @@ A final optional `ProofBackend` has the same capability boundary as merge APIs.
 The review checks production and each application's package-private test root.
 It reports before/after source inventories (module origin, package, path and
 SHA-256) and changed explicit reference observations, including the selected
-definition's source and span. A same-named fork remains a different origin;
-same-path source edits cannot be hidden by equal offsets. Index renumbering
-alone is not a binding change. File-level hashes deliberately over-report when
+definition's source and span. Each `DependencyBindingChange` has a `view`
+(`DependencyBindingView.Lexical` or `.Observed`) and complete `before`/`after`
+lists of `DependencyTarget`. Lexical lists contain one independently checked
+target; observed lists contain every distinct additional instance target and
+can be empty. Compare these as sets, never as corresponding list positions.
+The API previously exposed a single target on each side; clients must now
+handle the view and every list element. A same-named fork remains a different
+origin; same-path source edits cannot be hidden by equal offsets. Index renumbering
+alone is not a binding change. Ordinary callers throughout the selected module,
+including private nonentry callers, contribute generic instance observations.
+An abstract concept target never substitutes for its observed implementations.
+File-level hashes deliberately over-report when
 only another declaration or trivia in the target file changed. Observations can
 repeat in different production/test contexts. The observations cover references
 inside declarations, not unused import/export sets or implicit effects.

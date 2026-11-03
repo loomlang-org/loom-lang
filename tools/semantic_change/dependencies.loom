@@ -19,14 +19,20 @@ pub record DependencyTarget {
     span Span
 }
 
+pub enum DependencyBindingView {
+    Lexical
+    Observed
+}
+
 pub record DependencyBindingChange {
     tests Bool
     root Text
     package Text
     path Text
     offset Int
-    before DependencyTarget
-    after DependencyTarget
+    view DependencyBindingView
+    before List[DependencyTarget]
+    after List[DependencyTarget]
 }
 
 pub record DependencyReview {
@@ -247,29 +253,26 @@ fn dependency_bindings(before Project, after Project, tests Bool, backend ProofB
                     if length(sites.unknown) != 0 {
                         return Result.Err("dependency review has unaccounted source references")
                     }
-                    let old_evidence = inspect_references(original.snapshot, original_file, sites.offsets)
-                    let new_evidence = inspect_references(current.snapshot, other, sites.offsets)
+                    let old_evidence = inspect_source_references(original.snapshot, original_file, sites.offsets)?
+                    let new_evidence = inspect_source_references(current.snapshot, other, sites.offsets)?
                     var site = 0
                     while site < length(sites.offsets) {
                         let offset = get(sites.offsets, site)
                         let abstract_body = abstract_reference_scope(node)
-                        let previous = reference_inspection(original, original_file, offset, abstract_body,
+                        let previous = reference_definitions(original, original_file, offset, abstract_body,
                             get(old_evidence, site).inspection)?
-                        let updated = reference_inspection(current, other, offset, abstract_body,
+                        let updated = reference_definitions(current, other, offset, abstract_body,
                             get(new_evidence, site).inspection)?
-                        let a = dependency_target(original, original_sources, get(previous.definitions, 0))?
-                        let b = dependency_target(current, current_sources, get(updated.definitions, 0))?
-                        if !dependency_same_target(a, b) {
-                            push(changes, DependencyBindingChange {
-                                    tests = tests
-                                    root = get(before.packages, before.root).relative
-                                    package = relative
-                                    path = source.path
-                                    offset = offset
-                                    before = a
-                                    after = b
-                                })
-                        }
+                        let a = [dependency_target(original, original_sources, previous.lexical)?]
+                        let b = [dependency_target(current, current_sources, updated.lexical)?]
+                        discard dependency_binding_change(changes, tests,
+                            get(before.packages, before.root).relative, relative, source.path, offset,
+                            DependencyBindingView.Lexical, a, b)
+                        discard dependency_binding_change(changes, tests,
+                            get(before.packages, before.root).relative, relative, source.path, offset,
+                            DependencyBindingView.Observed,
+                            dependency_targets(original, original_sources, previous.observed)?,
+                            dependency_targets(current, current_sources, updated.observed)?)
                         site = site + 1
                     }
                 }
@@ -324,4 +327,64 @@ pub fn review_dependencies(before Project, before_tests Project,
             after = dependency_source_union(current_sources, current_test_sources)
             bindings = changes
         })
+}
+
+fn dependency_targets(analysis CheckedAnalysis, sources List[DependencySource], locations List[Location]) Result[List[DependencyTarget], Text] {
+    let targets = new[DependencyTarget]()
+    var index = 0
+    while index < length(locations) {
+        let target = dependency_target(analysis, sources, get(locations, index))?
+        var duplicate = false
+        var previous = 0
+        while previous < length(targets) {
+            duplicate = duplicate || dependency_same_target(get(targets, previous), target)
+            previous = previous + 1
+        }
+        if !duplicate {
+            push(targets, target)
+        }
+        index = index + 1
+    }
+    Result.Ok(targets)
+}
+
+fn dependency_same_targets(before List[DependencyTarget], after List[DependencyTarget]) Bool {
+    let sides = [before, after]
+    var side = 0
+    while side < 2 {
+        let expected = get(sides, side)
+        let observed = get(sides, 1 - side)
+        var index = 0
+        while index < length(expected) {
+            var found = false
+            var candidate = 0
+            while candidate < length(observed) {
+                found = found || dependency_same_target(get(expected, index), get(observed, candidate))
+                candidate = candidate + 1
+            }
+            if !found {
+                return false
+            }
+            index = index + 1
+        }
+        side = side + 1
+    }
+    true
+}
+
+fn dependency_binding_change(changes List[DependencyBindingChange], tests Bool, root Text, package Text,
+    path Text, offset Int, view DependencyBindingView, before List[DependencyTarget], after List[DependencyTarget]) Bool {
+    if !dependency_same_targets(before, after) {
+        push(changes, DependencyBindingChange {
+                tests = tests
+                root = root
+                package = package
+                path = path
+                offset = offset
+                view = view
+                before = before
+                after = after
+            })
+    }
+    true
 }

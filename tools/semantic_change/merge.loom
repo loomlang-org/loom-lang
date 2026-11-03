@@ -383,50 +383,6 @@ fn same_target(left BindingTarget, right BindingTarget) Bool {
     left.end - left.anchor == right.end - right.anchor
 }
 
-fn reference_inspection(analysis CheckedAnalysis, file Int, offset Int, abstract_body Bool) Result[Inspection, Text] {
-    reference_inspection(analysis, file, offset, abstract_body, inspect_at(analysis.snapshot, file, offset))
-}
-
-fn reference_inspection(analysis CheckedAnalysis, file Int, offset Int, abstract_body Bool,
-    observed Option[Inspection]) Result[Inspection, Text] {
-    let inspected = match observed {
-        Option.Some(value) => value
-        Option.None => {
-            match inspect_independent(analysis.snapshot, file, offset) {
-                Option.Some(value) => value
-                Option.None => {
-                    return Result.Err(concat("retained reference has no checked binding evidence in ",
-                            concat(get(analysis.bindings.files, file).path, concat(" at ", to_text(offset)))))
-                }
-            }
-        }
-    }
-    if length(inspected.definitions) != 1 {
-        return Result.Err("retained reference has no unique checked definition")
-    }
-    if abstract_body {
-        // Observed specializations alone cannot account for a generic body.
-        // Require declaration-wide evidence too, and retain the concrete check
-        // above so different observed instances cannot silently select targets.
-        let abstract = match inspect_independent(analysis.snapshot, file, offset) {
-            Option.Some(value) => value
-            Option.None => {
-                return Result.Err("generic reference has no abstract binding evidence")
-            }
-        }
-        if length(abstract.definitions) != 1 {
-            return Result.Err("generic reference has instance-dependent binding evidence")
-        }
-        let expected = get(abstract.definitions, 0)
-        let observed = get(inspected.definitions, 0)
-        if expected.file != observed.file || expected.span.start != observed.span.start ||
-        expected.span.end != observed.span.end {
-            return Result.Err("generic reference has instance-dependent binding evidence")
-        }
-    }
-    Result.Ok(inspected)
-}
-
 fn compare_retained(source CheckedAnalysis, source_revision Indexed, merged CheckedAnalysis, merged_revision Indexed,
     directory Text) Result[Bool, Text] {
     var index = 0
