@@ -72,3 +72,39 @@ test fn histogram_context_keeps_all_versions_of_goal_columns_and_preserves_boole
                     factor = integer(1)
                 }]), [0])
 }
+
+test fn histogram_context_omits_only_quantified_full_scalar_domains() {
+    let item = IntegerTerm.Select(10, [0], variable(-7))
+    let label = IntegerTerm.TextLength(TextValue.Select(10, [1], variable(-7)))
+    let lower = Predicate.IntegerCompare(">=", item, IntegerTerm.Linear(constant(integer(-9223372036854775808))))
+    let upper = Predicate.IntegerCompare("<=", item, IntegerTerm.Linear(constant(integer(9223372036854775807))))
+    let text_lower = Predicate.IntegerCompare(">=", label, IntegerTerm.Linear(constant(integer(0))))
+    let text_upper = Predicate.IntegerCompare("<=", label, IntegerTerm.Linear(constant(integer(9223372036854775807))))
+    let content = Predicate.IntegerCompare(">=", item, IntegerTerm.Linear(constant(integer(0))))
+    let nonempty = Predicate.IntegerCompare(">", label, IntegerTerm.Linear(constant(integer(0))))
+    let bounds = [lower, upper, text_lower, text_upper]
+    let facts = new[Predicate]()
+    var index = 0
+    while index < length(bounds) {
+        push(facts, Predicate.Forall(-7, constant(integer(0)), variable(1), [get(bounds, index)]))
+        index = index + 1
+    }
+    let constrained = Predicate.Forall(-7, constant(integer(0)), variable(1), [content])
+    let labeled = Predicate.Forall(-7, constant(integer(0)), variable(1), [nonempty])
+    let guarded = Predicate.Forall(-7, constant(integer(0)), variable(1), [Predicate.Or([Predicate.Variable(8), lower])])
+    let negated = Predicate.Not([get(facts, 0)])
+    push(facts, constrained)
+    push(facts, labeled)
+    push(facts, guarded)
+    push(facts, negated)
+    let context = loop_histogram_context(State {
+            heap = -1,
+            locals = [],
+            facts = facts,
+            extents = [],
+            observations = []
+        }, Predicate.BagEqual(joint_test_column(10), variable(1), joint_test_column(11), variable(1)))
+    assert length(context.facts) == 4 && length(facts) == 8
+    assert same(get(context.facts, 0), constrained) && same(get(context.facts, 1), labeled)
+    assert same(get(context.facts, 2), guarded) && same(get(context.facts, 3), negated)
+}

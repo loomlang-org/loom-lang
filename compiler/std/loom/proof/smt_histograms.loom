@@ -1,5 +1,6 @@
 // One finite-bag algebra, specialized by the mathematical key sort. Scalar
-// integers retain their direct array encoding; joint values reuse immutable keys.
+// integers retain their direct array encoding; joint keys are finite tuples of
+// the requested scalar sorts, without unrelated recursive record/list structure.
 record SmtBag {
     array Text
     sort Text
@@ -18,6 +19,62 @@ fn integer_bag_column(column BagColumn) Bool {
     length(column.fields) == 1 && get(column.fields, 0).domain == ScalarDomain.Integer
 }
 
+record SmtHistogramKey {
+    sort Text
+    constructor Text
+    function Text
+}
+
+fn smt_histogram_key(writer SmtWriter, fields List[BagField]) Result[SmtHistogramKey, Text] {
+    var signature = ""
+    var index = 0
+    while index < length(fields) {
+        signature = concat(signature, match get(fields, index).domain {
+                ScalarDomain.Integer => "i"
+                ScalarDomain.Boolean => "b"
+                ScalarDomain.Text => "t"
+                ScalarDomain.Float => {
+                    return Result.Err("IEEE equality cannot supply a histogram key")
+                }
+            })
+        index = index + 1
+    }
+    let sort = concat("loom_hk_", signature)
+    let constructor = concat("loom_hkey_", signature)
+    var found = false
+    index = 0
+    while index < length(writer.names) && !found {
+        found = get(writer.names, index) == sort
+        index = index + 1
+    }
+    if !found {
+        push(writer.names, sort)
+        let output = std.bytes.new()
+        smt_append(output, concat("(declare-datatype ", concat(sort, concat(" ((", constructor))))
+        index = 0
+        while index < length(fields) {
+            let field_sort = match get(fields, index).domain {
+                ScalarDomain.Integer => "Int"
+                ScalarDomain.Boolean => "Bool"
+                ScalarDomain.Text => "(Seq (_ BitVec 8))"
+                ScalarDomain.Float => {
+                    return Result.Err("IEEE equality cannot supply a histogram key")
+                }
+            }
+            smt_append(output, concat(" (loom_hfield_", concat(signature, concat("_", concat(std.int.to_text(index),
+                                concat(" ", concat(field_sort, ")")))))))
+            index = index + 1
+        }
+        smt_append(output, ")))\n")
+        smt_append(writer.declarations, std.bytes.to_text(output))
+    }
+    Result.Ok(SmtHistogramKey {
+            sort = sort
+            constructor = constructor
+            function = concat("loom_key_bag_", signature)
+        })
+}
+
 fn smt_histogram(writer SmtWriter, column BagColumn) Result[SmtBag, Text] {
     var found = false
     var index = 0
@@ -34,28 +91,18 @@ fn smt_histogram(writer SmtWriter, column BagColumn) Result[SmtBag, Text] {
     if length(column.fields) == 0 {
         return Result.Err("histogram needs a nonempty scalar key")
     }
-    smt_predicate_keys(writer)
-    var fields = "((as const (Array Int loom_pks)) pk_nil)"
-    index = length(column.fields)
-    while index > 0 {
-        index = index - 1
+    let key = smt_histogram_key(writer, column.fields)?
+    var array = concat("((_ map ", concat(key.constructor, ")"))
+    index = 0
+    while index < length(column.fields) {
         let field = get(column.fields, index)
-        let array = smt_array(writer, column.contents, field.path, field.domain)
-        let constructor = match field.domain {
-            ScalarDomain.Integer => "pk_int"
-            ScalarDomain.Boolean => "pk_bool"
-            ScalarDomain.Text => "pk_text"
-            ScalarDomain.Float => {
-                return Result.Err("IEEE equality cannot supply a histogram key")
-            }
-        }
-        let key = concat("((_ map ", concat(constructor, concat(") ", concat(array, ")"))))
-        fields = concat("((_ map pk_cons) ", concat(key, concat(" ", concat(fields, ")"))))
+        array = concat(array, concat(" ", smt_array(writer, column.contents, field.path, field.domain)))
+        index = index + 1
     }
     Result.Ok(SmtBag {
-            array = concat("((_ map pk_record) ", concat(fields, ")"))
-            sort = "loom_pk"
-            function = "loom_key_bag"
+            array = concat(array, ")")
+            sort = key.sort
+            function = key.function
         })
 }
 
@@ -73,8 +120,38 @@ fn smt_bag_key(writer SmtWriter, column BagColumn, inputs List[PredicateKey], de
             }
         }
     }
-    smt_predicate_keys(writer)
-    Result.Ok(concat("(pk_record ", concat(smt_key_list(writer, inputs, depth + 1)?, ")")))
+    let key = smt_histogram_key(writer, column.fields)?
+    var value = concat("(", key.constructor)
+    var index = 0
+    while index < length(inputs) {
+        let field = get(column.fields, index)
+        let scalar = match get(inputs, index) {
+            PredicateKey.Integer(value) => {
+                if field.domain != ScalarDomain.Integer {
+                    return Result.Err("histogram scalar key sort differs")
+                }
+                smt_integer(writer, value, depth + 1)?
+            }
+            PredicateKey.Boolean(values) => {
+                if field.domain != ScalarDomain.Boolean || length(values) != 1 {
+                    return Result.Err("histogram scalar key sort differs")
+                }
+                smt_predicate(writer, get(values, 0), depth + 1)?
+            }
+            PredicateKey.Text(value) => {
+                if field.domain != ScalarDomain.Text {
+                    return Result.Err("histogram scalar key sort differs")
+                }
+                smt_text(writer, value, depth + 1)?
+            }
+            _ => {
+                return Result.Err("histogram needs a scalar key")
+            }
+        }
+        value = concat(value, concat(" ", scalar))
+        index = index + 1
+    }
+    Result.Ok(concat(value, ")"))
 }
 
 fn bag_needles(inputs List[PredicateKey]) List[PredicateKey] {

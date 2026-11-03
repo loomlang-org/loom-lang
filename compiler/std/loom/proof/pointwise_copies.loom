@@ -1,0 +1,79 @@
+// Bundle only direct scalar copies at the same bound index. Other quantified
+// clauses retain independent matching, including guarded or shifted reads.
+fn pointwise_copy(value Predicate, identity Int, budget List[Int]) Bool {
+    if !conjunction_step(budget) {
+        return false
+    }
+    match value {
+        Predicate.And(parts) => length(parts) == 2 &&
+        pointwise_copy(get(parts, 0), identity, budget) && pointwise_copy(get(parts, 1), identity, budget)
+        Predicate.IntegerCompare(relation, first, second) => relation == "==" &&
+        pointwise_copy_keys(PredicateKey.Integer(first), PredicateKey.Integer(second), identity)
+        Predicate.TextEqual(first, second) => pointwise_copy_keys(PredicateKey.Text(first), PredicateKey.Text(second), identity)
+        Predicate.Equal(parts) => length(parts) == 2 &&
+        pointwise_copy_keys(PredicateKey.Boolean([get(parts, 0)]), PredicateKey.Boolean([get(parts, 1)]), identity)
+        _ => false
+    }
+}
+
+fn pointwise_copy_keys(first PredicateKey, second PredicateKey, identity Int) Bool {
+    match selected_bag_key(first, identity) {
+        Option.Some(_) => match selected_bag_key(second, identity) {
+            Option.Some(_) => true
+            Option.None => false
+        }
+        Option.None => false
+    }
+}
+
+// Joining positive universal premises is an equivalence, not an inferred
+// frame. Preserve the exact binder and range; never cross Boolean scope. On
+// exhaustion, retain the original facts and the ordinary independent encoding.
+fn pointwise_copy_groups(facts List[Predicate], budget List[Int]) List[Predicate] {
+    let output = new[Predicate]()
+    let groups = new[Int]()
+    var index = 0
+    while index < length(facts) {
+        if !conjunction_step(budget) {
+            return facts
+        }
+        let value = get(facts, index)
+        var joined = false
+        match value {
+            Predicate.Forall(identity, start, end, parts) => {
+                if length(parts) == 1 && pointwise_copy(get(parts, 0), identity, budget) {
+                    var prior = 0
+                    while prior < length(groups) && !joined {
+                        if !conjunction_step(budget) {
+                            return facts
+                        }
+                        let position = get(groups, prior)
+                        match get(output, position) {
+                            Predicate.Forall(bound, lower, upper, body) => {
+                                if bound == identity && cut_same_linear(start, lower) && cut_same_linear(end, upper) &&
+                                length(body) == 1 && pointwise_copy(get(body, 0), bound, budget) {
+                                    set(output, position, Predicate.Forall(identity, start, end,
+                                            [Predicate.And([get(body, 0), get(parts, 0)])]))
+                                    joined = true
+                                }
+                            }
+                            _ => {
+                            }
+                        }
+                        prior = prior + 1
+                    }
+                    if !joined {
+                        push(groups, length(output))
+                    }
+                }
+            }
+            _ => {
+            }
+        }
+        if !joined {
+            push(output, value)
+        }
+        index = index + 1
+    }
+    output
+}

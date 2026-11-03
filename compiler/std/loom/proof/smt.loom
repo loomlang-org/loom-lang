@@ -42,6 +42,7 @@ record SmtWriter {
     columns List[SmtColumn]
     prefixes List[SmtPrefix]
     histograms List[BagColumn]
+    pointwise_bags List[SmtPointwiseBag]
     writes List[SmtWrite]
     assertions std.map.Map[Text, Bool]
     quantifiers List[SmtBinder]
@@ -290,8 +291,9 @@ fn smt_mentions(value Text, name Text) Bool {
 }
 
 // forall i. (P(i) && Q(i)) is the conjunction of the two quantifiers. Keep
-// unrelated scalar columns out of one multi-pattern; each clause can match its
-// own select/store terms. No source evaluation or safety obligation is removed.
+// unrelated scalar constraints out of one multi-pattern. Direct scalar copies
+// can share their exact range and index; this keeps independent historical
+// copies from competing for instantiation. Every clause and side law remains.
 fn smt_quantified(writer SmtWriter, identity Int, start Linear, end Linear,
     predicate Predicate, depth Int) Result[Text, Text] {
     discard smt_step(writer, depth)?
@@ -314,6 +316,9 @@ fn smt_quantified(writer SmtWriter, identity Int, start Linear, end Linear,
                     ..writer
                 }, predicate, depth + 1)?
             discard smt_relation_chain(writer, identity, start, end, predicate, condition, quantified)?
+            if pointwise_copy(predicate, identity, [256]) {
+                return Result.Ok(smt_binder(get(binders, length(binders) - 1), condition))
+            }
             return Result.Ok(quantified)
         }
         _ => {
@@ -351,9 +356,12 @@ fn smt_quantified(writer SmtWriter, identity Int, start Linear, end Linear,
     if length(writer.counts) != 0 {
         match pointwise_bag(Predicate.Forall(identity, start, end, [predicate])) {
             Option.Some(bag) => {
-                let law = concat("(=> ", concat(quantified,
-                        concat(" ", concat(smt_predicate(writer, bag, depth + 1)?, ")"))))
-                smt_assert(writer, bag_bound_scope(law, end))
+                push(writer.pointwise_bags, SmtPointwiseBag {
+                        reference = quantified
+                        bag = bag
+                        size = end
+                        quantifiers = writer.quantifiers
+                    })
             }
             Option.None => {
             }
@@ -661,6 +669,7 @@ fn smt_encoding(obligations List[Obligation], extended Bool, guarded_order Bool,
         columns = new[SmtColumn]()
         prefixes = new[SmtPrefix]()
         histograms = []
+        pointwise_bags = []
         writes = []
         assertions = std.map.new[Text, Bool]()
         quantifiers = []
@@ -698,7 +707,12 @@ fn smt_encoding(obligations List[Obligation], extended Bool, guarded_order Bool,
     // out their value laws. This changes search only: retain every obligation,
     // source premise and theory law, with the host's ordinary time budget.
     discard smt_support_instances(writer)?
-    discard smt_histogram_frames(writer)?
+    var known_histograms = -1
+    while known_histograms != length(writer.histograms) {
+        known_histograms = length(writer.histograms)
+        discard smt_histogram_frames(writer)?
+        discard smt_pointwise_bags(writer)?
+    }
     discard smt_prefix_frames(writer)?
     discard smt_joint_writes(writer)?
     let options = if get(writer.relation_search, 0) {

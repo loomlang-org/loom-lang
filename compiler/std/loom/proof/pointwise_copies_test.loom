@@ -1,0 +1,44 @@
+fn copy_fixture(identity Int, before Int, after Int, size Linear) Predicate {
+    Predicate.Forall(identity, constant(integer(0)), size,
+        [Predicate.IntegerCompare("==", IntegerTerm.Select(before, [0], variable(identity)),
+                IntegerTerm.Select(after, [0], variable(identity)))])
+}
+
+test fn pointwise_copy_groups_keep_exact_ranges_indices_and_boolean_scope() {
+    let first = copy_fixture(-7, 10, 11, variable(1))
+    let second = Predicate.Forall(-7, constant(integer(0)), variable(1),
+        [Predicate.TextEqual(TextValue.Select(10, [1], variable(-7)), TextValue.Select(11, [1], variable(-7)))])
+    let other_range = copy_fixture(-7, 10, 11, variable(2))
+    let other_binder = copy_fixture(-8, 10, 11, variable(1))
+    let guarded = Predicate.Or([Predicate.Variable(3), second])
+    let negated = Predicate.Not([first])
+    let shifted = Predicate.Forall(-7, constant(integer(0)), variable(1),
+        [Predicate.IntegerCompare("==", IntegerTerm.Select(10, [], add(variable(-7), constant(integer(1)))),
+                IntegerTerm.Select(11, [], variable(-7)))])
+    let facts = [first, other_range, other_binder, second, guarded, negated, shifted]
+    let grouped = pointwise_copy_groups(facts, [256])
+    assert length(grouped) == 6 && length(facts) == 7
+    assert same(get(grouped, 0), Predicate.Forall(-7, constant(integer(0)), variable(1),
+            [Predicate.And([Predicate.IntegerCompare("==", IntegerTerm.Select(10, [0], variable(-7)),
+                            IntegerTerm.Select(11, [0], variable(-7))),
+                        Predicate.TextEqual(TextValue.Select(10, [1], variable(-7)), TextValue.Select(11, [1], variable(-7)))])]))
+    assert same(get(grouped, 1), other_range) && same(get(grouped, 2), other_binder)
+    assert same(get(grouped, 3), guarded) && same(get(grouped, 4), negated) && same(get(grouped, 5), shifted)
+    assert same_predicates(pointwise_copy_groups(facts, [2]), facts)
+    assert !pointwise_copy(shifted, -7, [256])
+}
+
+test fn grouped_copies_share_one_quantifier_and_retain_each_scalar_equality() {
+    let size = variable(1)
+    let first = copy_fixture(-7, 10, 11, size)
+    let boolean = Predicate.Forall(-7, constant(integer(0)), size,
+        [Predicate.Equal([Predicate.Select(10, [2], variable(-7)), Predicate.Select(11, [2], variable(-7))])])
+    let facts = pointwise_copy_groups([first, boolean], [256])
+    let query = encoding([Obligation {
+                facts = facts
+                conclusion = Predicate.Variable(99)
+            }])
+    assert length(std.text.split(query, "(forall ((loom_bound Int))")) == 2
+    assert contains(query, "(= (select a10_f0") && contains(query, "(select a11_f0")
+    assert contains(query, "(= (select a10_f2_bool") && contains(query, "(select a11_f2_bool")
+}
