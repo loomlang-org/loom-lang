@@ -1,9 +1,31 @@
 // Prefix conservation does not need an independently checked adjacent-order
-// invariant. In particular its modular guard can introduce nonlinear quantified
-// arithmetic into an otherwise finite histogram query. Removing that premise
+// invariant or conservation of unrelated key columns. Their arithmetic and
+// array maps can crowd an otherwise finite histogram query. Removing a premise
 // asks for a stronger proof of the same conservation goal; it adds no fact and
 // uses the same single optional query. Required checks keep the complete state.
-fn loop_histogram_fact(value Predicate, output List[Predicate], budget List[Int]) {
+fn loop_histogram_column_needed(column BagColumn, goal Predicate, budget List[Int]) Bool {
+    match goal {
+        Predicate.BagEqual(first, _, second, _) => {
+            same_bag_fields(column.fields, first.fields) || same_bag_fields(column.fields, second.fields)
+        }
+        Predicate.BagBalance(terms) => {
+            var index = 0
+            while index < length(terms) {
+                if !conjunction_step(budget) {
+                    return true
+                }
+                if same_bag_fields(column.fields, get(terms, index).column.fields) {
+                    return true
+                }
+                index = index + 1
+            }
+            false
+        }
+        _ => true
+    }
+}
+
+fn loop_histogram_fact(value Predicate, goal Predicate, output List[Predicate], budget List[Int]) {
     if !conjunction_step(budget) {
         return
     }
@@ -11,9 +33,28 @@ fn loop_histogram_fact(value Predicate, output List[Predicate], budget List[Int]
         Predicate.And(values) => {
             var index = 0
             while index < length(values) {
-                loop_histogram_fact(get(values, index), output, budget)
+                loop_histogram_fact(get(values, index), goal, output, budget)
                 index = index + 1
             }
+        }
+        Predicate.BagEqual(first, _, second, _) => {
+            if loop_histogram_column_needed(first, goal, budget) && loop_histogram_column_needed(second, goal, budget) {
+                push(output, value)
+            }
+        }
+        Predicate.BagBalance(terms) => {
+            var index = 0
+            while index < length(terms) {
+                if !conjunction_step(budget) {
+                    push(output, value)
+                    return
+                }
+                if !loop_histogram_column_needed(get(terms, index).column, goal, budget) {
+                    return
+                }
+                index = index + 1
+            }
+            push(output, value)
         }
         Predicate.Forall(identity, _, _, body) => {
             if length(body) == 1 {
@@ -31,11 +72,11 @@ fn loop_histogram_fact(value Predicate, output List[Predicate], budget List[Int]
     }
 }
 
-fn loop_histogram_context(state State) State {
+fn loop_histogram_context(state State, goal Predicate) State {
     let facts = new[Predicate]()
     var index = 0
     while index < length(state.facts) {
-        loop_histogram_fact(get(state.facts, index), facts, [256])
+        loop_histogram_fact(get(state.facts, index), goal, facts, [256])
         index = index + 1
     }
     State {

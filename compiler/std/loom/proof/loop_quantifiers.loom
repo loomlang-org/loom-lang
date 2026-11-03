@@ -470,7 +470,7 @@ fn quantified_candidate_preserved(proof Verification, candidate LoopCandidate, s
         LoopCandidate.Histogram(terms, _) => {
             match loop_histogram_views(proof, terms, state) {
                 Result.Ok(current) => match loop_predicate(candidate, current) {
-                    Result.Ok(fact) => loop_entails(proof, fact, loop_histogram_context(current))
+                    Result.Ok(fact) => loop_entails(proof, fact, loop_histogram_context(current, fact))
                     Result.Err(_) => loop_holds(Predicate.Constant(false), current)
                 }
                 Result.Err(_) => false

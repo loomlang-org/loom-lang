@@ -562,19 +562,9 @@ fn smt_predicate(writer SmtWriter, value Predicate, depth Int) Result[Text, Text
                         quantifiers = writer.quantifiers
                     })
             }
-            if length(writer.counts) == 0 || domain != ScalarDomain.Integer {
-                return Result.Ok(equation)
-            }
-            let output = std.bytes.new()
-            smt_append(output, concat("(and ", equation))
-            var extent = 0
-            while extent < length(writer.counts) {
-                smt_append(output, " ")
-                smt_append(output, smt_bag_store(writer, integer_bag(previous), stored, position, term, get(writer.counts, extent))?)
-                extent = extent + 1
-            }
-            smt_append(output, ")")
-            Result.Ok(std.bytes.to_text(output))
+            // Histogram laws are emitted after the requested column vocabulary
+            // is complete. An observed integer cell need not be a counted key.
+            Result.Ok(equation)
         }
     }
 }

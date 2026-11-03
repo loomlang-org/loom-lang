@@ -14,7 +14,7 @@ fn smt_histogram_frames(writer SmtWriter) Result[Bool, Text] {
     var selected = 0
     while selected < length(writer.histograms) {
         let column = get(writer.histograms, selected)
-        if !integer_bag_column(column) {
+        if length(column.fields) > 0 {
             var index = 0
             while index < length(writer.prefixes) {
                 discard smt_step(writer, 0)?
@@ -57,7 +57,7 @@ fn smt_joint_prefix_bags(writer SmtWriter, frame SmtPrefix) Result[Bool, Text] {
     var selected = 0
     while selected < length(writer.histograms) {
         let column = get(writer.histograms, selected)
-        if column.contents == frame.before && !integer_bag_column(column) {
+        if column.contents == frame.before {
             let before = smt_histogram(writer, column)?
             let after = smt_histogram(writer, BagColumn {
                     contents = frame.after,
@@ -144,7 +144,7 @@ fn smt_joint_write(writer SmtWriter, column BagColumn, seed SmtWrite) Result[Boo
     index = 0
     while index < length(writer.counts) {
         discard smt_step(writer, 0)?
-        var extension = smt_bag_store(writer, before, stored, position, value, get(writer.counts, index))?
+        var extension = smt_bag_store(writer, before, stored, seed.index, value, get(writer.counts, index))?
         var scope = length(seed.quantifiers)
         while scope > 0 {
             scope = scope - 1
@@ -160,7 +160,7 @@ fn smt_joint_writes(writer SmtWriter) Result[Bool, Text] {
     var selected = 0
     while selected < length(writer.histograms) {
         let column = get(writer.histograms, selected)
-        if !integer_bag_column(column) {
+        if length(column.fields) > 0 {
             let first = get(column.fields, 0)
             var index = 0
             while index < length(writer.writes) {
