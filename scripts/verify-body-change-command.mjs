@@ -89,6 +89,16 @@ fn main() { assert false }
   assert.match(contractRejected.stdout + contractRejected.stderr, /proof|postcondition/);
   assert.deepEqual(contracts.map(inventory), contractInputs);
 
+  const reorderSource = "fn a(value Int) Int { value }\nfn b(value Int) Int { value * 10 }\n" +
+    "fn calculate() Int { a(1) + b(1) }\nfn main() { assert false }\n";
+  const reordered = snapshots("reordered calls", reorderSource);
+  writeFileSync(join(reordered[1], "main.loom"), reorderSource.replace("a(1) + b(1)", "b(1) + a(1)"));
+  writeFileSync(join(reordered[2], "main.loom"), reorderSource.replace("a(1) + b(1)", "a(2) + b(1)"));
+  for (const branch of reordered) success(invoke(loom, ["check", branch]));
+  const reorderedInputs = reordered.map(inventory);
+  assert.equal(change(...reordered).status, 1, "argument edit was assigned to a reordered call");
+  assert.deepEqual(reordered.map(inventory), reorderedInputs);
+
   const repository = join(directory, "repository"); mkdirSync(repository);
   const git = (...args) => success(invoke("git", args, repository)).trim();
   git("init", "--template=");

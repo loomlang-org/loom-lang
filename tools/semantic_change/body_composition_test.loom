@@ -140,6 +140,22 @@ test fn body_composition_preserves_source_order_of_effectful_call_children() {
     assert contains(get(joined.files, 0).text, "mark(log, 3) + mark(log, 4)")
 }
 
+test fn body_composition_does_not_assign_argument_edits_to_reordered_calls() {
+    let base = """
+        fn a(value Int) Int { value }
+        fn b(value Int) Int { value * 10 }
+        fn calculate() Int { a(1) + b(1) }
+        fn main() {}
+        """
+    let left = replace(base, "a(1) + b(1)", "b(1) + a(1)")
+    let right = replace(base, "a(1) + b(1)", "a(2) + b(1)")
+    assert checked_body_composition_branch(left) && checked_body_composition_branch(right)
+    assert match merge(body_composition_case(base), body_composition_case(left), body_composition_case(right)) {
+        Result.Err(_) => true
+        _ => false
+    }
+}
+
 fn checked_body_composition_branch(source Text) Bool {
     match checked(body_composition_case(source), no_proof_backend()) {
         Result.Ok(_) => true
