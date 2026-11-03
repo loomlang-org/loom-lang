@@ -644,6 +644,40 @@ fn smt_encoding(obligations List[Obligation], extended Bool, guarded_order Bool,
     smt_encoding(obligations, extended, guarded_order, abstract_remainder, scalar_normalization, false)
 }
 
+fn smt_has_premise(values List[Text], value Text) Bool {
+    var index = 0
+    while index < length(values) {
+        if get(values, index) == value {
+            return true
+        }
+        index = index + 1
+    }
+    false
+}
+
+fn smt_common_premises(alternatives List[List[Text]]) List[Text] {
+    let common = new[Text]()
+    if length(alternatives) == 0 {
+        return common
+    }
+    let first = get(alternatives, 0)
+    var index = 0
+    while index < length(first) {
+        let candidate = get(first, index)
+        var shared = !smt_has_premise(common, candidate)
+        var branch = 1
+        while shared && branch < length(alternatives) {
+            shared = smt_has_premise(get(alternatives, branch), candidate)
+            branch = branch + 1
+        }
+        if shared {
+            push(common, candidate)
+        }
+        index = index + 1
+    }
+    common
+}
+
 fn smt_encoding(obligations List[Obligation], extended Bool, guarded_order Bool,
     abstract_remainder Bool, scalar_normalization Bool, witness_normalization Bool) Result[SmtEncoding, Text] {
     let budget = new[Int]()
@@ -679,11 +713,13 @@ fn smt_encoding(obligations List[Obligation], extended Bool, guarded_order Bool,
     let body = std.bytes.new()
     let selected = std.bytes.new()
     let choices = std.bytes.new()
+    let premises = new[List[Text]]()
+    let conclusions = new[Text]()
+    let indices = new[Int]()
     let select_obligation = witness_normalization && length(obligations) > 1
     let roots = new[SmtFact]()
     smt_append(body, "(assert (not (and true")
     if select_obligation {
-        smt_append(selected, "(assert (and true")
         smt_append(choices, "(declare-const loom_counterexample Int)\n(assert (or false")
     }
     var index = 0
@@ -695,10 +731,12 @@ fn smt_encoding(obligations List[Obligation], extended Bool, guarded_order Bool,
             continue
         }
         smt_append(body, " (=> (and true")
+        let encoded_facts = new[Text]()
         if select_obligation {
             let guard = concat("(= loom_counterexample ", concat(std.int.to_text(index), ")"))
             smt_append(choices, concat(" ", guard))
-            smt_append(selected, concat(" (=> ", concat(guard, " (and (and true")))
+            push(indices, index)
+            push(conclusions, conclusion)
         }
         var fact = 0
         while fact < length(obligation.facts) {
@@ -707,7 +745,7 @@ fn smt_encoding(obligations List[Obligation], extended Bool, guarded_order Bool,
                 let premise = smt_root(writer, get(obligation.facts, fact), roots)?
                 smt_append(body, premise)
                 if select_obligation {
-                    smt_append(selected, concat(" ", premise))
+                    push(encoded_facts, premise)
                 }
             }
             fact = fact + 1
@@ -716,7 +754,7 @@ fn smt_encoding(obligations List[Obligation], extended Bool, guarded_order Bool,
         smt_append(body, conclusion)
         smt_append(body, ")")
         if select_obligation {
-            smt_append(selected, concat(") (not ", concat(conclusion, ")))")))
+            push(premises, encoded_facts)
         }
         index = index + 1
     }
@@ -750,6 +788,34 @@ fn smt_encoding(obligations List[Obligation], extended Bool, guarded_order Bool,
     // per obligation. Keep canonical theory above for refinement eligibility.
     let query = if select_obligation {
         smt_append(choices, "))\n")
+        // Factor only byte-identical premises present in every live alternative.
+        // G && OR_i(F_i && !C_i) keeps each branch's private facts isolated.
+        // Sharing G avoids repeatedly normalizing it in every selected case;
+        // canonical theory and the host query/time budgets stay unchanged.
+        let common = smt_common_premises(premises)
+        smt_append(selected, "(assert (and true")
+        var shared = 0
+        while shared < length(common) {
+            smt_append(selected, concat(" ", get(common, shared)))
+            shared = shared + 1
+        }
+        smt_append(selected, "))\n(assert (and true")
+        var branch = 0
+        while branch < length(premises) {
+            let guard = concat("(= loom_counterexample ", concat(std.int.to_text(get(indices, branch)), ")"))
+            smt_append(selected, concat(" (=> ", concat(guard, " (and (and true")))
+            let facts = get(premises, branch)
+            var fact = 0
+            while fact < length(facts) {
+                let premise = get(facts, fact)
+                if !smt_has_premise(common, premise) {
+                    smt_append(selected, concat(" ", premise))
+                }
+                fact = fact + 1
+            }
+            smt_append(selected, concat(") (not ", concat(get(conclusions, branch), ")))")))
+            branch = branch + 1
+        }
         smt_append(selected, "))\n")
         concat(options, concat(std.bytes.to_text(choices),
                 concat(std.bytes.to_text(writer.declarations), std.bytes.to_text(selected))))

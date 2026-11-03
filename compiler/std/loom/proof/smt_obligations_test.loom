@@ -58,6 +58,43 @@ test fn selected_counterexamples_skip_tautologies_without_losing_later_goals() {
     assert contains(selected.text, "(=> (= loom_counterexample 1) (and (and true) (not false)))")
 }
 
+test fn selected_counterexamples_share_only_premises_present_in_every_live_branch() {
+    let obligations = [
+        Obligation {
+            facts = [Predicate.Variable(9), Predicate.Variable(1)]
+            conclusion = Predicate.Variable(2)
+        },
+        Obligation {
+            facts = [Predicate.Variable(3), Predicate.Variable(9)]
+            conclusion = Predicate.Variable(4)
+        },
+        Obligation {
+            facts = []
+            conclusion = Predicate.Constant(true)
+        },
+    ]
+    let plain = match smt_encoding(obligations, true, true, false, false, false) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            assert false
+            return
+        }
+    }
+    let selected = match smt_encoding(obligations, true, true, false, false, true) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            assert false
+            return
+        }
+    }
+    assert selected.theory == plain.theory
+    assert contains(selected.text, "(assert (and true b9))")
+    assert contains(selected.text, "(=> (= loom_counterexample 0) (and (and true b1) (not b2)))")
+    assert contains(selected.text, "(=> (= loom_counterexample 1) (and (and true b3) (not b4)))")
+    assert !contains(selected.text, "(= loom_counterexample 2)")
+    assert length(std.text.split(selected.text, " b9")) == 3
+}
+
 test fn equivalent_counterexample_syntax_cannot_authorize_an_extra_host_query() {
     let calls = [0]
     let query = proof_query(ProofBackend {

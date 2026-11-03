@@ -3306,6 +3306,8 @@ Hypothetical operations never supply their own successful-check assumptions.
 
 For a refined query with several unresolved obligations, a fresh finite selector
 chooses one counterexample while keeping that obligation's own path assumptions.
+Only byte-identical premises shared by every live alternative factor into a
+common assertion; private premises remain inside their own selected branch.
 All cases must be unsatisfiable within the same solver invocation and timeout.
 Canonical logical input still controls refinement eligibility; this equivalent
 encoding cannot create an additional solver query on its own.
