@@ -24,18 +24,21 @@ fn overload_rename_case(integer_name Text, boolean_name Text, step Text) Revisio
                 text = concat(integer, concat("\n", concat(boolean, concat("\n", caller))))
             }]
         identities = [Identity {
+                owner = ""
                 id = "integer-id"
                 path = "functions.loom"
                 kind = NodeKind.Function
                 name = integer_name
                 key = key(integer)
             }, Identity {
+                owner = ""
                 id = "boolean-id"
                 path = "functions.loom"
                 kind = NodeKind.Function
                 name = boolean_name
                 key = key(boolean)
             }, Identity {
+                owner = ""
                 id = "entry-id"
                 path = "functions.loom"
                 kind = NodeKind.Function
@@ -90,6 +93,7 @@ fn with_generic_overload(revision Revision) Revision {
         })
     let identity = get(revision.identities, 1)
     set(revision.identities, 1, Identity {
+            owner = ""
             key = key("""
                 fn balance[T](value T) Int {
                     40

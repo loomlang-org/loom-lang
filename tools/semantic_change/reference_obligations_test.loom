@@ -96,6 +96,7 @@ fn bounded_case(name Text, path Text, local Text) Revision {
                 """
         })
     push(revision.identities, Identity {
+            owner = ""
             id = "marker-id"
             path = "marker.loom"
             kind = NodeKind.Concept

@@ -64,6 +64,7 @@ record OtherEnvelope {
     while index < length(names) {
         let name = get(names, index)
         push(ids, Identity {
+                owner = ""
                 id = concat("record-", name)
                 path = record_path
                 kind = NodeKind.Record
@@ -73,6 +74,7 @@ record OtherEnvelope {
         index = index + 1
     }
     push(ids, Identity {
+            owner = ""
             id = "input-id"
             path = "input.loom"
             kind = NodeKind.Function
@@ -80,6 +82,7 @@ record OtherEnvelope {
             key = key_in(producer, "input")
         })
     push(ids, Identity {
+            owner = ""
             id = "entry-id"
             path = caller_path
             kind = NodeKind.Function

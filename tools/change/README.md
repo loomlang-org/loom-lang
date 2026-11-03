@@ -85,6 +85,18 @@ resolved identities; save an ambiguous draft separately before resolving it.
 Cross-package derivation and automatic relocation of a deleted package's history
 remain unsupported; whole-package deletion cannot silently discard that history.
 
+For a method target, name its identified concept or impl explicitly:
+
+```sh
+loom change refresh DIR --derive-member SOURCE_METHOD OWNER methods.loom copied KEY
+loom change refresh DIR --move-member METHOD NEW_OWNER methods.loom renamed KEY
+```
+
+The first command allocates a fresh method ID and records its source parent.
+The second preserves the method ID, including when its container changes.
+`--move METHOD FILE NAME KEY` retains the existing owner. Container copies receive
+fresh child IDs; a copied method never borrows the original container's identity.
+
 ### Reviewed module merge
 
 For a complete named module, use:
@@ -314,6 +326,11 @@ sidecar. The sidecar requires exactly one `package NAME` line and exactly one
 `next N` positive allocator line, followed by one
 `id STABLE_ID KIND DECLARATION_NAME FILE.loom KEY` line per declaration. `KIND` is
 `fn`, `record`, `enum`, `type`, `concept`, or `impl`. Anonymous impl names use `-`.
+An identified method adds its container ID as a seventh field:
+`id METHOD_ID fn METHOD FILE.loom KEY OWNER_ID`. Its owner must be a root concept
+or impl in the same file, and its kind/name/key must identify an actual method
+in that container. IDs are unique across the complete selected package batch.
+Legacy sidecars without method rows remain readable.
 IDs must be explicitly carried
 between revisions; names and source offsets are not durable identities.
 
@@ -339,6 +356,11 @@ published by rename from a private stage; refresh leaves the prior sidecar
 there as a recovery copy. Source files are never rewritten. `init` accepts
 dotted lowercase package names outside `std`. These commands maintain
 identity metadata for parseable source; they do not prove a successful build.
+Initialization identifies methods after their containers. Refresh resolves
+containers first, then their owned methods, and publishes both levels together.
+An explicitly moved container carries unchanged method IDs to its new file.
+Unresolved containers retain pending child IDs in a source-bound draft; methods
+in another same-spelled container cannot satisfy those identities.
 `--move` can also record a private named-declaration rename. Merge composes
 that explicit identity change with an independent move/body edit by normalizing
 declaration and checked reference tokens, then comparing bindings in production
@@ -351,6 +373,7 @@ with the new keys reported by `scan`; normalization does not guess that mapping.
 Keep `.loom-ids-stage-*` recovery directories out of source commits.
 `scan DIR` lists current kind/name/file/key locators without writing metadata;
 use its exact key to resolve a move or parameter-type change.
+For identified containers, scan also lists methods with `owner=OWNER_ID`.
 For an impl move, pass `--move ID NEW_FILE - KEY`; its opaque key distinguishes
 implementations even when they share a file. Concept/default methods retain
 checked member bindings across sibling body edits. Independent edits to different
@@ -359,9 +382,16 @@ move, when headers, contracts and member order are unchanged.
 Whitespace/comments between members can also compose with those body edits;
 each gap uses the same three-way equality rules and keeps exact bytes. Other
 container scaffolding remains fixed. Retained bodies and headers must keep their
-checked reference targets. Competing edits to one method, member renames and
-interface changes require resolution;
-the tool does not infer new member identities.
+checked reference targets. With explicit method IDs, method renames can compose
+with independent body edits and container moves. Normalization edits declaration
+names and uniquely checked references, then checks production and private tests
+and preserves checked concept/impl conformance slots. Public methods require the
+complete selected module, including consumer packages. Overload slots retain
+their individual IDs; matching names never infer a method family or identity.
+Competing method bodies, conflicting renames and other interface edits still
+require resolution. Generic calls whose concrete and abstract definition queries
+disagree retain the existing conservative rejection, even when both declarations
+participate in a concept conformance. Generated or unaccounted uses also reject.
 
 Ambiguities may be saved without guessing an identity:
 

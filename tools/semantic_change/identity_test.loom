@@ -58,6 +58,7 @@ test fn stale_overload_keys_do_not_fall_back_to_name_or_position() {
         "fn entry() Int { pick(input()) }", "")
     let first = get(before.identities, 0)
     std.list.set(before.identities, 0, Identity {
+            owner = ""
             id = first.id
             path = first.path
             kind = first.kind

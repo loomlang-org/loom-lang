@@ -9,7 +9,16 @@ fn rename_definition(scopes List[PackageScope], id Text) Result[RenameDefinition
     var index = 0
     while index < length(scopes) {
         let scope = get(scopes, index)
-        let selected = entry_index(scope.indexed.entries, id)
+        var selected = entry_index(scope.indexed.entries, id)
+        if selected < 0 {
+            var container = 0
+            while container < length(scope.indexed.entries) {
+                if member_index(get(scope.indexed.entries, container).members, id) >= 0 {
+                    selected = container
+                }
+                container = container + 1
+            }
+        }
         if selected >= 0 {
             return Result.Ok(RenameDefinition {
                     directory = scope.directory
@@ -87,6 +96,7 @@ fn public_package_edits(analysis CheckedAnalysis, scopes List[PackageScope], sco
     while index < length(scope.indexed.entries) {
         let entry = get(scope.indexed.entries, index)
         let sites = reference_sites(entry)?
+        let methods = member_declaration_names(entry, renames)?
         let requested = rename_requested(renames, entry.id)
         let declaration = if entry.kind == NodeKind.Impl {
             -1
@@ -108,17 +118,22 @@ fn public_package_edits(analysis CheckedAnalysis, scopes List[PackageScope], sco
             } else {
                 ""
             }
-            if token.span.start != declaration && (rename_site(sites, token.span.start) ||
+            let member = member_declaration_at(methods, token.span.start)
+            let member_name = if member < 0 {
+                ""
+            } else {
+                get(methods, member).text
+            }
+            if member_name != "" {
+                name = member_name
+            }
+            if token.span.start != declaration && member < 0 && (rename_site(sites, token.span.start) ||
                 (token.kind == Kind.Name && public_rename_spelling(scopes, renames, token.value))) {
                 let target = package_target(analysis, scopes, scope.package, path,
                     entry.start + token.span.start, entry.abstract_body)?
-                let selected = rename_requested(renames, target.id)
+                let selected = public_requested_target_name(scopes, renames, target)?
                 if selected != "" {
-                    let definition = rename_definition(scopes, target.id)?.entry
-                    let defined = rename_name(definition, true)?.span
-                    if target.start == defined.start && target.end == defined.end {
-                        name = selected
-                    }
+                    name = selected
                 }
             }
             if name != "" && name != token.value {
@@ -136,6 +151,18 @@ fn public_package_edits(analysis CheckedAnalysis, scopes List[PackageScope], sco
         index = index + 1
     }
     public_package_import_edits(analysis, scopes, scope, renames, edits)
+}
+
+fn public_requested_target_name(scopes List[PackageScope], renames List[DeclarationRename], target BindingTarget) Result[Text, Text] {
+    var index = 0
+    while index < length(scopes) {
+        let scope = get(scopes, index)
+        if scope.package == target.package && entry_index(scope.indexed.entries, target.id) >= 0 {
+            return requested_target_name(scope.indexed, renames, target)
+        }
+        index = index + 1
+    }
+    Result.Ok("")
 }
 
 record SourceRenameFile {
@@ -333,6 +360,8 @@ fn normalize_public_package_renames(revisions List[PackageRevision], plans List[
                     ..changed
                 }, pass == 1, backend)?
             discard compare_public_renamed(before, after, revisions, output, files)?
+            discard compare_method_conformances(before, package_scopes(before.source, revisions)?,
+                after, package_scopes(after.source, output)?, renames)?
             index = index + 1
         }
         pass = pass + 1

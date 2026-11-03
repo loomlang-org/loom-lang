@@ -28,6 +28,7 @@ fn loaded(text Text, sidecar Text, commit Text) Loaded {
                     text = text
                 }]
             identities = [Identity {
+                    owner = ""
                     id = "value-id"
                     path = "value.loom"
                     kind = NodeKind.Function
@@ -89,6 +90,7 @@ test fn preview_rejects_an_added_name_used_by_the_other_side() {
                     text = "fn value() Int { 1 }\nfn fresh() Int { 9 }\n"
                 }]
             identities = [get(original.revision.identities, 0), Identity {
+                    owner = ""
                     id = "fresh-id"
                     path = "value.loom"
                     kind = NodeKind.Function
@@ -195,6 +197,7 @@ test fn git_basis_relocation_preserves_the_destination_path_spelling() {
 
 test fn identity_allocator_changes_with_sequence_and_overloads_have_distinct_keys() {
     let declaration = Identity {
+        owner = ""
         id = ""
         path = "value.loom"
         kind = NodeKind.Function
@@ -306,6 +309,7 @@ test fn initialized_package_applies_once_to_a_new_tree() {
     // never reuse the prior identity for the same declaration.
     discard write_text(path(base, ".loom-ids"), sidecar(snapshot.revision, 1))
     match refresh(base, [Resolution {
+                owner = ""
                 id = original_id
                 path = ""
                 name = ""
@@ -364,12 +368,14 @@ test fn reviewed_one_sided_addition_publishes_new_identity() {
                 text = "fn value() Int { 1 }\nfn extra() Int { 9 }\n"
             }]
         identities = [Identity {
+                owner = ""
                 id = "value-id"
                 path = "value.loom"
                 kind = NodeKind.Function
                 name = "value"
                 key = "-"
             }, Identity {
+                owner = ""
                 id = "extra-id"
                 path = "value.loom"
                 kind = NodeKind.Function

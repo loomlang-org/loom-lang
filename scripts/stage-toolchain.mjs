@@ -117,7 +117,7 @@ try {
     throw new Error("relocated module configuration lost its defining instance");
   }
   const change = verifyChangeCommand(loom, join(root, "tools/change/fixtures"),
-    join(temporary, "semantic change"), environment);
+    join(temporary, "semantic change"), environment, join(prefix, "lib/loom/std"));
   // Check/editor use needs only the frontend and std, not a working LLVM bridge.
   const backend = join(prefix, `lib/loom/loom-native${suffix}`);
   await move(backend, `${backend}.disabled`);

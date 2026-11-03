@@ -1,0 +1,468 @@
+import std.text.split
+
+fn member_identity_revision(path Text, edited Bool) Revision {
+    let source = replace("""
+        concept Read {
+            fn read(self Self) Int
+        }
+        impl Read for Int {
+            fn read(self Int) Int {
+                BODY
+            }
+        }
+        fn entry() Int {
+            let value = 7
+            value.read()
+        }
+        """, "BODY", if edited {
+            "self + 2"
+        } else {
+            "self + 1"
+        })
+    let revision = package_fixture("sample", "pkg", [File {
+                path = path
+                text = source
+            }]).revision
+    let selected = match indexed(revision) {
+        Result.Ok(value) => value,
+        Result.Err(_) => {
+            assert false
+            return revision
+        }
+    }
+    var index = 0
+    while index < length(selected.entries) {
+        let container = get(selected.entries, index)
+        if length(container.members) != 0 {
+            let method = get(container.members, 0)
+            let locator = split(method.locator, " ")
+            // Explicit fixture IDs identify one known method per container.
+            push(revision.identities, Identity {
+                    id = concat(container.id, "-method")
+                    owner = container.id
+                    path = path
+                    kind = NodeKind.Function
+                    name = get(locator, 1)
+                    key = get(locator, 2)
+                })
+        }
+        index = index + 1
+    }
+    revision
+}
+
+test fn explicit_member_identities_survive_container_movement_and_body_edits() {
+    let base = member_identity_revision("main.loom", false)
+    let moved = member_identity_revision("moved.loom", false)
+    let edited = member_identity_revision("main.loom", true)
+    let merged = match merge(base, moved, edited) {
+        Result.Ok(value) => value,
+        Result.Err(message) => {
+            discard write_error(message)
+            assert false
+            return
+        }
+    }
+    assert length(merged.identities) == 5
+    var index = 0
+    var members = 0
+    while index < length(merged.identities) {
+        let identity = get(merged.identities, index)
+        assert identity.path == "moved.loom"
+        if identity.owner != "" {
+            members = members + 1
+        }
+        index = index + 1
+    }
+    assert members == 2
+    assert contains(get(merged.files, 0).text, "self + 2")
+    assert match indexed(merged) {
+        Result.Ok(_) => true,
+        Result.Err(_) => false
+    }
+}
+
+test fn member_identity_ownership_requires_a_real_matching_container_and_slot() {
+    let revision = member_identity_revision("main.loom", false)
+    let member = get(revision.identities, 3)
+    let invalid = [Identity {
+            owner = "absent",
+            ..member
+        },
+        Identity {
+            owner = member.id,
+            ..member
+        },
+        Identity {
+            path = "elsewhere.loom",
+            ..member
+        },
+        Identity {
+            name = "unknown",
+            ..member
+        },
+        Identity {
+            id = get(revision.identities, 0).id,
+            ..member
+        }]
+    var index = 0
+    while index < length(invalid) {
+        set(revision.identities, 3, get(invalid, index))
+        assert match indexed(revision) {
+            Result.Err(_) => true,
+            Result.Ok(_) => false
+        }
+        index = index + 1
+    }
+}
+
+fn renamed_method_revision(renamed Bool, edited Bool) Revision {
+    let revision = member_identity_revision("main.loom", edited)
+    if renamed {
+        let file = get(revision.files, 0)
+        set(revision.files, 0, File {
+                text = replace(file.text, "read(", "inspect("),
+                ..file
+            })
+        var index = 0
+        while index < length(revision.identities) {
+            let identity = get(revision.identities, index)
+            if identity.owner != "" {
+                set(revision.identities, index, Identity {
+                        name = "inspect",
+                        ..identity
+                    })
+            }
+            index = index + 1
+        }
+    }
+    revision
+}
+
+test fn explicit_method_rename_composes_with_independent_method_body_edit() {
+    let base = renamed_method_revision(false, false)
+    let left = renamed_method_revision(true, false)
+    let right = renamed_method_revision(false, true)
+    let merged = match merge(base, left, right) {
+        Result.Ok(value) => value,
+        Result.Err(message) => {
+            discard write_error(message)
+            assert false
+            return
+        }
+    }
+    assert contains(get(merged.files, 0).text, "fn inspect(") && contains(get(merged.files, 0).text, "value.inspect()")
+    assert contains(get(merged.files, 0).text, "self + 2")
+    assert length(merged.identities) == 5
+    var index = 0
+    while index < length(merged.identities) {
+        let identity = get(merged.identities, index)
+        if identity.owner != "" {
+            assert identity.name == "inspect"
+        }
+        index = index + 1
+    }
+}
+
+// The fixture supplies IDs for known source slots; production never derives
+// member identity from a declaration's name or position.
+fn explicit_method_fixture(label Text, directory Text, files List[File]) PackageRevision {
+    let selected = package_fixture(label, directory, files)
+    let contents = match indexed(selected.revision) {
+        Result.Ok(value) => value
+        Result.Err(message) => {
+            discard write_error(message)
+            assert false
+            return selected
+        }
+    }
+    var root = 0
+    while root < length(contents.entries) {
+        let entry = get(contents.entries, root)
+        var method = 0
+        while method < length(entry.members) {
+            let member = get(entry.members, method)
+            let locator = split(member.locator, " ")
+            if get(locator, 0) == "fn" {
+                push(selected.revision.identities, Identity {
+                        id = concat(entry.id, concat(":slot:", to_text(method)))
+                        owner = entry.id
+                        path = entry.path
+                        kind = NodeKind.Function
+                        name = get(locator, 1)
+                        key = get(locator, 2)
+                    })
+            }
+            method = method + 1
+        }
+        root = root + 1
+    }
+    selected
+}
+
+fn public_method_case(renamed Bool, edited Bool) List[PackageRevision] {
+    let packages = public_batch_case("amount", false, edited, edited)
+    let library = get(packages, 0)
+    let files = library.revision.files
+    let file = get(files, 0)
+    let methods = replace(replace("""
+        pub concept Read {
+            fn METHOD(self Self) Int
+        }
+        impl Read for Int {
+            fn METHOD(self Int) Int {
+                self + EXTRA
+            }
+        }
+        """, "METHOD", if renamed {
+                "inspect"
+            } else {
+                "read"
+            }), "EXTRA", if edited {
+            "2"
+        } else {
+            "1"
+        })
+    set(files, 0, File {
+            text = concat(file.text, concat("\n", methods)),
+            ..file
+        })
+    set(packages, 0, explicit_method_fixture(library.revision.package_name, library.directory, files))
+    var caller = 1
+    while caller < length(packages) {
+        let selected = get(packages, caller)
+        let contents = selected.revision.files
+        let source = get(contents, 0)
+        let consumer = replace("""
+            import sample.lib.Read
+
+            fn read_dynamic(value dyn Read) Int {
+                value.METHOD()
+            }
+
+            fn read_generic[T Read](value T) Int {
+                value.METHOD()
+            }
+            """, "METHOD", if renamed {
+                "inspect"
+            } else {
+                "read"
+            })
+        set(contents, 0, File {
+                text = concat(source.text, concat("\n", consumer)),
+                ..source
+            })
+        let testing = get(contents, 1)
+        set(contents, 1, File {
+                text = concat(testing.text, replace("""
+
+            import sample.lib.Read
+
+            test fn method_available() {
+                assert read_dynamic(7) > 0
+                assert 7.METHOD() > 0
+            }
+            """, "METHOD", if renamed {
+                            "inspect"
+                        } else {
+                            "read"
+                        })),
+                ..testing
+            })
+        set(packages, caller, package_fixture(selected.revision.package_name, selected.directory, contents))
+        caller = caller + 1
+    }
+    packages
+}
+
+test fn explicit_public_method_renames_cover_generic_dynamic_and_private_test_consumers() {
+    let base = public_method_case(false, false)
+    let branches = [public_method_case(true, false), public_method_case(false, true)]
+    let production = public_batch_context(base, false)
+    let tests = public_batch_context(base, true)
+    var order = 0
+    while order < 2 {
+        let merged = match merge_packages(base, get(branches, order), get(branches, 1 - order), production, tests) {
+            Result.Ok(value) => value
+            Result.Err(message) => {
+                discard write_error(message)
+                assert false
+                return
+            }
+        }
+        assert contains(get(get(merged, 0).revision.files, 0).text, "self + 2")
+        var caller = 1
+        while caller < length(merged) {
+            let files = get(merged, caller).revision.files
+            assert contains(get(files, 0).text, "value.inspect()")
+            assert contains(get(files, 1).text, "7.inspect()")
+            caller = caller + 1
+        }
+        order = order + 1
+    }
+    assert match merge_packages([get(base, 0)], [get(get(branches, 0), 0)], [get(get(branches, 1), 0)], production, tests) {
+        Result.Err(message) => contains(message, "including consumers")
+        Result.Ok(_) => false
+    }
+}
+
+fn method_variant_revision(source Text, renamed Bool, edited Bool) Revision {
+    explicit_method_fixture("sample", "pkg", [File {
+                path = "main.loom"
+                text = replace(replace(source, "TARGET", if renamed {
+                            "inspect"
+                        } else {
+                            "read"
+                        }), "EXTRA", if edited {
+                        "2"
+                    } else {
+                        "1"
+                    })
+            }]).revision
+}
+
+test fn explicit_method_renames_preserve_generic_overload_slots_and_default_bodies() {
+    let sources = ["""
+        concept Read {
+            fn TARGET(self Self, value Int) Int
+            fn read(self Self, value Bool) Bool
+        }
+        record Box[T] { value T }
+        impl[T] Read for Box[T] {
+            fn read(self Box[T], value Bool) Bool { value }
+            fn TARGET(self Box[T], value Int) Int { value + EXTRA }
+        }
+        fn entry() Int {
+            let box = Box { value = 7 }
+            assert box.read(true)
+            box.TARGET(7)
+        }
+        """, """
+        concept Read {
+            fn TARGET(self Self) Int { discard self
+                EXTRA }
+        }
+        impl Read for Int {}
+        fn consume(value dyn Read) Int { value.TARGET() }
+        fn entry() Int { consume(7) }
+        """]
+    var variant = 0
+    while variant < length(sources) {
+        let source = get(sources, variant)
+        let base = method_variant_revision(source, false, false)
+        let branches = [method_variant_revision(source, true, false), method_variant_revision(source, false, true)]
+        var order = 0
+        while order < 2 {
+            let merged = match merge(base, get(branches, order), get(branches, 1 - order)) {
+                Result.Ok(value) => value
+                Result.Err(message) => {
+                    discard write_error(message)
+                    assert false
+                    return
+                }
+            }
+            assert contains(get(merged.files, 0).text, "fn inspect(") && contains(get(merged.files, 0).text, ".inspect(")
+            assert contains(get(merged.files, 0).text, if variant == 0 {
+                    "value + 2"
+                } else {
+                    "2 }"
+                })
+            if variant == 0 {
+                assert contains(get(merged.files, 0).text, "fn read(self Box[T], value Bool)")
+            }
+            order = order + 1
+        }
+        variant = variant + 1
+    }
+}
+
+test fn explicit_method_renames_refuse_conflicting_names_and_instance_dependent_evidence() {
+    let base = renamed_method_revision(false, false)
+    let first = renamed_method_revision(true, false)
+    let second = renamed_method_revision(true, false)
+    let file = get(second.files, 0)
+    set(second.files, 0, File {
+            text = replace(file.text, "inspect(", "examine("),
+            ..file
+        })
+    var index = 0
+    while index < length(second.identities) {
+        let identity = get(second.identities, index)
+        if identity.owner != "" {
+            set(second.identities, index, Identity {
+                    name = "examine",
+                    ..identity
+                })
+        }
+        index = index + 1
+    }
+    assert match merge(base, first, second) {
+        Result.Err(message) => contains(message, "conflicting method renames")
+        Result.Ok(_) => false
+    }
+    let original = public_method_case(false, false)
+    let renamed = public_method_case(true, false)
+    let edited = public_method_case(false, true)
+    let cases = [original, renamed, edited]
+    index = 0
+    while index < length(cases) {
+        let files = get(get(cases, index), 1).revision.files
+        let testing = get(files, 1)
+        set(files, 1, File {
+                text = replace(testing.text, "assert read_dynamic(7) > 0", "assert read_dynamic(7) > 0 && read_generic(7) > 0"),
+                ..testing
+            })
+        index = index + 1
+    }
+    assert match merge_packages(original, renamed, edited, public_batch_context(original, false), public_batch_context(original, true)) {
+        Result.Err(message) => contains(message, "instance-dependent binding evidence")
+        Result.Ok(_) => false
+    }
+}
+
+test fn owned_member_metadata_preserves_carried_row_order_and_batch_id_uniqueness() {
+    let base = renamed_method_revision(false, false)
+    let order = [3, 0, 4, 1, 2]
+    let carried = new[Identity]()
+    var index = 0
+    while index < length(order) {
+        push(carried, get(base.identities, get(order, index)))
+        index = index + 1
+    }
+    let reordered = Revision {
+        identities = carried,
+        ..base
+    }
+    let merged = match merge(reordered, reordered, renamed_method_revision(false, true)) {
+        Result.Ok(value) => value
+        Result.Err(message) => {
+            discard write_error(message)
+            assert false
+            return
+        }
+    }
+    index = 0
+    while index < length(carried) {
+        assert get(merged.identities, index).id == get(carried, index).id
+        index = index + 1
+    }
+    let packages = public_method_case(false, false)
+    let identities = get(packages, 0).revision.identities
+    let other = get(get(packages, 1).revision.identities, 0).id
+    index = 0
+    while index < length(identities) {
+        let identity = get(identities, index)
+        if identity.owner != "" {
+            set(identities, index, Identity {
+                    id = other,
+                    ..identity
+                })
+            break
+        }
+        index = index + 1
+    }
+    assert match package_scopes(public_batch_context(public_method_case(false, false), false), packages) {
+        Result.Err(message) => contains(message, "identity appears in two packages")
+        Result.Ok(_) => false
+    }
+}

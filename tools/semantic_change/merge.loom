@@ -44,6 +44,7 @@ pub record File {
 
 pub record Identity {
     id Text
+    owner Text
     path Text
     kind NodeKind
     name Text
@@ -126,7 +127,7 @@ fn identity_index(identities List[Identity], path Text, kind NodeKind, name Text
     var index = 0
     while index < length(identities) {
         let value = get(identities, index)
-        if value.path == path && value.kind == kind && value.name == name && value.key == key {
+        if value.owner == "" && value.path == path && value.kind == kind && value.name == name && value.key == key {
             if found >= 0 {
                 return -2
             }
@@ -169,6 +170,13 @@ fn declaration_header(source Text, node Node) Text {
     concat(output, slice(source, position, node.span.end))
 }
 
+// Identity maintenance needs syntax/ownership validation without executing
+// ordinary compile-time programs or requiring a type-correct draft.
+pub fn validate_identities(revision Revision) Result[Bool, Text] {
+    discard indexed(revision)?
+    Result.Ok(true)
+}
+
 fn indexed(revision Revision) Result[Indexed, Text] {
     if !sidecar_word(revision.package_name) {
         return Result.Err("revision needs a package identity")
@@ -188,6 +196,23 @@ fn indexed(revision Revision) Result[Indexed, Text] {
                 return Result.Err("duplicate stable declaration identity")
             }
             previous = previous + 1
+        }
+        if identity.owner != "" {
+            if !sidecar_word(identity.owner) || identity.kind != NodeKind.Function {
+                return Result.Err("member identity requires a function and an explicit container identity")
+            }
+            var parent = 0
+            while parent < length(revision.identities) && get(revision.identities, parent).id != identity.owner {
+                parent = parent + 1
+            }
+            if parent == length(revision.identities) {
+                return Result.Err("member identity has no container")
+            }
+            let container = get(revision.identities, parent)
+            if container.owner != "" || container.path != identity.path ||
+            (container.kind != NodeKind.Concept && container.kind != NodeKind.Impl) {
+                return Result.Err("member identity must belong to its declared concept or implementation")
+            }
         }
         index = index + 1
     }
@@ -241,13 +266,24 @@ fn indexed(revision Revision) Result[Indexed, Text] {
                     body = slice(file.text, node.span.start, node.span.end)
                     header = declaration_header(file.text, node)
                     abstract_body = abstract_reference_scope(node)
-                    members = member_scopes(node, empty_members)?
+                    members = member_scopes(node, empty_members, revision.identities, id, file.path)?
                 })
             declaration = declaration + 1
         }
         index = index + 1
     }
-    if length(entries) != length(revision.identities) {
+    var identified = length(entries)
+    index = 0
+    while index < length(entries) {
+        let members = get(entries, index).members
+        var member = 0
+        while member < length(members) {
+            if get(members, member).id != "" { identified = identified + 1 }
+            member = member + 1
+        }
+        index = index + 1
+    }
+    if identified != length(revision.identities) {
         return Result.Err("stable identity does not name exactly one declaration")
     }
     Result.Ok(Indexed {

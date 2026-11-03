@@ -36,6 +36,7 @@ fn refined_rename_case(name Text, path Text, edited Bool) Revision {
     while index < length(names) {
         let label = get(names, index)
         push(revision.identities, Identity {
+                owner = ""
                 id = concat("type-", label)
                 path = "app.loom"
                 kind = if index == 0 {
@@ -138,6 +139,7 @@ fn dynamic_rename_case(name Text, path Text, value Text) Revision {
             text = consumer
         })
     push(revision.identities, Identity {
+            owner = ""
             id = "consumer-id"
             path = "consumer.loom"
             kind = NodeKind.Function

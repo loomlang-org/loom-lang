@@ -1,0 +1,106 @@
+import std.loom.analysis.method_conformances
+import std.text.starts_with
+
+record MethodConformance {
+    implementation BindingTarget
+    requirement BindingTarget
+}
+
+fn has_member_renames(scopes List[PackageScope], renames List[DeclarationRename]) Bool {
+    var index = 0
+    while index < length(scopes) {
+        let identities = get(scopes, index).indexed.revision.identities
+        var identity = 0
+        while identity < length(identities) {
+            let member = get(identities, identity)
+            if member.owner != "" && rename_requested(renames, member.id) != "" {
+                return true
+            }
+            identity = identity + 1
+        }
+        index = index + 1
+    }
+    false
+}
+
+fn checked_method_conformances(analysis CheckedAnalysis, scopes List[PackageScope], renames List[DeclarationRename]) Result[List[MethodConformance], Text] {
+    let edges = method_conformances(analysis.snapshot)?
+    // Positive edges do not establish completeness. Every potentially affected
+    // source implementation header must have its own checked conformance.
+    var symbol = 0
+    while symbol < length(analysis.bindings.symbols) {
+        let method = get(analysis.bindings.symbols, symbol)
+        if method.owner >= 0 && method.node.kind == NodeKind.Function &&
+        get(analysis.bindings.symbols, method.owner).node.kind == NodeKind.Impl &&
+        public_rename_spelling(scopes, renames, method.name) {
+            var covered = false
+            var edge = 0
+            while edge < length(edges) {
+                let location = get(edges, edge).0
+                covered = covered || (location.file == method.file && location.span.start >= method.node.span.start &&
+                    location.span.end <= method.node.span.end)
+                edge = edge + 1
+            }
+            if !covered {
+                return Result.Err("method rename cannot account for an implementation conformance header")
+            }
+        }
+        symbol = symbol + 1
+    }
+    let output = new[MethodConformance]()
+    var edge = 0
+    while edge < length(edges) {
+        let selected = get(edges, edge)
+        push(output, MethodConformance {
+                implementation = package_location_target(analysis, scopes, selected.0)?
+                requirement = package_location_target(analysis, scopes, selected.1)?
+            })
+        edge = edge + 1
+    }
+    Result.Ok(output)
+}
+
+fn same_method_target(before BindingTarget, after BindingTarget) Bool {
+    if before.id != "" && starts_with(before.scope, "member ") {
+        // An explicit member ID identifies the checked declaration-name slot;
+        // the token's spelling and length may change during normalization.
+        return before.id == after.id && before.package == after.package && before.scope == after.scope
+    }
+    same_target(before, after)
+}
+
+fn compare_method_conformances(before CheckedAnalysis, original List[PackageScope], after CheckedAnalysis,
+    updated List[PackageScope], renames List[DeclarationRename]) Result[Bool, Text] {
+    if !has_member_renames(original, renames) {
+        return Result.Ok(true)
+    }
+    let previous = checked_method_conformances(before, original, renames)?
+    let current = checked_method_conformances(after, updated, renames)?
+    if length(previous) != length(current) {
+        return Result.Err("method rename changed checked conformance coverage")
+    }
+    let sides = [previous, current]
+    var side = 0
+    while side < 2 {
+        let expected_edges = get(sides, side)
+        let observed_edges = get(sides, 1 - side)
+        var edge = 0
+        while edge < length(expected_edges) {
+            let expected = get(expected_edges, edge)
+            var found = false
+            var index = 0
+            while index < length(observed_edges) {
+                let observed = get(observed_edges, index)
+                found = found || (same_method_target(expected.implementation, observed.implementation) &&
+                    same_method_target(expected.requirement, observed.requirement))
+                index = index + 1
+            }
+            if !found {
+                return Result.Err("method rename changed a checked conformance slot")
+            }
+            edge = edge + 1
+        }
+        side = side + 1
+    }
+    Result.Ok(true)
+}

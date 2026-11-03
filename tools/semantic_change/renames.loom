@@ -98,6 +98,7 @@ fn declaration_renames(base Indexed, left Indexed, right Indexed, public_allowed
         }
         index = index + 1
     }
+    discard member_declaration_renames(base, left, right, renames, public_allowed)?
     Result.Ok(renames)
 }
 
@@ -144,6 +145,14 @@ fn rename_spelling(entries List[Entry], renames List[DeclarationRename], name Te
         if entry.name == name && rename_requested(renames, entry.id) != "" {
             return true
         }
+        var method = 0
+        while method < length(entry.members) {
+            let member = get(entry.members, method)
+            if member.id != "" && get(std.text.split(member.locator, " "), 1) == name && rename_requested(renames, member.id) != "" {
+                return true
+            }
+            method = method + 1
+        }
         index = index + 1
     }
     false
@@ -155,6 +164,7 @@ fn rename_edits(revision Indexed, renames List[DeclarationRename], analysis Chec
     while index < length(revision.entries) {
         let entry = get(revision.entries, index)
         let sites = reference_sites(entry)?
+        let methods = member_declaration_names(entry, renames)?
         let requested = rename_requested(renames, entry.id)
         let declaration = if entry.kind == NodeKind.Impl {
             -1
@@ -175,16 +185,21 @@ fn rename_edits(revision Indexed, renames List[DeclarationRename], analysis Chec
             } else {
                 ""
             }
-            if token.span.start != declaration && (rename_site(sites, token.span.start) ||
+            let member = member_declaration_at(methods, token.span.start)
+            let member_name = if member < 0 {
+                ""
+            } else {
+                get(methods, member).text
+            }
+            if member_name != "" {
+                name = member_name
+            }
+            if token.span.start != declaration && member < 0 && (rename_site(sites, token.span.start) ||
                 (token.kind == Kind.Name && rename_spelling(revision.entries, renames, token.value))) {
                 let target = target_at(analysis, revision, directory, entry, token.span.start)?
-                let selected = rename_requested(renames, target.id)
+                let selected = requested_target_name(revision, renames, target)?
                 if selected != "" {
-                    let owner = get(revision.entries, entry_index(revision.entries, target.id))
-                    let defined = rename_name(owner)?.span
-                    if target.start == defined.start && target.end == defined.end {
-                        name = selected
-                    }
+                    name = selected
                 }
             }
             if name != "" && token.value != name {
@@ -252,12 +267,14 @@ fn renamed_identities(original Indexed, files List[File], renames List[Declarati
                 }
                 let identity = identity_index(original.revision.identities, entry.path, entry.kind, entry.name, entry.key)
                 set(identities, identity, Identity {
+                        owner = ""
                         id = entry.id
                         path = entry.path
                         kind = entry.kind
                         name = name
                         key = declaration_key(node)?
                     })
+                discard renamed_member_identities(identities, entry, node, renames)?
                 ordinal = ordinal + 1
             }
             item = item + 1
@@ -412,9 +429,23 @@ fn normalize_rename(revision Revision, renames List[DeclarationRename], director
     let edits = rename_edits(original, renames, before, directory)?
     let renamed = renamed_revision(original, renames, edits)?
     let updated = indexed(renamed)?
-    discard compare_renamed(before, original, rename_analysis(renamed, directory, production, tests, true, backend)?, updated, directory, edits)?
-    discard compare_renamed(rename_analysis(revision, directory, production, tests, false, backend)?, original,
-        rename_analysis(renamed, directory, production, tests, false, backend)?, updated, directory, edits)?
+    let after = rename_analysis(renamed, directory, production, tests, true, backend)?
+    discard compare_renamed(before, original, after, updated, directory, edits)?
+    let ordinary_before = rename_analysis(revision, directory, production, tests, false, backend)?
+    let ordinary_after = rename_analysis(renamed, directory, production, tests, false, backend)?
+    discard compare_renamed(ordinary_before, original, ordinary_after, updated, directory, edits)?
+    let previous_scope = [PackageScope {
+            directory = directory,
+            package = before.bindings.root,
+            indexed = original
+        }]
+    let current_scope = [PackageScope {
+            directory = directory,
+            package = after.bindings.root,
+            indexed = updated
+        }]
+    discard compare_method_conformances(before, previous_scope, after, current_scope, renames)?
+    discard compare_method_conformances(ordinary_before, previous_scope, ordinary_after, current_scope, renames)?
     Result.Ok(renamed)
 }
 

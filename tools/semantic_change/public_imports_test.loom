@@ -22,6 +22,7 @@ fn split_public_case(renamed Bool, moved Bool, changed Bool, caller_changed Bool
             ..source
         })
     push(library.identities, Identity {
+            owner = ""
             id = "untouched-public-member"
             path = source.path
             kind = NodeKind.Function
@@ -160,6 +161,7 @@ fn check_production_import_scope() Result[Bool, Text] {
             ..testing
         })
     push(library.identities, Identity {
+            owner = ""
             id = "test-only-overload"
             path = testing.path
             kind = NodeKind.Function

@@ -1,9 +1,14 @@
 import std.loom.source.Span
 
 record MemberScope {
+    id Text
     locator Text
     span Span
     body Span
+}
+
+fn member_scope_key(member MemberScope) Text {
+    if member.id == "" { member.locator } else { concat("member ", member.id) }
 }
 
 // A rename edits tokens, never member order. Map the checked member anchor
@@ -16,7 +21,7 @@ fn renamed_scope(original Entry, scope Text, anchor Int) Result[Text, Text] {
     while index < length(original.members) {
         let member = get(original.members, index)
         if member.span.start - original.start == anchor {
-            return Result.Ok(member.locator)
+            return Result.Ok(member_scope_key(member))
         }
         index = index + 1
     }
@@ -26,6 +31,10 @@ fn renamed_scope(original Entry, scope Text, anchor Int) Result[Text, Text] {
 // An identified container owns checked API slots. These revision-local member
 // locators are not new durable IDs or permission to merge concurrent bodies.
 fn member_scopes(node Node, empty List[MemberScope]) Result[List[MemberScope], Text] {
+    member_scopes(node, empty, new[Identity](), "", "")
+}
+
+fn member_scopes(node Node, empty List[MemberScope], identities List[Identity], owner Text, path Text) Result[List[MemberScope], Text] {
     if node.kind != NodeKind.Concept && node.kind != NodeKind.Impl {
         return Result.Ok(empty)
     }
@@ -34,11 +43,23 @@ fn member_scopes(node Node, empty List[MemberScope]) Result[List[MemberScope], T
     while index < length(node.children) {
         let member = get(node.children, index)
         if member.kind == NodeKind.Function || member.kind == NodeKind.AssociatedType {
+            var id = ""
+            let key = declaration_key(member)?
+            var identity = 0
+            while identity < length(identities) {
+                let candidate = get(identities, identity)
+                if candidate.owner == owner && owner != "" && candidate.path == path &&
+                candidate.kind == member.kind && candidate.name == member.value && candidate.key == key {
+                    if id != "" { return Result.Err("ambiguous stable member identity") }
+                    id = candidate.id
+                }
+                identity = identity + 1
+            }
             let locator = concat(if member.kind == NodeKind.Function {
                     "fn "
                 } else {
                     "type "
-                }, concat(member.value, concat(" ", declaration_key(member)?)))
+                }, concat(member.value, concat(" ", key)))
             var previous = 0
             while previous < length(members) {
                 if get(members, previous).locator == locator {
@@ -47,6 +68,7 @@ fn member_scopes(node Node, empty List[MemberScope]) Result[List[MemberScope], T
                 previous = previous + 1
             }
             push(members, MemberScope {
+                    id = id
                     locator = locator
                     span = member.span
                     body = member_body(member)
@@ -84,7 +106,7 @@ fn scoped_target(entry Entry, package Int, location Span) Result[BindingTarget, 
             if scope != "" {
                 return Result.Err("checked definition has an ambiguous member scope")
             }
-            scope = member.locator
+            scope = member_scope_key(member)
             anchor = member.span.start - entry.start
         }
         index = index + 1

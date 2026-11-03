@@ -66,6 +66,7 @@ fn moved_identity(directory Text, name Text, new_name Text, file Text) Result[Te
         let identity = get(snapshot.revision.identities, index)
         if identity.name == name {
             return refresh(directory, [Resolution {
+                        owner = ""
                         id = identity.id
                         path = file
                         name = new_name
@@ -117,6 +118,7 @@ fn module_fixture_branches(staging Text) Result[Text, Text] {
         let declaration = get(identities, identity)
         if declaration.name == "amount" || declaration.name == "secret" {
             push(changes, Resolution {
+                    owner = ""
                     id = declaration.id
                     path = if declaration.name == "amount" {
                         "moved.loom"

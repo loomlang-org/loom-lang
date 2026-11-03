@@ -58,9 +58,13 @@ fn package_scopes(project Project, revisions List[PackageRevision]) Result[List[
                 return Result.Err("duplicate merge package or directory")
             }
             var entry = 0
-            while entry < length(current.entries) {
-                if entry_index(previous.indexed.entries, get(current.entries, entry).id) >= 0 {
-                    return Result.Err("stable declaration identity appears in two packages")
+            while entry < length(current.revision.identities) {
+                var identity = 0
+                while identity < length(previous.indexed.revision.identities) {
+                    if get(previous.indexed.revision.identities, identity).id == get(current.revision.identities, entry).id {
+                        return Result.Err("stable declaration identity appears in two packages")
+                    }
+                    identity = identity + 1
                 }
                 entry = entry + 1
             }
@@ -134,19 +138,27 @@ fn package_target(analysis CheckedAnalysis, scopes List[PackageScope], package I
         return Result.Err("package reference has no analyzed source file")
     }
     let inspection = reference_inspection(analysis, file, offset, abstract_body)?
-    let location = get(inspection.definitions, 0)
+    package_location_target(analysis, scopes, get(inspection.definitions, 0))
+}
+
+fn package_location_target(analysis CheckedAnalysis, scopes List[PackageScope], location Location) Result[BindingTarget, Text] {
     if location.file < 0 || location.file >= length(analysis.bindings.files) {
         return Result.Err("package reference definition has no source file")
     }
     let source = get(analysis.bindings.files, location.file)
-    index = 0
+    var index = 0
     while index < length(scopes) {
         let scope = get(scopes, index)
         if scope.package == source.package {
             var entry = 0
             while entry < length(scope.indexed.entries) {
                 let definition = get(scope.indexed.entries, entry)
-                if source.path == join_path(scope.directory, definition.path) &&
+                let path = if scope.directory == "" {
+                    definition.path
+                } else {
+                    join_path(scope.directory, definition.path)
+                }
+                if source.path == path &&
                 location.span.start >= definition.start && location.span.end <= definition.end {
                     return scoped_target(definition, source.package, location.span)
                 }

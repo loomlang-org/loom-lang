@@ -1,0 +1,202 @@
+import std.text.split
+
+fn member_index(members List[MemberScope], id Text) Int {
+    var index = 0
+    while index < length(members) {
+        if id != "" && get(members, index).id == id {
+            return index
+        }
+        index = index + 1
+    }
+    -1
+}
+
+// The containing declaration was parsed and its explicit member slot validated.
+// Abstract concept signatures are not standalone function declarations.
+fn member_name(member MemberScope) Result[Text, Text] {
+    let locator = split(member.locator, " ")
+    if length(locator) != 3 || get(locator, 0) != "fn" {
+        return Result.Err("method rename requires an explicit stable member identity")
+    }
+    Result.Ok(get(locator, 1))
+}
+
+fn member_name_token(container Entry, member MemberScope) Result[Token, Text] {
+    let name = member_name(member)?
+    let source = slice(container.body, member.span.start - container.start, member.span.end - container.start)
+    let tokens = match lex(source) {
+        Result.Ok(value) => value
+        Result.Err(problem) => {
+            return Result.Err(problem.message)
+        }
+    }
+    var index = 0
+    while index + 1 < length(tokens) {
+        let token = get(tokens, index)
+        let next = get(tokens, index + 1)
+        if token.kind == Kind.Name && token.value == "fn" && next.kind == Kind.Name && next.value == name {
+            return Result.Ok(Token {
+                    span = Span {
+                        start = next.span.start + member.span.start - container.start
+                        end = next.span.end + member.span.start - container.start
+                    }
+                    ..next
+                })
+        }
+        index = index + 1
+    }
+    Result.Err("identified method has no declaration-name token")
+}
+
+fn member_declaration_renames(base Indexed, left Indexed, right Indexed, renames List[DeclarationRename], public_allowed Bool) Result[Bool, Text] {
+    var index = 0
+    while index < length(base.entries) {
+        let container = get(base.entries, index)
+        let first = entry_index(left.entries, container.id)
+        let second = entry_index(right.entries, container.id)
+        if first >= 0 && second >= 0 {
+            let a = get(left.entries, first)
+            let b = get(right.entries, second)
+            var method = 0
+            while method < length(container.members) {
+                let original = get(container.members, method)
+                let l = member_index(a.members, original.id)
+                let r = member_index(b.members, original.id)
+                if original.id != "" && l >= 0 && r >= 0 {
+                    let before = member_name(original)?
+                    let lhs = member_name(get(a.members, l))?
+                    let rhs = member_name(get(b.members, r))?
+                    if lhs != before || rhs != before {
+                        if lhs != before && rhs != before && lhs != rhs {
+                            return Result.Err("conflicting method renames require explicit resolution")
+                        }
+                        if !public_allowed && container.kind == NodeKind.Concept && public_declaration(container)? {
+                            return Result.Err("public method rename requires complete module context")
+                        }
+                        discard member_name_token(container, original)?
+                        discard member_name_token(a, get(a.members, l))?
+                        discard member_name_token(b, get(b.members, r))?
+                        push(renames, DeclarationRename {
+                                id = original.id
+                                name = if lhs != before {
+                                    lhs
+                                } else {
+                                    rhs
+                                }
+                            })
+                    }
+                }
+                method = method + 1
+            }
+        }
+        index = index + 1
+    }
+    Result.Ok(true)
+}
+
+fn member_declaration_names(entry Entry, renames List[DeclarationRename]) Result[List[RenameEdit], Text] {
+    let output = new[RenameEdit]()
+    var index = 0
+    while index < length(entry.members) {
+        let member = get(entry.members, index)
+        if get(split(member.locator, " "), 0) == "fn" {
+            let token = member_name_token(entry, member)?
+            push(output, RenameEdit {
+                    id = entry.id
+                    start = token.span.start
+                    end = token.span.end
+                    text = rename_requested(renames, member.id)
+                })
+        }
+        index = index + 1
+    }
+    Result.Ok(output)
+}
+
+fn member_declaration_at(declarations List[RenameEdit], offset Int) Int {
+    var index = 0
+    while index < length(declarations) {
+        if get(declarations, index).start == offset {
+            return index
+        }
+        index = index + 1
+    }
+    -1
+}
+
+fn requested_target_name(revision Indexed, renames List[DeclarationRename], target BindingTarget) Result[Text, Text] {
+    let index = entry_index(revision.entries, target.id)
+    if index < 0 {
+        return Result.Ok("")
+    }
+    let container = get(revision.entries, index)
+    var method = 0
+    while method < length(container.members) {
+        let member = get(container.members, method)
+        if member.id != "" && target.scope == member_scope_key(member) {
+            let requested = rename_requested(renames, member.id)
+            if requested != "" {
+                let name = member_name_token(container, member)?.span
+                if target.start == name.start && target.end == name.end {
+                    return Result.Ok(requested)
+                }
+            }
+        }
+        method = method + 1
+    }
+    let requested = rename_requested(renames, target.id)
+    if requested != "" {
+        let name = rename_name(container, true)?.span
+        if target.start == name.start && target.end == name.end {
+            return Result.Ok(requested)
+        }
+    }
+    Result.Ok("")
+}
+
+fn renamed_member_identities(identities List[Identity], original Entry, updated Node, renames List[DeclarationRename]) Result[Bool, Text] {
+    var ordinal = 0
+    var child = 0
+    while child < length(updated.children) {
+        let node = get(updated.children, child)
+        if node.kind == NodeKind.Function || node.kind == NodeKind.AssociatedType {
+            if ordinal >= length(original.members) {
+                return Result.Err("rename changed the member structure")
+            }
+            let member = get(original.members, ordinal)
+            if member.id != "" {
+                let before = member_name(member)?
+                let requested = rename_requested(renames, member.id)
+                let name = if requested == "" {
+                    before
+                } else {
+                    requested
+                }
+                if node.kind != NodeKind.Function || node.value != name {
+                    return Result.Err("rename changed the member structure")
+                }
+                var identity = 0
+                while identity < length(identities) && get(identities, identity).id != member.id {
+                    identity = identity + 1
+                }
+                if identity == length(identities) {
+                    return Result.Err("rename lost an explicit member identity")
+                }
+                set(identities, identity, Identity {
+                        id = member.id
+                        owner = original.id
+                        path = original.path
+                        kind = NodeKind.Function
+                        name = name
+                        key = declaration_key(node)?
+                    })
+            }
+            ordinal = ordinal + 1
+        }
+        child = child + 1
+    }
+    if ordinal != length(original.members) {
+        return Result.Err("rename changed the member structure")
+    }
+    Result.Ok(true)
+}

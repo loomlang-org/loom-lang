@@ -35,6 +35,7 @@ fn solver_lifecycle(staging Text) Result[Text, Text] {
         concat(replace(source, "square", "squared"), concat("\n", replace(caller, "square", "squared"))))
     discard write_text(path(left, ".loom-ids"), original.sidecar)
     discard refresh(left, [Resolution {
+                owner = ""
                 id = identity.id
                 path = "app.loom"
                 name = "squared"

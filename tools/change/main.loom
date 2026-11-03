@@ -180,13 +180,13 @@ fn header(metadata Text, sidecar Text) Result[Header, Text] {
                         index = index + 1
                         continue
                     }
-                    if length(words) == 5 && get(words, 0) == "candidate" {
+                    if (length(words) == 5 || length(words) == 6) && get(words, 0) == "candidate" {
                         discard draft_candidate(words)?
                         candidates = true
                         index = index + 1
                         continue
                     }
-                    if length(words) != 6 || (get(words, 0) != "id" && get(words, 0) != "pending") {
+                    if (length(words) != 6 && length(words) != 7) || (get(words, 0) != "id" && get(words, 0) != "pending") {
                         return Result.Err(concat("invalid identity line in ", sidecar))
                     }
                     let id = get(words, 1)
@@ -195,12 +195,21 @@ fn header(metadata Text, sidecar Text) Result[Header, Text] {
                     }
                     let name = get(words, 3)
                     let file = get(words, 4)
+                    let owner = if length(words) == 7 {
+                        get(words, 6)
+                    } else {
+                        ""
+                    }
+                    if length(words) == 7 && !lifecycle_word(owner) {
+                        return Result.Err("member identity owner must be an explicit stable ID")
+                    }
                     if starts_with(file, "/") || contains(file, "/") || contains(file, "\\") ||
                     !ends_with(file, ".loom") || trim(file) != file {
                         return Result.Err("identity file path must be a relative .loom filename")
                     }
                     push(identities, Identity {
                             id = id
+                            owner = owner
                             path = file
                             kind = kind(get(words, 2))?
                             name = name
@@ -982,6 +991,7 @@ fn change_usage() Text {
         usage: loom change init PACKAGE_NAME DIR
            or: loom change scan DIR
            or: loom change refresh DIR [--draft] [--move ID FILE NAME KEY | --derive PARENT FILE NAME KEY | --delete ID]...
+           or: loom change refresh DIR [--move-member ID OWNER FILE NAME KEY | --derive-member PARENT OWNER FILE NAME KEY]...
         usage: loom change BASE_DIR LEFT_DIR RIGHT_DIR
            or: loom change --git GIT_EXE REPO PACKAGE_DIR BASE_REV LEFT_REV RIGHT_REV
            or: loom change --context PACKAGE_DIR STD_ROOT BASE_DIR LEFT_DIR RIGHT_DIR

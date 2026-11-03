@@ -75,6 +75,7 @@ fn overload_lifecycle(staging Text, renamed Bool) Result[Text, Text] {
         }
     }
     let wrong = Resolution {
+        owner = ""
         id = int_id.id
         path = "numbers.loom"
         name = "amount"
