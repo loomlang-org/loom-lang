@@ -206,8 +206,17 @@ fn package_location_target(analysis CheckedAnalysis, scopes List[PackageScope], 
 }
 
 fn compare_package_entry(before CheckedAnalysis, before_scopes List[PackageScope], original Entry,
-    after CheckedAnalysis, after_scopes List[PackageScope], current Entry, package Int, directory Text) Result[Bool, Text] {
-    let sites = retained_sites(original, current)?
+    after CheckedAnalysis, after_scopes List[PackageScope], current Entry, package Int, directory Text,
+    maps List[BodySourceMap]) Result[Bool, Text] {
+    let sites = if original.id == "" {
+        retained_sites(original, current)?
+    } else {
+        let mapping = body_map_index(maps, original.id, package)
+        if mapping < 0 {
+            return Result.Err("package declaration has no body provenance")
+        }
+        retained_sites(original, get(maps, mapping).regions)?
+    }
     var index = 0
     while index < length(sites) {
         let site = get(sites, index)
@@ -223,7 +232,13 @@ fn compare_package_entry(before CheckedAnalysis, before_scopes List[PackageScope
             } else {
                 join_path(directory, current.path)
             }, current.start + site.after, current.abstract_body)?
-        if !same_reference_binding(expected, target) {
+        let retained = match composed_reference(maps, expected) {
+            Result.Ok(value) => value
+            Result.Err(message) => {
+                return Result.Err(concat("package merge changed a retained checked reference binding: ", message))
+            }
+        }
+        if !same_reference_binding(retained, target) {
             return Result.Err("package merge changed a retained checked reference binding")
         }
         index = index + 1
@@ -231,10 +246,35 @@ fn compare_package_entry(before CheckedAnalysis, before_scopes List[PackageScope
     Result.Ok(true)
 }
 
-fn compare_packages(before CheckedAnalysis, original List[PackageRevision], after CheckedAnalysis,
-    updated List[PackageRevision]) Result[Bool, Text] {
+fn compare_packages(before CheckedAnalysis, original List[PackageRevision], peer List[PackageRevision],
+    base List[PackageRevision], after CheckedAnalysis, updated List[PackageRevision], from_left Bool) Result[Bool, Text] {
     let old_scopes = package_scopes(before.source, original)?
     let new_scopes = package_scopes(after.source, updated)?
+    let maps = new[BodySourceMap]()
+    var scope_index = 0
+    while scope_index < length(new_scopes) {
+        let scope = get(new_scopes, scope_index)
+        let source = indexed(package_revision(original, scope.directory)?.revision)?
+        let other = indexed(package_revision(peer, scope.directory)?.revision)?
+        let baseline = indexed(package_revision(base, scope.directory)?.revision)?
+        let selected = body_source_maps(baseline,
+            if from_left {
+                source
+            } else {
+                other
+            },
+            if from_left {
+                other
+            } else {
+                source
+            }, scope.indexed, from_left, scope.package)?
+        var item = 0
+        while item < length(selected) {
+            push(maps, get(selected, item))
+            item = item + 1
+        }
+        scope_index = scope_index + 1
+    }
     var index = 0
     while index < length(new_scopes) {
         let scope = get(new_scopes, index)
@@ -253,7 +293,7 @@ fn compare_packages(before CheckedAnalysis, original List[PackageRevision], afte
             if retained_index >= 0 && package_entry_active(after, scope.package, current)? {
                 let retained = get(previous.indexed.entries, retained_index)
                 discard compare_package_entry(before, old_scopes, retained, after, new_scopes,
-                    current, scope.package, scope.directory)?
+                    current, scope.package, scope.directory, maps)?
             }
             entry = entry + 1
         }
@@ -298,10 +338,11 @@ fn compare_packages(before CheckedAnalysis, original List[PackageRevision], afte
                         header = ""
                         abstract_body = abstract_reference_scope(node)
                         members = member_scopes(node, empty_members)?
+                        syntax = node
                     }
                     if package_entry_active(after, file.package, entry)? {
                         discard compare_package_entry(before, old_scopes, entry, after, new_scopes,
-                            entry, file.package, "")?
+                            entry, file.package, "", maps)?
                     }
                 }
                 declaration = declaration + 1
@@ -552,8 +593,8 @@ fn merge_package_names(base List[PackageRevision], left List[PackageRevision], r
                 } else {
                     merged_production
                 }, testing, backend)?
-            discard compare_packages(before_left, left, after, merged)?
-            discard compare_packages(before_right, right, after, merged)?
+            discard compare_packages(before_left, left, right, base, after, merged, true)?
+            discard compare_packages(before_right, right, left, base, after, merged, false)?
         }
         pass = pass + 1
     }

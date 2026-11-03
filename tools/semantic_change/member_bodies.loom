@@ -207,8 +207,11 @@ fn retained_regions(before Entry, after Entry) Result[List[RetainedRegion], Text
 }
 
 fn retained_sites(before Entry, after Entry) Result[List[RetainedSite], Text] {
+    retained_sites(before, retained_regions(before, after)?)
+}
+
+fn retained_sites(before Entry, regions List[RetainedRegion]) Result[List[RetainedSite], Text] {
     let sites = new[RetainedSite]()
-    let regions = retained_regions(before, after)?
     if length(regions) == 0 {
         return Result.Ok(sites)
     }
