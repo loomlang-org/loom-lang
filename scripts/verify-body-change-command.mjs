@@ -105,15 +105,24 @@ fn main() { assert false }
   function commit(snapshot, parent) {
     for (const entry of readdirSync(repository)) if (entry !== ".git") rmSync(join(repository, entry), { recursive: true, force: true });
     for (const entry of readdirSync(snapshot)) cpSync(join(snapshot, entry), join(repository, entry), { recursive: true, filter: () => true });
+    // These snapshots can differ only in same-sized numeric literals. Rebuild
+    // the disposable index so coarse filesystem timestamps cannot hide edits.
+    git("read-tree", "--empty");
     git("-c", "core.autocrlf=false", "add", "--all");
     const tree = git("write-tree");
-    return git("-c", "user.name=Loom test", "-c", "user.email=loom@example.invalid", "-c", "commit.gpgsign=false",
+    const revision = git("-c", "user.name=Loom test", "-c", "user.email=loom@example.invalid", "-c", "commit.gpgsign=false",
       "commit-tree", tree, "-m", "body composition fixture", ...(parent ? ["-p", parent] : []));
+    for (const [name] of inventory(snapshot)) {
+      const blob = success(invoke("git", ["cat-file", "blob", `${revision}:${name.replaceAll("\\", "/")}`], repository));
+      assert.equal(blob, readFileSync(join(snapshot, name), "utf8"), "Git fixture did not capture the exact snapshot");
+    }
+    return revision;
   }
   const base = commit(paths[0]), a = commit(paths[1], base), b = commit(paths[2], base); git("update-ref", "HEAD", b);
   const gitArgs = ["--git", "git", repository, ".", base, a, "HEAD"], status = git("status", "--porcelain=v1");
   const index = readFileSync(join(repository, ".git", "index"));
   const gitOutput = join(directory, "git-merged"); success(change("--apply", token(change(...gitArgs)), gitOutput, ...gitArgs));
+  assert.equal(readFileSync(join(gitOutput, "main.loom"), "utf8"), readFileSync(join(merged, "main.loom"), "utf8"));
   assert.equal(git("status", "--porcelain=v1"), status); assert.deepEqual(readFileSync(join(repository, ".git", "index")), index);
   assert.equal(git("rev-parse", "HEAD"), b); runTests(gitOutput, tests);
 
