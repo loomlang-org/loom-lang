@@ -1,0 +1,450 @@
+// Every emitted byte comes from an explicit side of the three-way join.
+// These ranges carry that source provenance through later checked queries.
+record BodyJoin {
+    text Text
+    left List[RetainedRegion]
+    right List[RetainedRegion]
+}
+
+fn body_join(text Text) BodyJoin {
+    BodyJoin {
+        text = text,
+        left = new[RetainedRegion](),
+        right = new[RetainedRegion]()
+    }
+}
+
+fn body_region(regions List[RetainedRegion], before Int, after Int, size Int) {
+    if size > 0 {
+        push(regions, RetainedRegion {
+                before = before,
+                after = after,
+                size = size
+            })
+    }
+}
+
+fn body_append(output BodyJoin, part BodyJoin) BodyJoin {
+    let offset = length(output.text)
+    var index = 0
+    while index < length(part.left) {
+        let region = get(part.left, index)
+        body_region(output.left, region.before, offset + region.after, region.size)
+        index = index + 1
+    }
+    index = 0
+    while index < length(part.right) {
+        let region = get(part.right, index)
+        body_region(output.right, region.before, offset + region.after, region.size)
+        index = index + 1
+    }
+    BodyJoin {
+        text = concat(output.text, part.text),
+        ..output
+    }
+}
+
+fn joined_body_piece(base Text, left Text, right Text, a Int, b Int, id Text) Result[BodyJoin, Text] {
+    let output = body_join(joined_source_gap(base, left, right, id)?)
+    if output.text == left {
+        body_region(output.left, a, 0, length(left))
+    }
+    if output.text == right {
+        body_region(output.right, b, 0, length(right))
+    }
+    Result.Ok(output)
+}
+
+fn empty_body_marker(node Node) Bool {
+    node.span.start == node.span.end && length(node.children) == 0
+}
+
+fn body_node_text(entry Entry, node Node) Result[Text, Text] {
+    if node.span.start < entry.start || node.span.end < node.span.start || node.span.end > entry.end {
+        return Result.Err("body syntax has no complete source range")
+    }
+    Result.Ok(slice(entry.body, node.span.start - entry.start, node.span.end - entry.start))
+}
+
+fn body_child_order(parent Node, child Node, previous Int) Bool {
+    child.span.start >= previous && child.span.end >= child.span.start && child.span.end <= parent.span.end
+}
+
+fn body_function_header(entry Entry, node Node) Text {
+    let span = member_body(node)
+    if span.start < node.span.start {
+        return ""
+    }
+    slice(entry.body, node.span.start - entry.start, span.start - entry.start)
+}
+
+fn body_binding_header(entry Entry, node Node) Text {
+    if length(node.children) == 0 {
+        return ""
+    }
+    let initializer = get(node.children, length(node.children) - 1)
+    if initializer.span.start < node.span.start {
+        return ""
+    }
+    slice(entry.body, node.span.start - entry.start, initializer.span.start - entry.start)
+}
+
+fn joined_body_node(base Entry, left Entry, right Entry,
+    original Node, first Node, second Node, depth Int) Result[BodyJoin, Text] {
+    let previous = body_node_text(base, original)?
+    let a = body_node_text(left, first)?
+    let b = body_node_text(right, second)?
+    if a == b {
+        return joined_body_piece(previous, a, b, first.span.start - left.start, second.span.start - right.start, base.id)
+    }
+    // Common declaration headers retain both sources even if a body is taken
+    // wholly from one side. Calls/blocks, in contrast, retain only their chosen
+    // source when the other side made no edit to that whole subtree.
+    let binding_header = (original.kind == NodeKind.Let || original.kind == NodeKind.Var ||
+        original.kind == NodeKind.Scoped || original.kind == NodeKind.Destructure) &&
+    original.kind == first.kind && original.kind == second.kind &&
+    body_binding_header(base, original) == body_binding_header(left, first) &&
+    body_binding_header(base, original) == body_binding_header(right, second)
+    let common_header = binding_header || original.kind == NodeKind.Concept || original.kind == NodeKind.Impl ||
+    (original.kind == NodeKind.Function && first.kind == original.kind && second.kind == original.kind &&
+        body_function_header(base, original) == body_function_header(left, first) &&
+        body_function_header(base, original) == body_function_header(right, second))
+    if !common_header && (previous == a || previous == b) {
+        return joined_body_piece(previous, a, b, first.span.start - left.start, second.span.start - right.start, base.id)
+    }
+    if common_header && original.kind == NodeKind.Function {
+        return joined_callable_body(base, left, right, original, first, second, depth)
+    }
+    if depth <= 0 || original.kind != first.kind || original.kind != second.kind ||
+    original.value != first.value || original.value != second.value ||
+    length(original.children) != length(first.children) || length(original.children) != length(second.children) ||
+    length(original.children) == 0 {
+        return Result.Err(concat("overlapping or differently structured body edits: ", base.id))
+    }
+    var output = body_join("")
+    var before = original.span.start
+    var l = first.span.start
+    var r = second.span.start
+    var index = 0
+    while index < length(original.children) {
+        let old_child = get(original.children, index)
+        let left_child = get(first.children, index)
+        let right_child = get(second.children, index)
+        if empty_body_marker(old_child) && empty_body_marker(left_child) && empty_body_marker(right_child) &&
+        old_child.kind == left_child.kind && old_child.kind == right_child.kind &&
+        old_child.value == left_child.value && old_child.value == right_child.value {
+            index = index + 1
+            continue
+        }
+        if !body_child_order(original, old_child, before) || !body_child_order(first, left_child, l) ||
+        !body_child_order(second, right_child, r) {
+            return Result.Err("body syntax has overlapping or missing child ranges")
+        }
+        let gap = joined_body_piece(slice(base.body, before - base.start, old_child.span.start - base.start),
+            slice(left.body, l - left.start, left_child.span.start - left.start),
+            slice(right.body, r - right.start, right_child.span.start - right.start), l - left.start, r - right.start, base.id)?
+        output = body_append(body_append(output, gap),
+            joined_body_node(base, left, right, old_child, left_child, right_child, depth - 1)?)
+        before = old_child.span.end
+        l = left_child.span.end
+        r = right_child.span.end
+        index = index + 1
+    }
+    let tail = joined_body_piece(slice(base.body, before - base.start, original.span.end - base.start),
+        slice(left.body, l - left.start, first.span.end - left.start),
+        slice(right.body, r - right.start, second.span.end - right.start), l - left.start, r - right.start, base.id)?
+    Result.Ok(body_append(output, tail))
+}
+
+fn declaration_body_join(base Entry, left Entry, right Entry) Result[BodyJoin, Text] {
+    if base.kind == NodeKind.Function && left.kind == base.kind && right.kind == base.kind {
+        if base.header != left.header || base.header != right.header {
+            return Result.Err("concurrent function bodies require unchanged headers and contracts")
+        }
+    } else if !aligned_members(base, left) || !aligned_members(base, right) {
+        return Result.Err("concurrent bodies require unchanged declaration and member headers")
+    }
+    let joined = if base.kind == NodeKind.Function {
+        joined_callable_body(base, left, right, base.syntax, left.syntax, right.syntax, 256)
+    } else {
+        joined_container_body(base, left, right)
+    }
+    match joined {
+        Result.Ok(value) => Result.Ok(value)
+        Result.Err(message) => Result.Err(if container(base) {
+                concat("concurrent method body edits: ", concat(base.id, concat(" / ", message)))
+            } else {
+                concat("concurrent body edits: ", concat(base.id, concat(" / ", message)))
+            })
+    }
+}
+
+fn joined_declaration_bodies(base Entry, left Entry, right Entry) Result[Text, Text] {
+    Result.Ok(declaration_body_join(base, left, right)?.text)
+}
+
+record BodySourceMap {
+    id Text
+    package Int
+    after Entry
+    regions List[RetainedRegion]
+}
+
+fn source_body_join(base Indexed, left Indexed, right Indexed, after Entry) Result[BodyJoin, Text] {
+    let a = entry_index(left.entries, after.id)
+    let b = entry_index(right.entries, after.id)
+    let previous = entry_index(base.entries, after.id)
+    if a < 0 && b < 0 {
+        return Result.Err("merged declaration has no source side")
+    }
+    let output = if a >= 0 && b >= 0 {
+        let first = get(left.entries, a)
+        let second = get(right.entries, b)
+        if previous >= 0 {
+            let original = get(base.entries, previous)
+            if (original.kind == NodeKind.Function && original.header == first.header && original.header == second.header) ||
+            (aligned_members(original, first) && aligned_members(original, second)) {
+                if original.kind == NodeKind.Function {
+                    joined_callable_body(original, first, second, original.syntax, first.syntax, second.syntax, 256)?
+                } else {
+                    joined_container_body(original, first, second)?
+                }
+            } else {
+                joined_body_piece(original.body, first.body, second.body, 0, 0, after.id)?
+            }
+        } else {
+            joined_body_piece("", first.body, second.body, 0, 0, after.id)?
+        }
+    } else {
+        let only = if a >= 0 {
+            get(left.entries, a)
+        } else {
+            get(right.entries, b)
+        }
+        let selected = body_join(only.body)
+        body_region(if a >= 0 {
+                selected.left
+            } else {
+                selected.right
+            }, 0, 0, length(only.body))
+        selected
+    }
+    if output.text != after.body {
+        return Result.Err("checked body source provenance differs from the proposed text")
+    }
+    if a >= 0 {
+        common_callable_header(output.left, get(left.entries, a), after)
+    }
+    if b >= 0 {
+        common_callable_header(output.right, get(right.entries, b), after)
+    }
+    Result.Ok(output)
+}
+
+fn body_source_maps(base Indexed, left Indexed, right Indexed, after Indexed,
+    from_left Bool, package Int) Result[List[BodySourceMap], Text] {
+    let maps = new[BodySourceMap]()
+    let source = if from_left {
+        left
+    } else {
+        right
+    }
+    var index = 0
+    while index < length(after.entries) {
+        let current = get(after.entries, index)
+        let previous = entry_index(source.entries, current.id)
+        if previous >= 0 {
+            let joined = source_body_join(base, left, right, current)?
+            push(maps, BodySourceMap {
+                    id = current.id
+                    package = package
+                    after = current
+                    regions = if from_left {
+                        joined.left
+                    } else {
+                        joined.right
+                    }
+                })
+        }
+        index = index + 1
+    }
+    Result.Ok(maps)
+}
+
+fn body_map_index(maps List[BodySourceMap], id Text, package Int) Int {
+    var index = 0
+    while index < length(maps) {
+        let item = get(maps, index)
+        if item.id == id && item.package == package {
+            return index
+        }
+        index = index + 1
+    }
+    -1
+}
+
+fn composed_definition(maps List[BodySourceMap], target BindingTarget) Result[BindingTarget, Text] {
+    if target.id == "" {
+        return Result.Ok(target)
+    }
+    let selected = body_map_index(maps, target.id, target.package)
+    if selected < 0 {
+        return Result.Err("retained binding definition has no source provenance")
+    }
+    let mapping = get(maps, selected)
+    var index = 0
+    while index < length(mapping.regions) {
+        let region = get(mapping.regions, index)
+        if target.start >= region.before && target.end <= region.before + region.size {
+            let start = mapping.after.start + region.after + target.start - region.before
+            let mapped = scoped_target(mapping.after, target.package, Span {
+                    start = start
+                    end = start + target.end - target.start
+                })?
+            if mapped.id != target.id || mapped.package != target.package || mapped.path != target.path || mapped.scope != target.scope {
+                return Result.Err("retained binding definition changed its durable identity or scope")
+            }
+            return Result.Ok(BindingTarget {
+                    start = mapped.start
+                    end = mapped.end
+                    anchor = mapped.anchor
+                    ..target
+                })
+        }
+        index = index + 1
+    }
+    Result.Err("retained binding definition was replaced by the other source")
+}
+
+fn composed_reference(maps List[BodySourceMap], binding ReferenceBinding) Result[ReferenceBinding, Text] {
+    let observed = new[BindingTarget]()
+    var index = 0
+    while index < length(binding.observed) {
+        push(observed, composed_definition(maps, get(binding.observed, index))?)
+        index = index + 1
+    }
+    Result.Ok(ReferenceBinding {
+            lexical = composed_definition(maps, binding.lexical)?
+            observed = observed
+        })
+}
+
+fn callable_block(node Node) Result[Node, Text] {
+    var index = 0
+    while index < length(node.children) {
+        let child = get(node.children, index)
+        if child.kind == NodeKind.Block {
+            return Result.Ok(child)
+        }
+        index = index + 1
+    }
+    Result.Err("callable has no source body block")
+}
+
+fn joined_callable_body(base Entry, left Entry, right Entry,
+    original Node, first Node, second Node, depth Int) Result[BodyJoin, Text] {
+    if depth <= 0 {
+        return Result.Err("body composition source depth exhausted")
+    }
+    let old_block = callable_block(original)?
+    let left_block = callable_block(first)?
+    let right_block = callable_block(second)?
+    let header = joined_body_piece(
+        slice(base.body, original.span.start - base.start, old_block.span.start - base.start),
+        slice(left.body, first.span.start - left.start, left_block.span.start - left.start),
+        slice(right.body, second.span.start - right.start, right_block.span.start - right.start),
+        first.span.start - left.start, second.span.start - right.start, base.id)?
+    let body = joined_body_node(base, left, right, old_block, left_block, right_block, depth - 1)?
+    let tail = joined_body_piece(
+        slice(base.body, old_block.span.end - base.start, original.span.end - base.start),
+        slice(left.body, left_block.span.end - left.start, first.span.end - left.start),
+        slice(right.body, right_block.span.end - right.start, second.span.end - right.start),
+        left_block.span.end - left.start, right_block.span.end - right.start, base.id)?
+    Result.Ok(body_append(body_append(header, body), tail))
+}
+
+fn container_member_node(entry Entry, member MemberScope) Result[Node, Text] {
+    var index = 0
+    while index < length(entry.syntax.children) {
+        let child = get(entry.syntax.children, index)
+        if child.kind == NodeKind.Function && child.span.start == member.span.start && child.span.end == member.span.end {
+            return Result.Ok(child)
+        }
+        index = index + 1
+    }
+    Result.Err("container member has no exact parsed declaration")
+}
+
+fn joined_container_body(base Entry, left Entry, right Entry) Result[BodyJoin, Text] {
+    var output = body_join("")
+    var before = 0
+    var l = 0
+    var r = 0
+    var index = 0
+    while index < length(base.members) {
+        let member = get(base.members, index)
+        let first = get(left.members, index)
+        let second = get(right.members, index)
+        let end = if member.body.start >= 0 {
+            member.body.start
+        } else {
+            member.span.end
+        }
+        let left_end = if first.body.start >= 0 {
+            first.body.start
+        } else {
+            first.span.end
+        }
+        let right_end = if second.body.start >= 0 {
+            second.body.start
+        } else {
+            second.span.end
+        }
+        let gap = joined_body_piece(slice(base.body, before, member.span.start - base.start),
+            slice(left.body, l, first.span.start - left.start), slice(right.body, r, second.span.start - right.start), l, r, base.id)?
+        let head = joined_body_piece(slice(base.body, member.span.start - base.start, end - base.start),
+            slice(left.body, first.span.start - left.start, left_end - left.start),
+            slice(right.body, second.span.start - right.start, right_end - right.start),
+            first.span.start - left.start, second.span.start - right.start, base.id)?
+        output = body_append(body_append(output, gap), head)
+        if member.body.start >= 0 {
+            let old_node = callable_block(container_member_node(base, member)?)?
+            let left_node = callable_block(container_member_node(left, first)?)?
+            let right_node = callable_block(container_member_node(right, second)?)?
+            output = body_append(output, joined_body_node(base, left, right, old_node, left_node, right_node, 256)?)
+            let tail = joined_body_piece(slice(base.body, member.body.end - base.start, member.span.end - base.start),
+                slice(left.body, first.body.end - left.start, first.span.end - left.start),
+                slice(right.body, second.body.end - right.start, second.span.end - right.start),
+                first.body.end - left.start, second.body.end - right.start, base.id)?
+            output = body_append(output, tail)
+        }
+        before = member.span.end - base.start
+        l = first.span.end - left.start
+        r = second.span.end - right.start
+        index = index + 1
+    }
+    Result.Ok(body_append(output, joined_body_piece(slice(base.body, before, length(base.body)),
+                slice(left.body, l, length(left.body)), slice(right.body, r, length(right.body)), l, r, base.id)?))
+}
+
+// The durable declaration ID still names its unchanged header prefix when a
+// one-sided signature edit selects the rest of that declaration. Its callers
+// must continue comparing the actual selected targets of subsequent reads.
+fn common_callable_header(regions List[RetainedRegion], before Entry, after Entry) {
+    if before.kind != NodeKind.Function || after.kind != NodeKind.Function || before.id != after.id || before.name != after.name {
+        return
+    }
+    var size = 0
+    while size < length(before.header) && size < length(after.header) && byte(before.header, size) == byte(after.header, size) {
+        size = size + 1
+    }
+    var index = 0
+    while index < length(regions) {
+        let region = get(regions, index)
+        if region.before == 0 && region.after == 0 && region.size >= size {
+            return
+        }
+        index = index + 1
+    }
+    body_region(regions, 0, 0, size)
+}

@@ -889,8 +889,16 @@ Independent method-body edits in one impl or concept compose under unchanged
 headers, contracts and member order. Inter-member whitespace/comments join by
 three-way equality, preserving bytes; conflicting gap edits and other container
 scaffolding changes require resolution. Retained regions keep
-their checked bindings across shifted body offsets. Same-method conflicts and
-other interface changes still require resolution, not inferred member identity.
+their checked bindings across shifted body offsets. Independent edits inside one
+function or method also compose through matching parsed child slots. Concurrently
+edited nodes retain their kind, operator and child count; overlapping leaves,
+ambiguous shapes and interface changes still require resolution. Exact source
+pieces carry each branch's lexical and observed binding evidence. Local definition
+coordinates follow those pieces while owner identities and checked scopes stay
+fixed. Explicit argument edits retain their supplying call context, and indirect
+overload changes or capture reject. Native directory, Git and complete-module
+review/application keep effectful call order and recheck required contracts;
+this remains bounded source composition rather than general semantic VCS.
 Symbolic impl/associated headers need no concrete caller;
 unexpanded pack queries retain their conservative boundary.
 Generic reference comparison retains the independently checked abstract target

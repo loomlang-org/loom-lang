@@ -48,13 +48,23 @@ with associated declarations and checked `dyn` bindings use the same reference
 comparison. Anonymous impls use explicit IDs, a `-` locator label and a key for
 their concept, target and generic declarations. Moves compose with method-body
 edits. Member bindings normalize within the identified owner and checked member
-signature rather than sibling-body byte offsets. Independent method-body edits
-within one impl or concept combine when its headers, contracts and member order
-are unchanged. Whitespace and comments between members join independently by
-the same three-way equality rules, preserving their exact bytes. Conflicting
-edits to one gap or method still require resolution; other container scaffolding
-stays unchanged. Retained method bodies and headers keep their checked
-bindings even when another method changes length. Explicit method IDs name their
+signature rather than sibling-body byte offsets. Independent edits inside one
+function or method can combine along matching parsed child slots. Concurrently
+edited nodes must keep their kind, operator and child count; this does not infer
+correspondence for inserted, deleted or reordered children. Headers, contracts
+and container member order stay aligned. Whitespace and comments join by the
+same three-way equality rules, preserving their exact bytes. Overlapping leaf
+edits, conflicting gaps and ambiguous shapes require resolution.
+
+Each emitted piece retains its exact source branch and span. Retained lexical
+bindings and every observed generic target must agree with that source after
+composition. Local definition spans follow retained pieces as earlier expressions
+change length; owner IDs and checked scopes cannot change. Explicit call edits
+use the branch that supplied their argument context, while indirect overload
+changes and local capture reject. Calls retain source order, and review never
+executes the program to infer effects. The composed program passes ordinary
+production/private-test analysis and every required contract proof before review
+can succeed. Explicit method IDs name their
 enclosing concept/impl owner and support checked method renames across complete
 selected-module consumers. Legacy snapshots without those IDs cannot infer them
 from spelling or signatures. Interface/default-presence changes and ambiguous

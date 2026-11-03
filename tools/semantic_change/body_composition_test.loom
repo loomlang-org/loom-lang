@@ -1,0 +1,218 @@
+fn body_composition_case(source Text) Revision {
+    package_fixture("sample", "pkg", [File {
+                path = "main.loom",
+                text = source
+            }]).revision
+}
+
+fn accepted_body_composition(base Text, left Text, right Text) Revision {
+    match merge(body_composition_case(base), body_composition_case(left), body_composition_case(right)) {
+        Result.Ok(value) => {
+            let reversed = match merge(body_composition_case(base), body_composition_case(right), body_composition_case(left)) {
+                Result.Ok(reversed_value) => reversed_value
+                Result.Err(message) => {
+                    discard write_error(message)
+                    assert false
+                    value
+                }
+            }
+            assert get(value.files, 0).text == get(reversed.files, 0).text
+            value
+        }
+        Result.Err(message) => {
+            discard write_error(message)
+            assert false
+            body_composition_case(base)
+        }
+    }
+}
+
+test fn body_composition_joins_independent_expression_children() {
+    let base = "fn value() Int { 10 + 20 }\nfn main() {}\n"
+    let joined = accepted_body_composition(base, replace(base, "10 + 20", "11 + 20"), replace(base, "10 + 20", "10 + 22"))
+    assert contains(get(joined.files, 0).text, "11 + 22")
+}
+
+test fn body_composition_rechecks_the_composed_function_contract() {
+    let valid = "fn value() Int ensures result <= 10 { 1 + 1 }\nfn main() {}\n"
+    let joined = accepted_body_composition(valid, replace(valid, "1 + 1", "4 + 1"), replace(valid, "1 + 1", "1 + 4"))
+    assert contains(get(joined.files, 0).text, "4 + 4")
+    let strict = replace(valid, "<= 10", "<= 5")
+    let left = replace(strict, "1 + 1", "4 + 1")
+    let right = replace(strict, "1 + 1", "1 + 4")
+    assert checked_body_composition_branch(left) && checked_body_composition_branch(right)
+    assert match merge(body_composition_case(strict), body_composition_case(left), body_composition_case(right)) {
+        Result.Err(message) => contains(message, "proof") || contains(message, "postcondition")
+        _ => false
+    }
+}
+
+test fn body_composition_preserves_local_definitions_after_initializer_length_changes() {
+    let base = """
+        fn left_value() Int { 1 }
+        fn right_value() Int { 2 }
+        fn value() Int {
+            let first = left_value()
+            let second = right_value()
+            first + second
+        }
+        fn main() {}
+        """
+    let joined = accepted_body_composition(base,
+        replace(base, "= left_value()", "= left_value() + 100"),
+        replace(base, "= right_value()", "= right_value() + 2000"))
+    let text = get(joined.files, 0).text
+    assert contains(text, "left_value() + 100") && contains(text, "right_value() + 2000")
+}
+
+test fn body_composition_keeps_overlapping_and_shape_changes_unresolved() {
+    let base = "fn value() Int { 10 + 20 }\nfn main() {}\n"
+    assert match merge(body_composition_case(base), body_composition_case(replace(base, "10 + 20", "11 + 20")),
+        body_composition_case(replace(base, "10 + 20", "12 + 20"))) {
+        Result.Err(_) => true
+        _ => false
+    }
+    assert match merge(body_composition_case(base), body_composition_case(replace(base, "10 + 20", "10 - 20")),
+        body_composition_case(replace(base, "10 + 20", "10 + 22"))) {
+        Result.Err(_) => true
+        _ => false
+    }
+}
+
+fn body_composition_overloads() Text {
+    "fn pick(value Int) Int { value }\nfn pick(value Bool) Int { if value { 1 } else { 0 } }\n"
+}
+
+test fn body_composition_retains_the_selected_call_context_for_explicit_overload_edits() {
+    let base = concat(body_composition_overloads(), "fn value() Int { pick(7) + 10 }\nfn main() {}\n")
+    let joined = accepted_body_composition(base, replace(base, "pick(7) + 10", "pick(true) + 10"),
+        replace(base, "pick(7) + 10", "pick(7) + 20"))
+    assert contains(get(joined.files, 0).text, "pick(true) + 20")
+}
+
+test fn body_composition_rejects_hidden_overload_changes_through_a_local_initializer() {
+    let base = concat(body_composition_overloads(), """
+        fn value() Int {
+            let input = 7
+            pick(input) + 10
+        }
+        fn main() {}
+        """)
+    let left = replace(base, "= 7", "= true")
+    let right = replace(base, "pick(input) + 10", "pick(input) + 20")
+    assert checked_body_composition_branch(left) && checked_body_composition_branch(right)
+    assert match merge(body_composition_case(base), body_composition_case(left), body_composition_case(right)) {
+        Result.Err(_) => true
+        _ => false
+    }
+}
+
+test fn body_composition_rejects_a_type_correct_local_function_capture() {
+    let base = """
+        fn target(input Int) Int { input + 2 }
+        fn value() Int {
+            let local = fn(input Int) Int { input + 1 }
+            discard local
+            0
+        }
+        fn main() {}
+        """
+    let left = replace(replace(base, "let local =", "let target ="), "discard local", "discard target")
+    let right = replace(base, "    0", "    target(7)")
+    assert checked_body_composition_branch(left) && checked_body_composition_branch(right)
+    assert match merge(body_composition_case(base), body_composition_case(left), body_composition_case(right)) {
+        Result.Err(_) => true
+        _ => false
+    }
+}
+
+test fn body_composition_preserves_source_order_of_effectful_call_children() {
+    let base = """
+        fn mark(log List[Int], input Int) Int {
+            log[0] = log[0] * 10 + input
+            input
+        }
+        fn value(log List[Int]) Int { mark(log, 1) + mark(log, 2) }
+        fn main() {}
+        """
+    let joined = accepted_body_composition(base, replace(base, "mark(log, 1)", "mark(log, 3)"),
+        replace(base, "mark(log, 2)", "mark(log, 4)"))
+    assert contains(get(joined.files, 0).text, "mark(log, 3) + mark(log, 4)")
+}
+
+test fn body_composition_does_not_assign_argument_edits_to_reordered_calls() {
+    let base = """
+        fn a(value Int) Int { value }
+        fn b(value Int) Int { value * 10 }
+        fn calculate() Int { a(1) + b(1) }
+        fn main() {}
+        """
+    let left = replace(base, "a(1) + b(1)", "b(1) + a(1)")
+    let right = replace(base, "a(1) + b(1)", "a(2) + b(1)")
+    assert checked_body_composition_branch(left) && checked_body_composition_branch(right)
+    assert match merge(body_composition_case(base), body_composition_case(left), body_composition_case(right)) {
+        Result.Err(_) => true
+        _ => false
+    }
+}
+
+fn checked_body_composition_branch(source Text) Bool {
+    match checked(body_composition_case(source), no_proof_backend()) {
+        Result.Ok(_) => true
+        Result.Err(message) => {
+            discard write_error(message)
+            false
+        }
+    }
+}
+
+test fn body_composition_joins_one_generic_implementation_method_with_all_observed_bindings() {
+    let base = """
+        concept Read { fn read(self Self) Int }
+        impl Read for Int { fn read(self Int) Int { self + 10 + 20 } }
+        impl Read for Bool { fn read(self Bool) Int { if self { 1 } else { 0 } } }
+        fn generic_read[T Read](value T) Int { value.read() }
+        fn main() { discard generic_read(7)
+            discard generic_read(true) }
+        """
+    let joined = accepted_body_composition(base, replace(base, "self + 10 + 20", "self + 11 + 20"),
+        replace(base, "self + 10 + 20", "self + 10 + 22"))
+    assert contains(get(joined.files, 0).text, "self + 11 + 22")
+}
+
+test fn body_composition_preserves_comments_and_rejects_conflicting_attachment() {
+    let base = "fn value() Int {\n    10 + // old detail\n    20\n}\nfn main() {}\n"
+    let joined = accepted_body_composition(base, replace(base, "10 +", "11 +"),
+        replace(base, "old detail", "reviewed detail"))
+    assert contains(get(joined.files, 0).text, "11 + // reviewed detail")
+    assert match merge(body_composition_case(base), body_composition_case(replace(base, "old detail", "left detail")),
+        body_composition_case(replace(base, "old detail", "right detail"))) {
+        Result.Err(_) => true
+        _ => false
+    }
+}
+
+test fn body_composition_checked_package_batch_keeps_local_definition_offsets() {
+    let source = """
+        fn first() Int { 1 }
+        fn second() Int { 2 }
+        fn value() Int {
+            let a = first()
+            let b = second()
+            a + b
+        }
+        fn main() {}
+        """
+    let base = body_composition_case(source)
+    let left = body_composition_case(replace(source, "= first()", "= first() + 10"))
+    let right = body_composition_case(replace(source, "= second()", "= second() + 200"))
+    let context = rename_context(base)
+    assert match merge_packages(generic_package_case(base), generic_package_case(left), generic_package_case(right), context, context) {
+        Result.Ok(value) => contains(get(get(value, 0).revision.files, 0).text, "first() + 10") &&
+        contains(get(get(value, 0).revision.files, 0).text, "second() + 200")
+        Result.Err(message) => {
+            discard write_error(message)
+            false
+        }
+    }
+}

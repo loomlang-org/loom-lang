@@ -70,6 +70,7 @@ record Entry {
     header Text
     abstract_body Bool
     members List[MemberScope]
+    syntax Node
 }
 
 record Indexed {
@@ -268,6 +269,7 @@ fn indexed(revision Revision) Result[Indexed, Text] {
                     header = declaration_header(file.text, node)
                     abstract_body = abstract_reference_scope(node)
                     members = member_scopes(node, empty_members, revision.identities, id, file.path)?
+                    syntax = node
                 })
             declaration = declaration + 1
         }
@@ -384,7 +386,7 @@ fn same_target(left BindingTarget, right BindingTarget) Bool {
 }
 
 fn compare_retained(source CheckedAnalysis, source_revision Indexed, merged CheckedAnalysis, merged_revision Indexed,
-    directory Text) Result[Bool, Text] {
+    directory Text, maps List[BodySourceMap]) Result[Bool, Text] {
     var index = 0
     while index < length(merged_revision.entries) {
         let after = get(merged_revision.entries, index)
@@ -395,7 +397,11 @@ fn compare_retained(source CheckedAnalysis, source_revision Indexed, merged Chec
         let source_index = entry_index(source_revision.entries, after.id)
         if source_index >= 0 {
             let before = get(source_revision.entries, source_index)
-            let sites = retained_sites(before, after)?
+            let mapping = body_map_index(maps, before.id, source.bindings.root)
+            if mapping < 0 {
+                return Result.Err("retained declaration has no body provenance")
+            }
+            let sites = retained_sites(before, get(maps, mapping).regions)?
             if length(sites) > 0 {
                 let source_file = analysis_file(source, directory, before.path)
                 let merged_file = analysis_file(merged, directory, after.path)
@@ -420,7 +426,12 @@ fn compare_retained(source CheckedAnalysis, source_revision Indexed, merged Chec
                         before.abstract_body, original.inspection)?
                     let current_definitions = reference_definitions(merged, merged_file, current.offset,
                         after.abstract_body, current.inspection)?
-                    let original_target = reference_binding(source, source_revision, directory, original_definitions)?
+                    let original_target = match composed_reference(maps, reference_binding(source, source_revision, directory, original_definitions)?) {
+                        Result.Ok(value) => value
+                        Result.Err(message) => {
+                            return Result.Err(concat("retained reference changed its checked definition binding: ", message))
+                        }
+                    }
                     let current_target = reference_binding(merged, merged_revision, directory, current_definitions)?
                     if !same_reference_binding(original_target, current_target) {
                         return Result.Err("retained reference changed its checked definition binding")
@@ -578,7 +589,7 @@ fn validate_changes(base Indexed, left Indexed, right Indexed) Result[Bool, Text
             }
             if edited_left.body != original.body && edited_right.body != original.body &&
             edited_left.body != edited_right.body {
-                discard joined_member_bodies(original, edited_left, edited_right)?
+                discard joined_declaration_bodies(original, edited_left, edited_right)?
             }
         }
         index = index + 1
@@ -642,7 +653,7 @@ fn chosen_entry(base Indexed, left Indexed, right Indexed, id Text) Result[Entry
         let b = get(right.entries, edited_right)
         if a.body != original.body && b.body != original.body && a.body != b.body {
             return Result.Ok(Entry {
-                    body = joined_member_bodies(original, a, b)?
+                    body = joined_declaration_bodies(original, a, b)?
                     ..a
                 })
         }
@@ -714,8 +725,9 @@ fn checked(revision Revision, backend ProofBackend) Result[Revision, Text] {
     }
 }
 
-fn checked_bindings(left Revision, right Revision, merged Revision, directory Text,
+fn checked_bindings(base Revision, left Revision, right Revision, merged Revision, directory Text,
     production Project, tests Project, backend ProofBackend) Result[Bool, Text] {
+    let base_indexed = indexed(base)?
     let left_indexed = indexed(left)?
     let right_indexed = indexed(right)?
     let merged_indexed = indexed(merged)?
@@ -767,8 +779,10 @@ fn checked_bindings(left Revision, right Revision, merged Revision, directory Te
                 return Result.Err(concat("merged source has no complete checked binding evidence: ", problem.diagnostic.message))
             }
         }
-        discard compare_retained(left_analysis, left_indexed, merged_analysis, merged_indexed, directory)?
-        discard compare_retained(right_analysis, right_indexed, merged_analysis, merged_indexed, directory)?
+        let left_maps = body_source_maps(base_indexed, left_indexed, right_indexed, merged_indexed, true, left_analysis.bindings.root)?
+        let right_maps = body_source_maps(base_indexed, left_indexed, right_indexed, merged_indexed, false, right_analysis.bindings.root)?
+        discard compare_retained(left_analysis, left_indexed, merged_analysis, merged_indexed, directory, left_maps)?
+        discard compare_retained(right_analysis, right_indexed, merged_analysis, merged_indexed, directory, right_maps)?
         pass = pass + 1
     }
     Result.Ok(true)
@@ -1063,7 +1077,7 @@ fn merge_same_names(base Revision, left Revision, right Revision, backend ProofB
     let original = indexed(base)?
     if binding_review_needed(original, indexed(left)?, indexed(right)?, indexed(merged)?) {
         let project = project_of(base)?
-        discard checked_bindings(left, right, merged, "", project, project, backend)?
+        discard checked_bindings(base, left, right, merged, "", project, project, backend)?
     } else {
         discard checked(merged, backend)?
     }
@@ -1102,7 +1116,7 @@ fn merge_same_names_with_context(base Revision, left Revision, right Revision,
     }
     discard checked_context(base, merged, production, tests, directory, backend)?
     if binding_review_needed(original, indexed(left)?, indexed(right)?, indexed(merged)?) {
-        discard checked_bindings(left, right, merged, directory, production, tests, backend)?
+        discard checked_bindings(base, left, right, merged, directory, production, tests, backend)?
     }
     Result.Ok(merged)
 }

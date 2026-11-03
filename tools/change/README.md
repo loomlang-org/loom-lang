@@ -313,9 +313,9 @@ context, whose package/import graph stays fixed.
 The context and output paths must be trusted local paths. This does
 not make review and publication race-free against hostile concurrent filesystem
 writers. For move-plus-edit proposals, retained references in supported function
-and record declarations are checked against the branch that supplied each unchanged body
-and the proposed merge. Definition locations must normalize to the same stable
-sidecar owner ID, checked member slot where applicable, and relative span, or to the same location in the pinned
+and record declarations are checked against the branch that supplied each source
+piece and the proposed merge. Definition locations must normalize to the same stable
+sidecar owner ID, checked member slot where applicable, and retained source span, or to the same location in the pinned
 dependency closure. Concrete type annotations, record initializer labels and
 each member of a value path use compiler binding evidence; equal field names
 do not unify distinct record owners. Missing or ambiguous checked evidence,
@@ -383,7 +383,17 @@ For an impl move, pass `--move ID NEW_FILE - KEY`; its opaque key distinguishes
 implementations even when they share a file. Concept/default methods retain
 checked member bindings across sibling body edits. Independent edits to different
 method bodies in the same impl or concept can combine, including a container
-move, when headers, contracts and member order are unchanged.
+move, when headers, contracts and member order are unchanged. Edits inside one
+function or method can also combine through matching parsed child slots. For
+example, edits from `10 + 20` to `11 + 20` and `10 + 22` propose `11 + 22`.
+Concurrently edited nodes must keep their kind, operator and child count;
+insertions, deletions and reorderings do not acquire correspondence by similarity.
+Every emitted piece keeps its source branch and byte span. Local definition
+offsets can follow those pieces, but owner IDs and checked scopes must survive.
+An explicitly edited call uses its supplying branch's argument context; a retained
+call that silently changes overload or captures a new local rejects. Effectful
+calls keep their source order. Review does not run them, and the combined program
+must pass production/private-test analysis and required contract proofs.
 Whitespace/comments between members can also compose with those body edits;
 each gap uses the same three-way equality rules and keeps exact bytes. Other
 container scaffolding remains fixed. Retained bodies and headers must keep their
@@ -393,7 +403,7 @@ names and uniquely checked references, then checks production and private tests
 and preserves checked concept/impl conformance slots. Public methods require the
 complete selected module, including consumer packages. Overload slots retain
 their individual IDs; matching names never infer a method family or identity.
-Competing method bodies, conflicting renames and other interface edits still
+Overlapping body edits, ambiguous shapes, conflicting renames and other interface edits still
 require resolution. Generic references retain their unique independently checked
 abstract target and every observed instance target separately. All of these
 bindings must survive normalization and merge. `std.loom.analysis.inspect_source_references`
