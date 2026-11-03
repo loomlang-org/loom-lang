@@ -19,6 +19,7 @@ test fn remainder_abstraction_keeps_exact_fallback_within_two_main_queries() {
             if std.text.contains(query, "loom_integer_remainder") {
                 return Result.Err("SMT solver returned unknown or timed out; required proof was not established")
             }
+            assert std.text.contains(query, "(then simplify snf simplify solve-eqs")
             Result.Ok(true)
         }
     }
@@ -74,9 +75,31 @@ test fn remainder_abstraction_preserves_cancellation_and_exact_encoder_defaults(
         Result.Ok(value) => value
         Result.Err(_) => SmtEncoding {
             text = ""
+            theory = ""
             abstracted = false
         }
     }
     assert std.text.contains(original, "loom_magnitude") && !std.text.contains(original, "loom_integer_remainder")
     assert weaker.abstracted && std.text.contains(weaker.text, "(declare-fun loom_integer_remainder (Int Int) Int)")
+}
+
+test fn witness_normalization_does_not_add_a_query_when_the_theory_is_unchanged() {
+    let calls = [0]
+    let query = proof_query(ProofBackend {
+            enabled = true
+            context = ""
+            solve = fn(context Text, query Text) Result[Bool, Text] {
+                set(calls, 0, get(calls, 0) + 1)
+                Result.Ok(false)
+            }
+        })
+    push(query.obligations, Obligation {
+            facts = [],
+            conclusion = Predicate.Variable(7)
+        })
+    assert match discharge(query) {
+        Result.Err(_) => true
+        _ => false
+    }
+    assert get(calls, 0) == 1
 }

@@ -79,8 +79,10 @@ fn discharge(proof ProofQuery, extended Bool) Result[Bool, Text] {
     if !extended {
         return Result.Err("required postcondition is not proved")
     }
-    let refined = smt_query(obligations, true)?
-    if refined != query && proof.backend.solve(proof.backend.context, refined)? {
+    let refined = smt_encoding(obligations, true, true, false, false, true)?
+    // A different tactic alone must not create another host query. Retain the
+    // original refinement eligibility by comparing the complete logical input.
+    if refined.theory != encoded.theory && proof.backend.solve(proof.backend.context, refined.text)? {
         return Result.Ok(true)
     }
     Result.Err("required postcondition is not proved")

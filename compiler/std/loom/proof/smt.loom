@@ -616,6 +616,7 @@ fn smt_query(obligations List[Obligation], extended Bool, guarded_order Bool) Re
 
 record SmtEncoding {
     text Text
+    theory Text
     abstracted Bool
 }
 
@@ -631,6 +632,11 @@ fn smt_arithmetic_query(obligations List[Obligation]) Result[Text, Text] {
 
 fn smt_encoding(obligations List[Obligation], extended Bool, guarded_order Bool,
     abstract_remainder Bool, scalar_normalization Bool) Result[SmtEncoding, Text] {
+    smt_encoding(obligations, extended, guarded_order, abstract_remainder, scalar_normalization, false)
+}
+
+fn smt_encoding(obligations List[Obligation], extended Bool, guarded_order Bool,
+    abstract_remainder Bool, scalar_normalization Bool, witness_normalization Bool) Result[SmtEncoding, Text] {
     let budget = new[Int]()
     push(budget, 65536)
     let counts = new[Linear]()
@@ -700,16 +706,23 @@ fn smt_encoding(obligations List[Obligation], extended Bool, guarded_order Bool,
     } else {
         ""
     }
-    smt_append(body, if scalar_normalization {
-            // Open existential counterexample witnesses before arithmetic
-            // substitution, so their interval bounds participate in rewriting.
-            // This is the same obligation and the same host time limit.
-            ")))\n(check-sat-using (then simplify snf simplify solve-eqs simplify smt))\n"
-        } else {
-            ")))\n(check-sat-using (then simplify solve-eqs simplify (or-else split-clause skip) solve-eqs simplify aig simplify default))\n"
-        })
+    smt_append(body, ")))\n")
+    let theory = concat(options, concat(std.bytes.to_text(writer.declarations), std.bytes.to_text(body)))
+    let command = if scalar_normalization {
+        // Open existential counterexample witnesses before arithmetic
+        // substitution, so their interval bounds participate in rewriting.
+        // This is the same obligation and the same host time limit.
+        "(check-sat-using (then simplify snf simplify solve-eqs simplify smt))\n"
+    } else if witness_normalization {
+        // Open quantified counterexamples before branch substitution. All
+        // source premises and theory laws remain in the same single query.
+        "(check-sat-using (then simplify snf simplify solve-eqs simplify (or-else split-clause skip) solve-eqs simplify aig simplify default))\n"
+    } else {
+        "(check-sat-using (then simplify solve-eqs simplify (or-else split-clause skip) solve-eqs simplify aig simplify default))\n"
+    }
     Result.Ok(SmtEncoding {
-            text = concat(options, concat(std.bytes.to_text(writer.declarations), std.bytes.to_text(body)))
+            text = concat(theory, command)
+            theory = theory
             abstracted = get(writer.abstracted, 0)
         })
 }
