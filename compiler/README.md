@@ -4431,7 +4431,9 @@ preserves macro punctuation; editor hover shows the expanded result type and
 definition navigation targets the source generator. `std.loom.syntax` also
 emits validated file/declaration/type/pattern fragments from public AST data.
 The [declaration tool](examples/ast_generation) generates a normally checked
-package on disk. To generate declarations in the current compilation instead,
+package on disk. It combines reflected fields, a typed macro, a known captured
+callback and a parameter-pack call with a tracked declaration input. Its output
+retains ordinary contract and visibility checks. To generate declarations in the current compilation instead,
 use a top-level block:
 
 ```loom

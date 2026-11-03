@@ -390,6 +390,13 @@ an optional source witness binds both endpoint types. Unproved queries return
 false, never migration or application-compatibility evidence.
 Tracked files, build options and target properties bind checks, caches, editor
 freshness and receipts; pure evaluation cannot hide external I/O.
+The [compiler-library client](../../compiler/examples/ast_generation/README.md)
+combines public AST/parser/formatter APIs, reflected fields, a typed macro,
+generic collection, a known captured callback and a parameter-pack invocation.
+Its native generator retains a tracked declaration snapshot; generated code
+uses ordinary checking, tests and execution. The complete integration rechecks
+input and reflected-field edits through warm caches, rejects invalid generated
+contracts and private imports, and restores identical output after repairs.
 `std.reflect.functions.comptime_callable` inspects a known callback through a
 private queue and the shared closed execution validator. Queries neither invoke
 nor retain callbacks; mutable capture state stays live. Eligibility supplies no

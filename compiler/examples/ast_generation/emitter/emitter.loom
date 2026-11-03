@@ -1,0 +1,127 @@
+import std.text.concat
+import std.reflect.Schema
+import std.reflect.Kind
+import std.reflect.describe
+import std.reflect.functions.comptime_callable
+import std.loom.ast.Node
+import std.loom.ast.NodeKind
+import std.loom.source.Span
+import std.loom.parser.parse_declaration
+import std.loom.syntax.emit
+import std.loom.syntax.Fragment
+import std.loom.format.format
+import std.list.new
+import std.list.push
+import std.list.length
+import std.result.Result
+
+fn node(kind NodeKind, value Text, children List[Node]) Node {
+    Node {
+        kind = kind
+        value = value
+        span = Span {
+            start = 0
+            end = 0
+        }
+        children = children
+    }
+}
+
+fn declaration(text Text) Node {
+    match parse_declaration(text) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            assert false
+            declaration("record Invalid {}")
+        }
+    }
+}
+
+fn record_node(name Text, fields List[Text]) Node {
+    let children = [node(NodeKind.TypeParameters, "", new[Node]())]
+    var index = 0
+    while index < length(fields) {
+        let ty = node(NodeKind.Type, "Int", new[Node]())
+        push(children, node(NodeKind.Field, fields[index], [ty]))
+        index = index + 1
+    }
+    node(NodeKind.Record, name, children)
+}
+
+// A schema tool can build declarations structurally and reuse parsed bodies.
+// Its output is an ordinary package: no compiler hooks or unchecked code path.
+pub fn render(comptime body Text) Text {
+    let definitions = [record_decl!(field_names[Model]())]
+    let parsed = collected([""], fn(suffix Text) Node {
+            declaration(concat(body, suffix))
+        })
+    push(definitions, parsed[0])
+    push(definitions, declaration("""
+        fn main() {
+            assert sum(Point {
+                    x = 20
+                    y = 22
+                }) == 42
+        }
+        """))
+    push(definitions, declaration("""
+        test fn generated_record_uses_ordinary_contracts() {
+            main()
+        }
+        """))
+    let text = match emit(node(NodeKind.File, "", definitions), Fragment.File) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            assert false
+            return ""
+        }
+    }
+    match format(text) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            assert false
+            ""
+        }
+    }
+}
+
+record Model {
+    x Int
+    y Int
+}
+
+fn field_names[T]() List[Text] {
+    let schema = describe[T]()
+    let fields = schema.types[schema.root].fields
+    let output = new[Text]()
+    var index = 0
+    while index < length(fields) {
+        push(output, fields[index].name)
+        index = index + 1
+    }
+    output
+}
+
+fn record_decl(types List[Schema]) Text {
+    assert length(types) == 1
+    let schema = types[0]
+    let input = schema.types[schema.root]
+    assert input.kind == Kind.List && length(input.arguments) == 1
+    assert schema.types[input.arguments[0]].kind == Kind.Text
+    "invoke(record_node, \"Point\", $0)"
+}
+
+fn invoke[Ts..., R](comptime action fn(Ts...) R, values Ts...) R
+requires comptime_callable(action) {
+    action(values...)
+}
+
+fn collected[T](values List[T], comptime action fn(T) Node) List[Node] {
+    let output = new[Node]()
+    var index = 0
+    while index < length(values) {
+        push(output, action(values[index]))
+        index = index + 1
+    }
+    output
+}
