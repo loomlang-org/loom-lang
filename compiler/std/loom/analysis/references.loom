@@ -1,3 +1,5 @@
+import std.loom.checking.source_declaration_references
+
 // One answer per requested source position. Missing, type-only and ambiguous
 // inspections are retained, not interpreted as proof that a reference is absent.
 pub record ReferenceEvidence {
@@ -56,4 +58,31 @@ fn inspect_references(analysis AnalysisState, file Int, spelling Text) Result[Li
         index = index + 1
     }
     Result.Ok(reference_evidence(analysis, file, offsets, Option.Some(tokens)))
+}
+
+// Capture all ordinary callers in the selected module through a query-only
+// queue. This cache is independent of navigation/abstract declaration queries.
+fn inspect_source_references(analysis AnalysisState, file Int, offsets List[Int]) Result[List[ReferenceEvidence], Text] {
+    if length(analysis.source_declarations) == 0 {
+        let references = match std.loom.checking.source_declaration_references(analysis.bindings, analysis_query_inputs(analysis)) {
+            Result.Ok(value) => value
+            Result.Err(problem) => {
+                return Result.Err(problem.diagnostic.message)
+            }
+        }
+        push(analysis.source_declarations, references)
+    }
+    let references = get(analysis.source_declarations, 0)
+    let tokens = reference_tokens(analysis, file)?
+    let output = new[ReferenceEvidence]()
+    var index = 0
+    while index < length(offsets) {
+        let offset = get(offsets, index)
+        push(output, ReferenceEvidence {
+                offset = offset,
+                inspection = checked_inspection(analysis, file, offset, tokens, references)
+            })
+        index = index + 1
+    }
+    Result.Ok(output)
 }

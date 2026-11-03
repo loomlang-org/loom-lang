@@ -34,9 +34,12 @@ export function verifyMemberChangeCommand(loom, directory, environment, standard
 impl Read for Int {
     fn read(self Int) Int { self + 1 }
 }
+impl Read for Bool {
+    fn read(self Bool) Int { 7 }
+}
+fn read_generic[T Read](value T) Int { value.read() }
 fn entry() Int {
-    let value = 7
-    value.read()
+    read_generic(7) + read_generic(true)
 }
 `;
   writeFileSync(join(base, "main.loom"), source);
@@ -45,8 +48,8 @@ fn entry() Int {
   const identities = sidecar.split("\n").filter((row) => row.startsWith("id ")).map((row) => row.split(" "));
   const roots = identities.filter((row) => row.length === 6);
   const methods = identities.filter((row) => row.length === 7);
-  assert.equal(roots.length, 3);
-  assert.equal(methods.length, 2);
+  assert.equal(roots.length, 5);
+  assert.equal(methods.length, 3);
   assert.match(success(change("scan", base)), /owner=d-/);
   cpSync(base, left, { recursive: true, filter: () => true });
   cpSync(base, right, { recursive: true, filter: () => true });
@@ -79,7 +82,7 @@ fn entry() Int {
     assert.ok(retained.includes(`id ${id} fn inspect moved.loom ${key} ${owner}\n`));
   }
   assert.equal(readFileSync(join(base, ".loom-ids"), "utf8"), sidecar);
-  writeFileSync(join(output, "merged_test.loom"), "test fn renamed_and_edited_method() { assert entry() == 9 }\n");
+  writeFileSync(join(output, "merged_test.loom"), "test fn renamed_and_edited_method() { assert entry() == 16 }\n");
   assert.equal(success(command(loom, ["test", output])), "1 tests passed\n");
 
   const repository = join(directory, "repository");
@@ -125,15 +128,17 @@ fn entry() Int {
     const moduleRight = join(directory, "module-right");
     mkdirSync(join(moduleBase, "lib"), { recursive: true });
     writeFileSync(join(moduleBase, "loom.toml"), '[module]\nname = "sample"\n');
-    const publicLibrary = source.slice(0, source.indexOf("fn entry")).replace("concept Read", "pub concept Read");
+    const publicLibrary = source.slice(0, source.indexOf("fn entry")).replace("concept Read", "pub concept Read")
+      .replace("fn read_generic", "pub fn library_read");
     const consumer = `import sample.lib.Read
+import sample.lib.library_read
 fn entry() Int { let value = 7
     value.read() }
 fn dynamic_read(value dyn Read) Int { value.read() }
-fn generic_read[T Read](value T) Int { value.read() }
+fn generic_read[T Read](value T) Int { library_read(value) }
 `;
     const tests = `test fn public_method_available() {
-    assert entry() > 0 && dynamic_read(7) > 0
+    assert entry() > 0 && dynamic_read(7) > 0 && generic_read(7) > 0 && generic_read(true) > 0
 }
 `;
     writeFileSync(join(moduleBase, "lib", "api.loom"), publicLibrary);

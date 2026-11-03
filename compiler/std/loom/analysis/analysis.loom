@@ -58,6 +58,7 @@ record AnalysisState {
     proof_backend ProofBackend
     // Lazy query evidence; never attached to executable IR or definition caches.
     declarations List[List[std.loom.checking.DeclarationReference]]
+    source_declarations List[List[std.loom.checking.DeclarationReference]]
     declaration_scopes List[Location]
     contract_queries List[CheckedQuery]
     // At most one independent scope; replacing it releases the previous view.
@@ -124,6 +125,7 @@ fn analysis_result(source Project, bindings std.loom.binding.Program,
             targets = detached.targets
             proof_backend = detached.proof_backend
             declarations = new[List[std.loom.checking.DeclarationReference]]()
+            source_declarations = new[List[std.loom.checking.DeclarationReference]]()
             declaration_scopes = new[Location]()
             contract_queries = new[CheckedQuery]()
             independent_queries = new[Option[IndependentQuery]]()

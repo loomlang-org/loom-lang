@@ -129,9 +129,9 @@ fn public_package_edits(analysis CheckedAnalysis, scopes List[PackageScope], sco
             }
             if token.span.start != declaration && member < 0 && (rename_site(sites, token.span.start) ||
                 (token.kind == Kind.Name && public_rename_spelling(scopes, renames, token.value))) {
-                let target = package_target(analysis, scopes, scope.package, path,
+                let target = package_reference_at(analysis, scopes, scope.package, path,
                     entry.start + token.span.start, entry.abstract_body)?
-                let selected = public_requested_target_name(scopes, renames, target)?
+                let selected = public_requested_reference_name(scopes, renames, target)?
                 if selected != "" {
                     name = selected
                 }
@@ -209,36 +209,34 @@ fn compare_public_renamed(before CheckedAnalysis, after CheckedAnalysis, revisio
     updated List[PackageRevision], files List[SourceRenameFile]) Result[Bool, Text] {
     let original = package_scopes(before.source, revisions)?
     let current = package_scopes(after.source, updated)?
-    let package = before.bindings.root
     var index = 0
     while index < length(original) {
         let scope = get(original, index)
-        if scope.package == package {
-            var item = 0
-            while item < length(scope.indexed.entries) {
-                let entry = get(scope.indexed.entries, item)
-                if package_entry_active(before, package, entry)? {
-                    let changed = rename_definition(current, entry.id)?
-                    let sites = reference_sites(entry)?
-                    let next = reference_sites(changed.entry)?
-                    if length(sites) != length(next) {
-                        return Result.Err("public rename changed the reference structure")
-                    }
-                    var site = 0
-                    while site < length(sites) {
-                        let expected = package_target(before, original, package,
-                            join_path(scope.directory, entry.path), entry.start + get(sites, site), entry.abstract_body)?
-                        let target = package_target(after, current, package,
-                            join_path(changed.directory, changed.entry.path), changed.entry.start + get(next, site),
-                            changed.entry.abstract_body)?
-                        if !same_target(expected, public_original_target(target, original, current, files)?) {
-                            return Result.Err("public rename changed a checked reference binding")
-                        }
-                        site = site + 1
-                    }
+        let package = scope.package
+        var item = 0
+        while item < length(scope.indexed.entries) {
+            let entry = get(scope.indexed.entries, item)
+            if package_entry_active(before, package, entry)? {
+                let changed = rename_definition(current, entry.id)?
+                let sites = reference_sites(entry)?
+                let next = reference_sites(changed.entry)?
+                if length(sites) != length(next) {
+                    return Result.Err("public rename changed the reference structure")
                 }
-                item = item + 1
+                var site = 0
+                while site < length(sites) {
+                    let expected = package_reference_at(before, original, package,
+                        join_path(scope.directory, entry.path), entry.start + get(sites, site), entry.abstract_body)?
+                    let target = package_reference_at(after, current, package,
+                        join_path(changed.directory, changed.entry.path), changed.entry.start + get(next, site),
+                        changed.entry.abstract_body)?
+                    if !same_reference_binding(expected, public_original_reference(target, original, current, files)?) {
+                        return Result.Err("public rename changed a checked reference binding")
+                    }
+                    site = site + 1
+                }
             }
+            item = item + 1
         }
         index = index + 1
     }

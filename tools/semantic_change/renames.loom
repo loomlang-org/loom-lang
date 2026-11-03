@@ -196,8 +196,8 @@ fn rename_edits(revision Indexed, renames List[DeclarationRename], analysis Chec
             }
             if token.span.start != declaration && member < 0 && (rename_site(sites, token.span.start) ||
                 (token.kind == Kind.Name && rename_spelling(revision.entries, renames, token.value))) {
-                let target = target_at(analysis, revision, directory, entry, token.span.start)?
-                let selected = requested_target_name(revision, renames, target)?
+                let target = reference_at(analysis, revision, directory, entry, token.span.start)?
+                let selected = requested_reference_name(revision, renames, target)?
                 if selected != "" {
                     name = selected
                 }
@@ -357,22 +357,9 @@ fn compare_renamed(before CheckedAnalysis, original Indexed, after CheckedAnalys
         }
         var site = 0
         while site < length(sites) {
-            let expected = target_at(before, original, directory, entry, get(sites, site))?
-            let target = target_at(after, updated, directory, changed, get(current, site))?
-            let anchor = rename_original_offset(edits, target.id, target.anchor)?
-            let scope = if target.id == "" {
-                target.scope
-            } else {
-                renamed_scope(get(original.entries, entry_index(original.entries, target.id)), target.scope, anchor)?
-            }
-            let restored = BindingTarget {
-                scope = scope
-                anchor = anchor
-                start = rename_original_offset(edits, target.id, target.start)?
-                end = rename_original_offset(edits, target.id, target.end)?
-                ..target
-            }
-            if !same_target(expected, restored) {
+            let expected = reference_at(before, original, directory, entry, get(sites, site))?
+            let target = reference_at(after, updated, directory, changed, get(current, site))?
+            if !same_reference_binding(expected, renamed_original_reference(original, target, edits)?) {
                 return Result.Err(concat("rename changed a checked reference binding in ",
                         concat(entry.path, concat(" at ", to_text(get(sites, site))))))
             }

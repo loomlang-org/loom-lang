@@ -131,3 +131,9 @@ pub fn inspect_references(analysis Analysis, file Int, offsets List[Int]) List[R
 pub fn inspect_references(analysis Analysis, file Int, spelling Text) Result[List[ReferenceEvidence], Text] {
     inspect_references(analysis.state, file, spelling)
 }
+
+// Candidate source binding evidence after a complete declaration check, including
+// ordinary private callers. Generated/static use coverage remains separate.
+pub fn inspect_source_references(analysis Analysis, file Int, offsets List[Int]) Result[List[ReferenceEvidence], Text] {
+    inspect_source_references(analysis.state, file, offsets)
+}

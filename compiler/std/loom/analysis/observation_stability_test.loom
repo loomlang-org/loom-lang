@@ -1,0 +1,142 @@
+fn published_method_inspection(analysis Analysis, offset Int) Inspection {
+    match inspect_at(analysis, 0, offset) {
+        Option.Some(value) => value
+        Option.None => {
+            assert false
+            Inspection {
+                span = Span {
+                    start = 0,
+                    end = 0
+                },
+                types = [],
+                definitions = []
+            }
+        }
+    }
+}
+
+fn two_method_observations(inspection Inspection, source Text) Bool {
+    if length(inspection.definitions) != 2 {
+        return false
+    }
+    let first = query_offset(source, "read(self Int)")
+    let second = query_offset(source, "read(self Bool)")
+    var integer = false
+    var boolean = false
+    var index = 0
+    while index < length(inspection.definitions) {
+        let location = get(inspection.definitions, index)
+        if location.file != 0 || location.span.end != location.span.start + 4 {
+            return false
+        }
+        integer = integer || location.span.start == first
+        boolean = boolean || location.span.start == second
+        index = index + 1
+    }
+    integer && boolean
+}
+
+test fn query_caches_preserve_every_observed_method_instance() {
+    let source = """
+        concept Read { fn read(self Self) Int }
+        impl Read for Int { fn read(self Int) Int { self } }
+        impl Read for Bool { fn read(self Bool) Int { 7 } }
+        fn read_generic[T Read](value T) Int { value.read() }
+        fn main() { assert read_generic(7) > 0 && read_generic(true) > 0 }
+        """
+    let analysis = published(input(source))
+    let position = query_offset(source, "value.read()") + 6
+    let first = published_method_inspection(analysis, position)
+    assert two_method_observations(first, source)
+    let independent = match inspect_independent(analysis, 0, position) {
+        Option.Some(value) => value
+        Option.None => {
+            assert false
+            return
+        }
+    }
+    let concept_method = query_offset(source, "read(self Self)")
+    only_definition(independent, concept_method, concept_method + 4)
+    assert two_method_observations(published_method_inspection(analysis, position), source)
+    assert match method_conformances(analysis) {
+        Result.Ok(edges) => length(edges) == 2,
+        Result.Err(_) => false
+    }
+    assert two_method_observations(published_method_inspection(analysis, position), source)
+    let batch = inspect_references(analysis, 0, [position])
+    assert length(batch) == 1
+    assert match get(batch, 0).inspection {
+        Option.Some(value) => two_method_observations(value, source),
+        Option.None => false
+    }
+    std.list.set(first.definitions, 0, get(first.definitions, 1))
+    assert two_method_observations(published_method_inspection(analysis, position), source)
+}
+
+fn complete_method_evidence(analysis Analysis, position Int) Inspection {
+    let references = match inspect_source_references(analysis, 0, [position]) {
+        Result.Ok(value) => value
+        Result.Err(message) => {
+            discard write_error(message)
+            assert false
+            return published_method_inspection(analysis, position)
+        }
+    }
+    assert length(references) == 1
+    match get(references, 0).inspection {
+        Option.Some(value) => value
+        Option.None => {
+            assert false
+            published_method_inspection(analysis, position)
+        }
+    }
+}
+
+fn source_method_implementations(inspection Inspection, source Text) Bool {
+    let integer = query_offset(source, "read(self Int)")
+    let boolean = query_offset(source, "read(self Bool)")
+    let abstract = query_offset(source, "read(self Self)")
+    var has_integer = false
+    var has_boolean = false
+    var index = 0
+    while index < length(inspection.definitions) {
+        let location = get(inspection.definitions, index)
+        if location.file != 0 || location.span.end != location.span.start + 4 {
+            return false
+        }
+        if location.span.start != integer && location.span.start != boolean && location.span.start != abstract {
+            return false
+        }
+        has_integer = has_integer || location.span.start == integer
+        has_boolean = has_boolean || location.span.start == boolean
+        index = index + 1
+    }
+    has_integer && has_boolean
+}
+
+test fn complete_source_queries_include_instances_from_private_nonentry_callers() {
+    let source = """
+        concept Read { fn read(self Self) Int }
+        impl Read for Int { fn read(self Int) Int { self } }
+        impl Read for Bool { fn read(self Bool) Int { 7 } }
+        fn read_generic[T Read](value T) Int { value.read() }
+        fn entry() Int { read_generic(7) + read_generic(true) }
+        """
+    let analysis = published(input(source))
+    let position = query_offset(source, "value.read()") + 6
+    let first = complete_method_evidence(analysis, position)
+    assert source_method_implementations(first, source)
+    discard inspect_independent(analysis, 0, position)
+    assert source_method_implementations(complete_method_evidence(analysis, position), source)
+    std.list.set(first.definitions, 0, get(first.definitions, 1))
+    assert source_method_implementations(complete_method_evidence(analysis, position), source)
+}
+
+test fn complete_source_queries_refuse_unrepresentable_compiletime_only_callers() {
+    let source = "fn make_type() type { Int }\nfn entry() Int { 7 }\n"
+    let analysis = published(input(source))
+    assert match inspect_source_references(analysis, 0, [query_offset(source, "entry()")]) {
+        Result.Err(message) => contains(message, "compile-time-only caller")
+        Result.Ok(_) => false
+    }
+}

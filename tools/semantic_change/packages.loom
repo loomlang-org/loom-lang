@@ -123,8 +123,8 @@ fn checked_basis_imports(project Project, tests Bool) Result[Bool, Text] {
     Result.Ok(true)
 }
 
-fn package_target(analysis CheckedAnalysis, scopes List[PackageScope], package Int, path Text,
-    offset Int, abstract_body Bool) Result[BindingTarget, Text] {
+fn package_reference_at(analysis CheckedAnalysis, scopes List[PackageScope], package Int, path Text,
+    offset Int, abstract_body Bool) Result[ReferenceBinding, Text] {
     var file = -1
     var index = 0
     while index < length(analysis.bindings.files) {
@@ -137,8 +137,18 @@ fn package_target(analysis CheckedAnalysis, scopes List[PackageScope], package I
     if file < 0 {
         return Result.Err("package reference has no analyzed source file")
     }
-    let inspection = reference_inspection(analysis, file, offset, abstract_body)?
-    package_location_target(analysis, scopes, get(inspection.definitions, 0))
+    let evidence = inspect_source_references(analysis.snapshot, file, [offset])?
+    let definitions = reference_definitions(analysis, file, offset, abstract_body, get(evidence, 0).inspection)?
+    let observed = new[BindingTarget]()
+    index = 0
+    while index < length(definitions.observed) {
+        push(observed, package_location_target(analysis, scopes, get(definitions.observed, index))?)
+        index = index + 1
+    }
+    Result.Ok(ReferenceBinding {
+            lexical = package_location_target(analysis, scopes, definitions.lexical)?
+            observed = observed
+        })
 }
 
 fn package_location_target(analysis CheckedAnalysis, scopes List[PackageScope], location Location) Result[BindingTarget, Text] {
@@ -201,19 +211,19 @@ fn compare_package_entry(before CheckedAnalysis, before_scopes List[PackageScope
     var index = 0
     while index < length(sites) {
         let site = get(sites, index)
-        let expected = package_target(before, before_scopes, package,
+        let expected = package_reference_at(before, before_scopes, package,
             if directory == "" {
                 original.path
             } else {
                 join_path(directory, original.path)
             }, original.start + site.before, original.abstract_body)?
-        let target = package_target(after, after_scopes, package,
+        let target = package_reference_at(after, after_scopes, package,
             if directory == "" {
                 current.path
             } else {
                 join_path(directory, current.path)
             }, current.start + site.after, current.abstract_body)?
-        if !same_target(expected, target) {
+        if !same_reference_binding(expected, target) {
             return Result.Err("package merge changed a retained checked reference binding")
         }
         index = index + 1

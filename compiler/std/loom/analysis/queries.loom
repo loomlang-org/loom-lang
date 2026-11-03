@@ -819,6 +819,14 @@ fn inspect_at(analysis AnalysisState, file Int, offset Int) Option[Inspection] {
 }
 
 fn checked_inspection(analysis AnalysisState, file Int, offset Int, tokens List[Token]) Option[Inspection] {
+    checked_inspection(analysis, file, offset, tokens, if length(analysis.declarations) == 0 {
+            new[std.loom.checking.DeclarationReference]()
+        } else {
+            get(analysis.declarations, 0)
+        })
+}
+
+fn checked_inspection(analysis AnalysisState, file Int, offset Int, tokens List[Token], references List[std.loom.checking.DeclarationReference]) Option[Inspection] {
     if file < 0 || file >= length(analysis.source.files) {
         return Option.None
     }
@@ -882,11 +890,7 @@ fn checked_inspection(analysis AnalysisState, file Int, offset Int, tokens List[
         headers = new[SignatureHeader]()
         type_headers = new[TypeHeader]()
         parameter_headers = new[ParameterHeader]()
-        declarations = if length(analysis.declarations) == 0 {
-            new[std.loom.checking.DeclarationReference]()
-        } else {
-            get(analysis.declarations, 0)
-        }
+        declarations = references
         stages = new[std.loom.checking.StagedQuery]()
     }
     if source_header {
@@ -970,10 +974,9 @@ fn inspect_view(analysis CheckedQuery, file Int, offset Int, tokens List[Token])
         types = new[Text]()
         definitions = new[Location]()
     }
-    inspect_declaration_references(analysis, report, target, file, analysis.declarations)
-    if length(report.definitions) > 0 {
-        return Option.Some(report)
-    }
+    // A retained abstract declaration is fallback evidence. Returning it before
+    // walking the checked functions would hide observed implementations after
+    // an independent query populated the declaration cache.
     var index = 0
     while index < length(analysis.parameter_headers) {
         let header = get(analysis.parameter_headers, index)
@@ -1102,6 +1105,9 @@ fn inspect_view(analysis CheckedQuery, file Int, offset Int, tokens List[Token])
             }
         }
         index = index + 1
+    }
+    if length(report.definitions) == 0 {
+        inspect_declaration_references(analysis, report, target, file, analysis.declarations)
     }
     if length(report.types) == 0 && length(report.definitions) == 0 {
         return Option.None

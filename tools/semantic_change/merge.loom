@@ -2,6 +2,7 @@ import std.loom.analysis.Inspection
 import std.loom.analysis.inspect_at
 import std.loom.analysis.inspect_independent
 import std.loom.analysis.inspect_references
+import std.loom.analysis.inspect_source_references
 import std.loom.analysis.reference_obligations
 import std.loom.analysis.ReferenceObligations
 import std.loom.analysis.abstract_reference_scope
@@ -278,7 +279,9 @@ fn indexed(revision Revision) Result[Indexed, Text] {
         let members = get(entries, index).members
         var member = 0
         while member < length(members) {
-            if get(members, member).id != "" { identified = identified + 1 }
+            if get(members, member).id != "" {
+                identified = identified + 1
+            }
             member = member + 1
         }
         index = index + 1
@@ -424,15 +427,6 @@ fn reference_inspection(analysis CheckedAnalysis, file Int, offset Int, abstract
     Result.Ok(inspected)
 }
 
-fn target_at(analysis CheckedAnalysis, revision Indexed, directory Text, entry Entry, offset Int) Result[BindingTarget, Text] {
-    let file = analysis_file(analysis, directory, entry.path)
-    if file < 0 {
-        return Result.Err("retained reference has no analyzed source file")
-    }
-    let inspected = reference_inspection(analysis, file, entry.start + offset, entry.abstract_body)?
-    binding_target(analysis, revision, directory, get(inspected.definitions, 0))
-}
-
 fn compare_retained(source CheckedAnalysis, source_revision Indexed, merged CheckedAnalysis, merged_revision Indexed,
     directory Text) Result[Bool, Text] {
     var index = 0
@@ -460,21 +454,19 @@ fn compare_retained(source CheckedAnalysis, source_revision Indexed, merged Chec
                     push(merged_offsets, after.start + get(sites, site).after)
                     site = site + 1
                 }
-                let source_evidence = inspect_references(source.snapshot, source_file, source_offsets)
-                let merged_evidence = inspect_references(merged.snapshot, merged_file, merged_offsets)
+                let source_evidence = inspect_source_references(source.snapshot, source_file, source_offsets)?
+                let merged_evidence = inspect_source_references(merged.snapshot, merged_file, merged_offsets)?
                 site = 0
                 while site < length(sites) {
                     let original = get(source_evidence, site)
                     let current = get(merged_evidence, site)
-                    let original_inspection = reference_inspection(source, source_file, original.offset,
+                    let original_definitions = reference_definitions(source, source_file, original.offset,
                         before.abstract_body, original.inspection)?
-                    let current_inspection = reference_inspection(merged, merged_file, current.offset,
+                    let current_definitions = reference_definitions(merged, merged_file, current.offset,
                         after.abstract_body, current.inspection)?
-                    let original_target = binding_target(source, source_revision, directory,
-                        get(original_inspection.definitions, 0))?
-                    let current_target = binding_target(merged, merged_revision, directory,
-                        get(current_inspection.definitions, 0))?
-                    if !same_target(original_target, current_target) {
+                    let original_target = reference_binding(source, source_revision, directory, original_definitions)?
+                    let current_target = reference_binding(merged, merged_revision, directory, current_definitions)?
+                    if !same_reference_binding(original_target, current_target) {
                         return Result.Err("retained reference changed its checked definition binding")
                     }
                     site = site + 1
@@ -730,7 +722,8 @@ fn project_of(revision Revision) Result[Project, Text] {
         index = index + 1
     }
     let modules = new[ModuleInstance]()
-    push(modules, ModuleInstance { configuration = []
+    push(modules, ModuleInstance {
+            configuration = []
             name = revision.package_name
             source = "semantic-merge"
         })
