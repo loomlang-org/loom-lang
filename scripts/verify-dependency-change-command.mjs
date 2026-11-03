@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { cpSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, readdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
 
 // Exercise complete checked binding sets through the delivered read-only CLI.
 export function verifyDependencyChangeCommand(loom, directory, environment, standard) {
   mkdirSync(directory);
+  // Match the compiler's canonical paths, including Windows short-name expansion.
+  directory = realpathSync.native(directory);
   function command(args, expected = 0) {
     const result = spawnSync(loom, ["change", ...args], {
       cwd: directory, env: environment, encoding: "utf8", maxBuffer: 4 * 1024 * 1024,
