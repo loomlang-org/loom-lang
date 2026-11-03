@@ -262,6 +262,9 @@ call indices; ordinary compilation retains no such tables.
 Public reference queries share a token stream for a batch or exact-name scan,
 retaining unanswered and ambiguous candidates. Editor and semantic-change
 consumers share this evidence without treating it as complete source coverage.
+Repeated caller queries reuse private token streams for the same file and exact
+source text within one published analysis. Editable metadata and a new analysis
+keep separate source bases; token reuse does not cache checked binding answers.
 Compiler-owned reference obligations also expose unsupported source ranges;
 semantic merge uses them for bounded generics, cleanup and ordinary compile-time
 blocks instead of maintaining a second syntax whitelist. Static branch selection

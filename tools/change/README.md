@@ -517,8 +517,8 @@ are reported instead of guessed.
 
 This is a bounded checked-source workflow, not behavior-equivalence proof. It does
 not yet manage Git/jj changes or commits, reconcile arbitrary package/import-graph changes,
-infer identities for generated declarations, or merge competing edits within a
-single declaration body. Adding a new overload can change
+or infer identities for generated declarations. Concurrent body edits that change
+child shape or ordering still require resolution. Adding a new overload can change
 lookup, so cross-side addition of an existing name still requires review.
 
 The [overload snapshots](fixtures/overloads/base/app.loom) move only the `Int`
@@ -534,3 +534,20 @@ target/loom change \
 
 Apply the printed token to a new directory using the same three inputs, then
 `target/loom run OUTPUT_DIR`. Its assertions check the combined result, `43`.
+
+## Native review benchmark
+
+On macOS, compare two complete checkout or installed toolchains:
+
+```sh
+node scripts/benchmark-change.mjs \
+  --compiler target/loom --baseline /path/to/baseline/bin/loom \
+  --runs 7 --sizes 50,200,500 --output target/performance/change.json
+```
+
+Fresh previews alternate order on identical source edits and must produce matching,
+changing review tokens. The script verifies unchanged inputs, rejects an edited
+helper contract with both tools, records compiler/companion hashes, wall time and
+peak RSS, and removes its temporary inputs. These measurements cover checked
+native review, including query work, rather than application execution or an
+unchanged cache hit.

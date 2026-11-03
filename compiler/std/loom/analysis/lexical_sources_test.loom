@@ -1,0 +1,103 @@
+import std.text.replace
+
+fn lexical_source_inspection(analysis Analysis, file Int, position Int) Inspection {
+    match inspect_at(analysis, file, position) {
+        Option.Some(value) => value
+        Option.None => {
+            discard std.io.write_error(concat("missing lexical inspection in file ",
+                    concat(std.int.to_text(file), concat(" at ", std.int.to_text(position)))))
+            assert false
+            lexical_source_inspection(analysis, file, position)
+        }
+    }
+}
+
+test async fn lexical_queries_keep_their_published_basis_after_edits_and_suspension() {
+    let text = "fn helper(value Int) Int { value }\nfn main() { discard helper(7)\n    assert false }\n"
+    let changed = replace(text, "helper", "different")
+    let project = input(text)
+    let analysis = published(project)
+    let position = query_offset(text, "helper(7)")
+    let definition = query_offset(text, "helper(value")
+    let first = lexical_source_inspection(analysis, 0, position)
+    only_definition(first, definition, definition + length("helper"))
+    discard take_last(first.definitions)
+    push(first.types, "changed metadata")
+    let data = snapshot(analysis)
+    let replacement = get(input(changed).files, 0)
+    set(data.source.files, 0, replacement)
+    set(data.bindings.files, 0, replacement)
+    let fresh = published(input(changed))
+    let new_position = query_offset(changed, "different(7)")
+    let new_definition = query_offset(changed, "different(value")
+    only_definition(lexical_source_inspection(fresh, 0, new_position), new_definition,
+        new_definition + length("different"))
+    sleep_ms(1).await
+    only_definition(lexical_source_inspection(analysis, 0, position), definition, definition + length("helper"))
+    only_definition(lexical_source_inspection(fresh, 0, new_position), new_definition,
+        new_definition + length("different"))
+    assert is_current(analysis, project, false)
+    assert !is_current(analysis, input(changed), false)
+}
+
+test fn lexical_reference_batches_preserve_file_identity_unicode_and_unanswered_sites() {
+    let first = "// second(2)\r\nfn first(value Int) Int { value }\r\nfn main() { discard first(1)\r\n    discard 雪(2)\r\n    assert false }\r\n"
+    let second = "// another file 雪\r\nfn 雪(value Int) Int { value }\r\n"
+    let project = input(first)
+    push(project.files, SourceFile {
+            path = "other.loom",
+            ..get(input(second).files, 0)
+        })
+    let analysis = published(project)
+    let position = query_offset(first, "雪(2)")
+    let definition = query_offset(second, "雪(value")
+    var pass = 0
+    while pass < 3 {
+        let found = lexical_source_inspection(analysis, 0, position)
+        assert length(found.definitions) == 1
+        let target = get(found.definitions, 0)
+        assert target.file == 1 && target.span.start == definition && target.span.end == definition + length("雪")
+        // Ordinary function declaration names have no checked hover. The
+        // parameter use in the other file does, with that file's byte spans.
+        assert match inspect_at(analysis, 1, definition) {
+            Option.None => true
+            _ => false
+        }
+        let local = query_offset(second, "{ value }") + 2
+        let read = lexical_source_inspection(analysis, 1, local)
+        assert read.span.start == local && read.span.end == local + length("value")
+        assert length(read.definitions) == 1
+        let parameter = get(read.definitions, 0)
+        assert parameter.file == 1 && parameter.span.start == query_offset(second, "value Int") &&
+        parameter.span.end == parameter.span.start + length("value")
+        let evidence = match inspect_source_references(analysis, 0, [query_offset(first, "second(2)"), position, length(first)]) {
+            Result.Ok(value) => value
+            Result.Err(_) => {
+                assert false
+                new[ReferenceEvidence]()
+            }
+        }
+        assert length(evidence) == 3
+        assert match get(evidence, 0).inspection {
+            Option.None => true,
+            _ => false
+        }
+        assert match get(evidence, 1).inspection {
+            Option.Some(value) => length(value.definitions) == 1,
+            _ => false
+        }
+        assert match get(evidence, 2).inspection {
+            Option.None => true,
+            _ => false
+        }
+        assert match inspect_at(analysis, -1, position) {
+            Option.None => true,
+            _ => false
+        }
+        assert match inspect_at(analysis, 2, position) {
+            Option.None => true,
+            _ => false
+        }
+        pass = pass + 1
+    }
+}
