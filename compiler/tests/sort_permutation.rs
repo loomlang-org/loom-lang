@@ -222,6 +222,10 @@ fn record_sort_tracks_nested_and_sibling_columns_without_mixing_them() {
 #[test]
 fn complete_record_counts_keep_field_pairings_and_normalize_equivalent_equalities() {
     let program = include_str!("../examples/value_sort_contracts/main.loom");
+    let corrupted = program
+        .replacen("    sorted(values, fn(a Row, b Row) Bool {", "    let output = sorted(values, fn(a Row, b Row) Bool {", 1)
+        .replacen("            a.key.id < b.key.id\n        })\n}", "            a.key.id < b.key.id\n        })\n    if length(output) > 0 { output[0] = Row { amount = 99, ..output[0] } }\n    output\n}", 1);
+    assert!(corrupted.contains("\n    output\n}"));
     let swap = "let changed = std.list.clone(values)\n    if length(changed) > 1 {\n        let first = changed[0]\n        let second = changed[1]\n        changed[0] = Row { amount = second.amount, ..first }\n        changed[1] = Row { amount = first.amount, ..second }\n    }\n    changed";
     let invalid = [
         program.replace("    sorted(values, less)", swap),
@@ -233,6 +237,18 @@ fn complete_record_counts_keep_field_pairings_and_normalize_equivalent_equalitie
             "same_row(values[index], needle)",
             "same_row(Row { label = values[0].label, ..values[index] }, needle)",
         ),
+        program.replacen("a.key.id < b.key.id", "a.key.id > b.key.id", 1),
+        program.replacen("a.key.id > b.key.id", "a.key.id < b.key.id", 1),
+        corrupted,
+        format!(
+            r#"{program}
+pub fn unknown_order(values List[Row], less fn(Row, Row) Bool) List[Row]
+ensures ascending(result)
+ensures permutation(old(values), result) {{
+    sorted(values, less)
+}}
+"#
+        ),
     ];
     let start = program.find("fn count(").unwrap();
     let end = start + program[start..].find("\n}\n").unwrap() + 3;
@@ -243,7 +259,16 @@ fn complete_record_counts_keep_field_pairings_and_normalize_equivalent_equalitie
         "count(second, first[index])",
         "count_reordered(second, first[index])",
     );
-    permutation_trial(program, &[equivalent], &invalid, true, None);
+    let reversed_comparisons = program
+        .replace("a.key.id < b.key.id", "b.key.id > a.key.id")
+        .replace("a.key.id > b.key.id", "b.key.id < a.key.id");
+    permutation_trial(
+        program,
+        &[equivalent, reversed_comparisons],
+        &invalid,
+        true,
+        None,
+    );
 }
 
 #[test]

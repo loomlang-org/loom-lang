@@ -134,6 +134,10 @@ sibling columns and extraction into scalar Lists. It does not preserve field
 pairings merely from independent column counts. Joint keys now retain those
 pairings for conjunctions of `Int`, `Bool` and `Text` field equalities, proving
 complete immutable-record entry permutation through effectful comparisons.
+Known ascending and descending nested-key comparisons now prove adjacent order
+and this full-row permutation together, including callbacks that mutate the
+input. Equivalent counterexample selection keeps the existing query and time
+limits; unknown comparator order still rejects.
 Conjunction and equality-operand order normalize; scalar and joint keys share
 the same finite histogram laws. Arbitrary equality predicates, general
 content induction, comparator laws and constrained shared-alias preservation

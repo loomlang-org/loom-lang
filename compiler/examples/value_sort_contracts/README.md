@@ -12,6 +12,9 @@ target/loom run compiler/examples/value_sort_contracts
 code: a nested integer key, amount, Boolean flag and Text label. The sorting
 wrapper proves entry length and full-row occurrence counts, including duplicates,
 through an unknown comparator that can change and grow the original input.
+The ascending and descending wrappers also prove adjacent order on the nested
+key together with the same full-row permutation. Their known comparisons may
+still overwrite and append to the original input.
 
 The proof joins the fields at the same sequence index into one mathematical key.
 It preserves their association; separate column counts would allow amounts to
@@ -22,4 +25,5 @@ by direct integer keys and structural keys, with no runtime histogram or tag.
 The supported count fragment is a conjunction of `Int`, `Bool` and `Text`
 equalities over one element's inline fields and stable needles. Float equality,
 enum alternatives, mutable descendants and arbitrary equality predicates remain
-separate work. Comparator ordering laws are not inferred by permutation.
+separate work. Unknown comparators still cannot establish an ordering contract;
+permutation supplies no comparator laws.

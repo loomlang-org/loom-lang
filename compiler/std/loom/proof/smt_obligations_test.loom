@@ -1,0 +1,84 @@
+import std.text.contains
+
+test fn refined_counterexamples_keep_each_obligations_own_facts() {
+    let obligations = [
+        Obligation {
+            facts = [Predicate.Variable(1)]
+            conclusion = Predicate.Variable(2)
+        },
+        Obligation {
+            facts = [Predicate.Variable(3)]
+            conclusion = Predicate.Variable(4)
+        },
+    ]
+    let plain = match smt_encoding(obligations, true, true, false, false, false) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            assert false
+            return
+        }
+    }
+    let selected = match smt_encoding(obligations, true, true, false, false, true) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            assert false
+            return
+        }
+    }
+    assert selected.theory == plain.theory
+    assert selected.text != plain.text
+    assert contains(selected.text, "(declare-const loom_counterexample Int)\n(assert (or false (= loom_counterexample 0) (= loom_counterexample 1)))")
+    assert contains(selected.text, "(=> (= loom_counterexample 0) (and (and true b1) (not b2)))")
+    assert contains(selected.text, "(=> (= loom_counterexample 1) (and (and true b3) (not b4)))")
+    assert !contains(plain.text, "loom_counterexample")
+    assert length(std.text.split(selected.text, "(check-sat-using")) == 2
+}
+
+test fn selected_counterexamples_skip_tautologies_without_losing_later_goals() {
+    let obligations = [
+        Obligation {
+            facts = [Predicate.Variable(99)]
+            conclusion = Predicate.Constant(true)
+        },
+        Obligation {
+            facts = []
+            conclusion = Predicate.Constant(false)
+        },
+    ]
+    let selected = match smt_encoding(obligations, true, true, false, false, true) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            assert false
+            return
+        }
+    }
+    assert contains(selected.text, "(assert (or false (= loom_counterexample 1)))")
+    assert !contains(selected.text, "(= loom_counterexample 0)")
+    assert !contains(selected.text, "b99")
+    assert contains(selected.text, "(=> (= loom_counterexample 1) (and (and true) (not false)))")
+}
+
+test fn equivalent_counterexample_syntax_cannot_authorize_an_extra_host_query() {
+    let calls = [0]
+    let query = proof_query(ProofBackend {
+            enabled = true
+            context = ""
+            solve = fn(context Text, query Text) Result[Bool, Text] {
+                set(calls, 0, get(calls, 0) + 1)
+                Result.Ok(false)
+            }
+        })
+    push(query.obligations, Obligation {
+            facts = []
+            conclusion = Predicate.Variable(1)
+        })
+    push(query.obligations, Obligation {
+            facts = []
+            conclusion = Predicate.Variable(2)
+        })
+    assert match discharge(query) {
+        Result.Err(_) => true
+        _ => false
+    }
+    assert get(calls, 0) == 1
+}
