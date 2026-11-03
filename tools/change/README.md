@@ -389,9 +389,19 @@ and preserves checked concept/impl conformance slots. Public methods require the
 complete selected module, including consumer packages. Overload slots retain
 their individual IDs; matching names never infer a method family or identity.
 Competing method bodies, conflicting renames and other interface edits still
-require resolution. Generic calls whose concrete and abstract definition queries
-disagree retain the existing conservative rejection, even when both declarations
-participate in a concept conformance. Generated or unaccounted uses also reject.
+require resolution. Generic references retain their unique independently checked
+abstract target and every observed instance target separately. All of these
+bindings must survive normalization and merge. `std.loom.analysis.inspect_source_references`
+checks ordinary callers throughout the available selected module, including
+private callers absent from entry/export roots, through a separate query-only
+queue and cache. Public normalization compares every active selected package in
+each production/private-test view. One source token can be renamed
+only when every checked target requests the same spelling. Neither a concept
+family nor the abstract target substitutes for the observed implementations.
+Missing or ambiguous abstract evidence, changed observation sets and generated
+or unaccounted uses still require resolution. Dependency-change review retains
+its existing unique-definition requirement; this merge evidence does not widen
+that separate review format.
 
 Ambiguities may be saved without guessing an identity:
 

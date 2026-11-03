@@ -1,0 +1,189 @@
+fn heterogeneous_method_case(renamed Bool, edited Bool) List[PackageRevision] {
+    let packages = public_method_case(renamed, edited)
+    let library = get(packages, 0)
+    let files = library.revision.files
+    let api = get(files, 0)
+    set(files, 0, File {
+            text = concat(api.text, replace("""
+
+            impl Read for Bool {
+                fn METHOD(self Bool) Int { 7 }
+            }
+            """, "METHOD", if renamed {
+                        "inspect"
+                    } else {
+                        "read"
+                    }))
+            ..api
+        })
+    set(packages, 0, explicit_method_fixture(library.revision.package_name, library.directory, files))
+    var package = 1
+    while package < length(packages) {
+        let sources = get(packages, package).revision.files
+        let testing = get(sources, 1)
+        set(sources, 1, File {
+                text = replace(testing.text, "assert read_dynamic(7) > 0", "assert read_dynamic(7) > 0 && read_generic(7) > 0 && read_generic(true) > 0")
+                ..testing
+            })
+        package = package + 1
+    }
+    packages
+}
+
+test fn method_rename_preserves_all_observed_instances_beside_the_abstract_slot() {
+    let base = heterogeneous_method_case(false, false)
+    let branches = [heterogeneous_method_case(true, false), heterogeneous_method_case(false, true)]
+    let production = public_batch_context(base, false)
+    let tests = public_batch_context(base, true)
+    var order = 0
+    while order < 2 {
+        let merged = match merge_packages(base, get(branches, order), get(branches, 1 - order), production, tests) {
+            Result.Ok(value) => value
+            Result.Err(message) => {
+                discard write_error(message)
+                assert false
+                return
+            }
+        }
+        let api = get(get(merged, 0).revision.files, 0).text
+        assert contains(api, "fn inspect(self Self)") && contains(api, "fn inspect(self Int)") && contains(api, "fn inspect(self Bool)")
+        assert contains(api, "self + 2")
+        order = order + 1
+    }
+}
+
+test fn a_changed_observed_method_identity_cannot_hide_behind_the_same_abstract_slot() {
+    let base = heterogeneous_method_case(false, false)
+    let replaced = heterogeneous_method_case(false, false)
+    let edited = heterogeneous_method_case(false, true)
+    let library = get(replaced, 0).revision
+    let syntax = match indexed(library) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            assert false
+            return
+        }
+    }
+    var replacement = ""
+    var index = 0
+    while index < length(syntax.entries) {
+        let entry = get(syntax.entries, index)
+        if entry.kind == NodeKind.Impl && contains(entry.body, "self Bool") {
+            replacement = get(entry.members, 0).id
+        }
+        index = index + 1
+    }
+    assert replacement != ""
+    index = 0
+    while index < length(library.identities) {
+        let identity = get(library.identities, index)
+        if identity.id == replacement {
+            set(library.identities, index, Identity {
+                    id = concat(identity.id, "-replacement"),
+                    ..identity
+                })
+        }
+        index = index + 1
+    }
+    let production = public_batch_context(base, false)
+    let tests = public_batch_context(base, true)
+    let replacement_context = match package_project(tests, replaced, true) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            assert false
+            return
+        }
+    }
+    assert match package_analysis(replacement_context, true, no_proof_backend()) {
+        Result.Ok(_) => true
+        Result.Err(_) => false
+    }
+    assert match merge_packages(base, replaced, edited, production, tests) {
+        Result.Err(message) => contains(message, "retained checked reference binding")
+        Result.Ok(_) => false
+    }
+}
+
+fn private_multi_instance_revision(renamed Bool, moved Bool, edited Bool) Revision {
+    let source = replace(replace("""
+        concept Read {
+            fn TARGET(self Self) Int
+        }
+        impl Read for Int {
+            fn TARGET(self Int) Int { self + EXTRA }
+        }
+        impl Read for Bool {
+            fn TARGET(self Bool) Int { 7 }
+        }
+        fn read_generic[T Read](value T) Int { value.TARGET() }
+        fn entry() Int { read_generic(7) + read_generic(true) }
+        """, "TARGET", if renamed {
+                "inspect"
+            } else {
+                "read"
+            }), "EXTRA", if edited {
+            "2"
+        } else {
+            "1"
+        })
+    explicit_method_fixture("sample", "pkg", [File {
+                path = if moved {
+                    "moved.loom"
+                } else {
+                    "main.loom"
+                }
+                text = source
+            }]).revision
+}
+
+test fn private_multi_instance_move_rename_and_body_edit_preserve_every_binding() {
+    let base = private_multi_instance_revision(false, false, false)
+    let branches = [private_multi_instance_revision(true, true, false), private_multi_instance_revision(false, false, true)]
+    var order = 0
+    while order < 2 {
+        let merged = match merge(base, get(branches, order), get(branches, 1 - order)) {
+            Result.Ok(value) => value
+            Result.Err(message) => {
+                discard write_error(message)
+                assert false
+                return
+            }
+        }
+        assert contains(get(merged.files, 0).text, "self + 2")
+        assert contains(get(merged.files, 0).text, "value.inspect()")
+        order = order + 1
+    }
+}
+
+test fn one_generic_source_token_cannot_rename_only_some_observed_methods() {
+    let base = heterogeneous_method_case(false, false)
+    let library = get(base, 0)
+    let contents = match indexed(library.revision) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            assert false
+            return
+        }
+    }
+    let renames = new[DeclarationRename]()
+    var index = 0
+    while index < length(contents.entries) {
+        let owner = get(contents.entries, index)
+        if (owner.kind == NodeKind.Concept || owner.kind == NodeKind.Impl) && !contains(owner.body, "self Bool") {
+            push(renames, DeclarationRename {
+                    id = get(owner.members, 0).id,
+                    name = "inspect"
+                })
+        }
+        index = index + 1
+    }
+    assert length(renames) == 2
+    assert match normalize_public_package_renames(base, [PackageRenames {
+                directory = library.directory,
+                renames = renames
+            }],
+        public_batch_context(base, false), public_batch_context(base, true), no_proof_backend()) {
+        Result.Err(message) => contains(message, "one source token different abstract and observed target names")
+        Result.Ok(_) => false
+    }
+}

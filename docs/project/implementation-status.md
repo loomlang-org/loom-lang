@@ -891,9 +891,16 @@ their checked bindings across shifted body offsets. Same-method conflicts and
 other interface changes still require resolution, not inferred member identity.
 Symbolic impl/associated headers need no concrete caller;
 unexpanded pack queries retain their conservative boundary.
-Generic reference comparison requires checked abstract bodies and agreement
-with observed concrete instances; missing or ambiguous bindings and unselected
-static branches still reject.
+Generic reference comparison retains the independently checked abstract target
+and every observed instance target separately. The source-reference query checks
+ordinary private callers through a separate non-executable queue/cache; ordinary
+inspection no longer lets an abstract declaration cache hide checked instances.
+All active selected packages are compared in each private-test view.
+All targets must preserve their
+stable source bindings; a source-token rename requires the same requested name
+for every view. Abstract evidence never substitutes for a changed implementation.
+Missing or ambiguous bindings, changed observation sets and unselected static
+branches still reject.
 Type renames retain the IDs of affected function/impl locators and checked member
 scopes. Explicit method IDs now name their identified concept or impl owner.
 Initialization, refresh, scan, pending drafts and derivation preserve these IDs
@@ -901,8 +908,8 @@ without matching methods across containers by spelling. Owned method renames
 compose with independent body edits and container moves through checked token
 normalization, retained bindings and concept/impl conformance-slot comparison.
 Public methods require complete module consumer coverage. Legacy root-only
-sidecars remain readable. Generic references with disagreeing concrete and
-abstract definitions, generated/unaccounted uses, competing renames and other
+sidecars remain readable. Generic references require preserved abstract and
+observed target sets; generated/unaccounted uses, competing renames and other
 interface edits still reject. Inline `test fn` declarations are excluded from
 production comparison, like colocated test files. General automatic identities,
 arbitrary edits and arbitrary package/import-graph changes remain open.

@@ -231,9 +231,40 @@ fn record_function_reference(env Environment, owner Int, node Node, selected Int
 // Fresh checking observes abstract templates as well as concrete instances.
 // Cached executable bodies cannot supply erased source-binding evidence.
 pub fn declaration_references(source std.loom.binding.Program, inputs BuildInputs) Result[List[DeclarationReference], Failure] {
+    declaration_references(source, inputs, false)
+}
+
+// Query-only roots retain actual selections made by ordinary source callers,
+// including private functions outside the executable entry/export roots.
+// These queues are evidence only and never enter an executable Program.
+pub fn source_declaration_references(source std.loom.binding.Program, inputs BuildInputs) Result[List[DeclarationReference], Failure] {
+    declaration_references(source, inputs, true)
+}
+
+fn declaration_references(source std.loom.binding.Program, inputs BuildInputs, callers Bool) Result[List[DeclarationReference], Failure] {
     discard expanded_source(source)?
     let detached = query_source(source)?
     let env = prepare_with_inputs(detached, inputs, true)?
+    if callers {
+        let module = get(source.packages, source.root).instance
+        var index = 0
+        while index < length(env.signatures) {
+            let current = get(env.signatures, index)
+            if current.symbol < length(source.symbols) {
+                let item = symbol(env, current.symbol)
+                let original = item.node
+                if item.file >= 0 && get(source.packages, get(source.files, item.file).package).instance == module &&
+                current.parameters == 0 && !has_static(current) && !prototype(env, current.symbol) &&
+                has(original, NodeKind.Block) && !has(original, NodeKind.Intrinsic) && !has(original, NodeKind.ExpansionId) {
+                    if meta_signature(env, current) {
+                        return Result.Err(failure(env, current.symbol, original, "complete source reference queries cannot account for a compile-time-only caller"))
+                    }
+                    discard schedule(env, index, new[Int](), new[StaticValue](), original)?
+                }
+            }
+            index = index + 1
+        }
+    }
     discard checked_program(env, new[Bool](), new[Bool](), ints(0))?
     Result.Ok(get(env.inputs, 0).declaration_references)
 }

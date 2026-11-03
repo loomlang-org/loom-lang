@@ -1,0 +1,179 @@
+// A checked abstract declaration and its observed instances are distinct
+// evidence. Preserve each source target instead of collapsing implementations
+// into a concept slot or assuming that one observed instance covers a body.
+record ReferenceDefinitions {
+    lexical Location
+    observed List[Location]
+}
+
+record ReferenceBinding {
+    lexical BindingTarget
+    observed List[BindingTarget]
+}
+
+fn reference_definitions(analysis CheckedAnalysis, file Int, offset Int, abstract_body Bool,
+    observed Option[Inspection]) Result[ReferenceDefinitions, Text] {
+    let inspected = match observed {
+        Option.Some(value) => value
+        Option.None => match inspect_independent(analysis.snapshot, file, offset) {
+            Option.Some(value) => value
+            Option.None => {
+                return Result.Err("retained reference has no checked binding evidence")
+            }
+        }
+    }
+    if length(inspected.definitions) == 0 || (!abstract_body && length(inspected.definitions) != 1) {
+        return Result.Err("retained reference has no unique checked definition")
+    }
+    if !abstract_body {
+        return Result.Ok(ReferenceDefinitions {
+                lexical = get(inspected.definitions, 0)
+                observed = new[Location]()
+            })
+    }
+    let independent = match inspect_independent(analysis.snapshot, file, offset) {
+        Option.Some(value) => value
+        Option.None => {
+            return Result.Err("generic reference has no abstract binding evidence")
+        }
+    }
+    if length(independent.definitions) != 1 {
+        return Result.Err("generic reference has no unique abstract binding evidence")
+    }
+    let lexical = get(independent.definitions, 0)
+    let distinct = new[Location]()
+    var index = 0
+    while index < length(inspected.definitions) {
+        let location = get(inspected.definitions, index)
+        // The complete source ledger can also contain this exact abstract
+        // declaration. It is already retained in the lexical role, so exclude
+        // only that duplicate; implementation targets remain separate.
+        if location.file != lexical.file || location.span.start != lexical.span.start || location.span.end != lexical.span.end {
+            push(distinct, location)
+        }
+        index = index + 1
+    }
+    Result.Ok(ReferenceDefinitions {
+            lexical = lexical
+            observed = distinct
+        })
+}
+
+fn reference_binding(analysis CheckedAnalysis, revision Indexed, directory Text,
+    definitions ReferenceDefinitions) Result[ReferenceBinding, Text] {
+    let observed = new[BindingTarget]()
+    var index = 0
+    while index < length(definitions.observed) {
+        push(observed, binding_target(analysis, revision, directory, get(definitions.observed, index))?)
+        index = index + 1
+    }
+    Result.Ok(ReferenceBinding {
+            lexical = binding_target(analysis, revision, directory, definitions.lexical)?
+            observed = observed
+        })
+}
+
+fn reference_at(analysis CheckedAnalysis, revision Indexed, directory Text, entry Entry, offset Int) Result[ReferenceBinding, Text] {
+    let file = analysis_file(analysis, directory, entry.path)
+    if file < 0 {
+        return Result.Err("retained reference has no analyzed source file")
+    }
+    let position = entry.start + offset
+    let evidence = inspect_source_references(analysis.snapshot, file, [position])?
+    reference_binding(analysis, revision, directory,
+        reference_definitions(analysis, file, position, entry.abstract_body, get(evidence, 0).inspection)?)
+}
+
+fn same_reference_binding(before ReferenceBinding, after ReferenceBinding) Bool {
+    if !same_target(before.lexical, after.lexical) {
+        return false
+    }
+    let sides = [before.observed, after.observed]
+    var side = 0
+    while side < 2 {
+        let expected = get(sides, side)
+        let observed = get(sides, 1 - side)
+        var index = 0
+        while index < length(expected) {
+            var found = false
+            var candidate = 0
+            while candidate < length(observed) {
+                found = found || same_target(get(expected, index), get(observed, candidate))
+                candidate = candidate + 1
+            }
+            if !found {
+                return false
+            }
+            index = index + 1
+        }
+        side = side + 1
+    }
+    true
+}
+
+fn requested_reference_name(revision Indexed, renames List[DeclarationRename], binding ReferenceBinding) Result[Text, Text] {
+    let requested = requested_target_name(revision, renames, binding.lexical)?
+    var index = 0
+    while index < length(binding.observed) {
+        if requested_target_name(revision, renames, get(binding.observed, index))? != requested {
+            return Result.Err("rename cannot give one source token different abstract and observed target names")
+        }
+        index = index + 1
+    }
+    Result.Ok(requested)
+}
+
+fn renamed_original_target(original Indexed, target BindingTarget, edits List[RenameEdit]) Result[BindingTarget, Text] {
+    let anchor = rename_original_offset(edits, target.id, target.anchor)?
+    let scope = if target.id == "" {
+        target.scope
+    } else {
+        renamed_scope(get(original.entries, entry_index(original.entries, target.id)), target.scope, anchor)?
+    }
+    Result.Ok(BindingTarget {
+            scope = scope
+            anchor = anchor
+            start = rename_original_offset(edits, target.id, target.start)?
+            end = rename_original_offset(edits, target.id, target.end)?
+            ..target
+        })
+}
+
+fn renamed_original_reference(original Indexed, binding ReferenceBinding, edits List[RenameEdit]) Result[ReferenceBinding, Text] {
+    let observed = new[BindingTarget]()
+    var index = 0
+    while index < length(binding.observed) {
+        push(observed, renamed_original_target(original, get(binding.observed, index), edits)?)
+        index = index + 1
+    }
+    Result.Ok(ReferenceBinding {
+            lexical = renamed_original_target(original, binding.lexical, edits)?
+            observed = observed
+        })
+}
+
+fn public_requested_reference_name(scopes List[PackageScope], renames List[DeclarationRename], binding ReferenceBinding) Result[Text, Text] {
+    let requested = public_requested_target_name(scopes, renames, binding.lexical)?
+    var index = 0
+    while index < length(binding.observed) {
+        if public_requested_target_name(scopes, renames, get(binding.observed, index))? != requested {
+            return Result.Err("rename cannot give one source token different abstract and observed target names")
+        }
+        index = index + 1
+    }
+    Result.Ok(requested)
+}
+
+fn public_original_reference(binding ReferenceBinding, before List[PackageScope], after List[PackageScope],
+    files List[SourceRenameFile]) Result[ReferenceBinding, Text] {
+    let observed = new[BindingTarget]()
+    var index = 0
+    while index < length(binding.observed) {
+        push(observed, public_original_target(get(binding.observed, index), before, after, files)?)
+        index = index + 1
+    }
+    Result.Ok(ReferenceBinding {
+            lexical = public_original_target(binding.lexical, before, after, files)?
+            observed = observed
+        })
+}

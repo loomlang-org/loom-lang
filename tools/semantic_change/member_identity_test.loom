@@ -376,7 +376,7 @@ test fn explicit_method_renames_preserve_generic_overload_slots_and_default_bodi
     }
 }
 
-test fn explicit_method_renames_refuse_conflicting_names_and_instance_dependent_evidence() {
+test fn explicit_method_renames_refuse_conflicting_names() {
     let base = renamed_method_revision(false, false)
     let first = renamed_method_revision(true, false)
     let second = renamed_method_revision(true, false)
@@ -400,11 +400,14 @@ test fn explicit_method_renames_refuse_conflicting_names_and_instance_dependent_
         Result.Err(message) => contains(message, "conflicting method renames")
         Result.Ok(_) => false
     }
+}
+
+test fn explicit_method_renames_keep_abstract_and_observed_generic_bindings() {
     let original = public_method_case(false, false)
     let renamed = public_method_case(true, false)
     let edited = public_method_case(false, true)
     let cases = [original, renamed, edited]
-    index = 0
+    var index = 0
     while index < length(cases) {
         let files = get(get(cases, index), 1).revision.files
         let testing = get(files, 1)
@@ -414,9 +417,22 @@ test fn explicit_method_renames_refuse_conflicting_names_and_instance_dependent_
             })
         index = index + 1
     }
-    assert match merge_packages(original, renamed, edited, public_batch_context(original, false), public_batch_context(original, true)) {
-        Result.Err(message) => contains(message, "instance-dependent binding evidence")
-        Result.Ok(_) => false
+    let branches = [renamed, edited]
+    index = 0
+    while index < 2 {
+        let merged = match merge_packages(original, get(branches, index), get(branches, 1 - index),
+            public_batch_context(original, false), public_batch_context(original, true)) {
+            Result.Err(message) => {
+                discard write_error(message)
+                assert false
+                return
+            }
+            Result.Ok(value) => value
+        }
+        assert contains(get(get(merged, 0).revision.files, 0).text, "self + 2")
+        assert contains(get(get(merged, 1).revision.files, 0).text, "value.inspect()")
+        assert contains(get(get(merged, 1).revision.files, 1).text, "read_generic(7)")
+        index = index + 1
     }
 }
 
