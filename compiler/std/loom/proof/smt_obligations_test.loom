@@ -119,3 +119,40 @@ test fn equivalent_counterexample_syntax_cannot_authorize_an_extra_host_query() 
     }
     assert get(calls, 0) == 1
 }
+
+test fn identical_premises_share_a_context_without_losing_distinct_conclusions() {
+    let obligations = [
+        Obligation {
+            facts = [Predicate.Variable(9), Predicate.Variable(1)],
+            conclusion = Predicate.Variable(2)
+        },
+        Obligation {
+            facts = [Predicate.Variable(9), Predicate.Variable(1)],
+            conclusion = Predicate.Variable(4)
+        },
+        Obligation {
+            facts = [Predicate.Variable(9), Predicate.Variable(3)],
+            conclusion = Predicate.Variable(2)
+        },
+    ]
+    let plain = match smt_encoding(obligations, true, true, false, false, false) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            assert false
+            return
+        }
+    }
+    let selected = match smt_encoding(obligations, true, true, false, false, true) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            assert false
+            return
+        }
+    }
+    assert selected.theory == plain.theory
+    assert contains(selected.text, "(assert (or false (= loom_counterexample 0) (= loom_counterexample 2)))")
+    assert !contains(selected.text, "(= loom_counterexample 1)")
+    assert contains(selected.text, "(assert (and true b9))")
+    assert contains(selected.text, "(=> (= loom_counterexample 0) (and (and true b1) (not (and true b2 b4))))")
+    assert contains(selected.text, "(=> (= loom_counterexample 2) (and (and true b3) (not b2)))")
+}

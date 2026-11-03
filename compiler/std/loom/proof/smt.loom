@@ -467,7 +467,15 @@ fn smt_truncated_division(operator Text, left Text, right Text) Text {
     let output = std.bytes.new()
     smt_append(output, concat("(let ((loom_dividend ", concat(left,
                 concat(") (loom_divisor ", concat(right, ")) ")))))
-    smt_append(output, "(let ((loom_magnitude (div (ite (< loom_dividend 0) (- loom_dividend) loom_dividend) (ite (< loom_divisor 0) (- loom_divisor) loom_divisor)))) ")
+    let dividend = "(ite (< loom_dividend 0) (- loom_dividend) loom_dividend)"
+    let divisor = "(ite (< loom_divisor 0) (- loom_divisor) loom_divisor)"
+    // A smaller mathematical magnitude has quotient zero for either sign.
+    // Expose that exact case before nonlinear division, including under scan
+    // binders. At divisor zero the guard is false and the original total SMT
+    // term remains; source zero/overflow checks stay separate obligations.
+    smt_append(output, "(let ((loom_magnitude (ite (< ")
+    smt_append(output, concat(dividend, concat(" ", concat(divisor, ") 0 (div "))))
+    smt_append(output, concat(dividend, concat(" ", concat(divisor, ")))) "))))
     smt_append(output, "(let ((loom_quotient (ite (= (< loom_dividend 0) (< loom_divisor 0)) loom_magnitude (- loom_magnitude)))) ")
     smt_append(output, if operator == "/" {
             "loom_quotient"
@@ -678,6 +686,45 @@ fn smt_common_premises(alternatives List[List[Text]]) List[Text] {
     common
 }
 
+record SmtAlternative {
+    index Int
+    facts List[Text]
+    conclusions List[Text]
+}
+
+fn smt_same_premises(left List[Text], right List[Text]) Bool {
+    if length(left) != length(right) {
+        return false
+    }
+    var index = 0
+    while index < length(left) {
+        if get(left, index) != get(right, index) {
+            return false
+        }
+        index = index + 1
+    }
+    true
+}
+
+fn smt_add_alternative(alternatives List[SmtAlternative], index Int, facts List[Text], conclusion Text) {
+    var branch = 0
+    while branch < length(alternatives) {
+        let existing = get(alternatives, branch)
+        if smt_same_premises(existing.facts, facts) {
+            if !smt_has_premise(existing.conclusions, conclusion) {
+                push(existing.conclusions, conclusion)
+            }
+            return
+        }
+        branch = branch + 1
+    }
+    push(alternatives, SmtAlternative {
+            index = index
+            facts = facts
+            conclusions = [conclusion]
+        })
+}
+
 fn smt_encoding(obligations List[Obligation], extended Bool, guarded_order Bool,
     abstract_remainder Bool, scalar_normalization Bool, witness_normalization Bool) Result[SmtEncoding, Text] {
     let budget = new[Int]()
@@ -713,9 +760,7 @@ fn smt_encoding(obligations List[Obligation], extended Bool, guarded_order Bool,
     let body = std.bytes.new()
     let selected = std.bytes.new()
     let choices = std.bytes.new()
-    let premises = new[List[Text]]()
-    let conclusions = new[Text]()
-    let indices = new[Int]()
+    let alternatives = new[SmtAlternative]()
     let select_obligation = witness_normalization && length(obligations) > 1
     let roots = new[SmtFact]()
     smt_append(body, "(assert (not (and true")
@@ -732,12 +777,6 @@ fn smt_encoding(obligations List[Obligation], extended Bool, guarded_order Bool,
         }
         smt_append(body, " (=> (and true")
         let encoded_facts = new[Text]()
-        if select_obligation {
-            let guard = concat("(= loom_counterexample ", concat(std.int.to_text(index), ")"))
-            smt_append(choices, concat(" ", guard))
-            push(indices, index)
-            push(conclusions, conclusion)
-        }
         var fact = 0
         while fact < length(obligation.facts) {
             if !smt_redundant_fact(obligation.facts, fact) {
@@ -754,7 +793,7 @@ fn smt_encoding(obligations List[Obligation], extended Bool, guarded_order Bool,
         smt_append(body, conclusion)
         smt_append(body, ")")
         if select_obligation {
-            push(premises, encoded_facts)
+            smt_add_alternative(alternatives, index, encoded_facts, conclusion)
         }
         index = index + 1
     }
@@ -787,6 +826,15 @@ fn smt_encoding(obligations List[Obligation], extended Bool, guarded_order Bool,
     // This is one equivalent query under the same host limit, not one query
     // per obligation. Keep canonical theory above for refinement eligibility.
     let query = if select_obligation {
+        let premises = new[List[Text]]()
+        var branch = 0
+        while branch < length(alternatives) {
+            let alternative = get(alternatives, branch)
+            let guard = concat("(= loom_counterexample ", concat(std.int.to_text(alternative.index), ")"))
+            smt_append(choices, concat(" ", guard))
+            push(premises, alternative.facts)
+            branch = branch + 1
+        }
         smt_append(choices, "))\n")
         // Factor only byte-identical premises present in every live alternative.
         // G && OR_i(F_i && !C_i) keeps each branch's private facts isolated.
@@ -800,11 +848,16 @@ fn smt_encoding(obligations List[Obligation], extended Bool, guarded_order Bool,
             shared = shared + 1
         }
         smt_append(selected, "))\n(assert (and true")
-        var branch = 0
-        while branch < length(premises) {
-            let guard = concat("(= loom_counterexample ", concat(std.int.to_text(get(indices, branch)), ")"))
+        // Identical premise sequences share one counterexample context:
+        // (F && !C1) || (F && !C2) == F && !(C1 && C2).
+        // Retain every distinct conclusion, without combining private facts
+        // from different contexts or changing canonical refinement eligibility.
+        branch = 0
+        while branch < length(alternatives) {
+            let alternative = get(alternatives, branch)
+            let guard = concat("(= loom_counterexample ", concat(std.int.to_text(alternative.index), ")"))
             smt_append(selected, concat(" (=> ", concat(guard, " (and (and true")))
-            let facts = get(premises, branch)
+            let facts = alternative.facts
             var fact = 0
             while fact < length(facts) {
                 let premise = get(facts, fact)
@@ -813,7 +866,19 @@ fn smt_encoding(obligations List[Obligation], extended Bool, guarded_order Bool,
                 }
                 fact = fact + 1
             }
-            smt_append(selected, concat(") (not ", concat(get(conclusions, branch), ")))")))
+            smt_append(selected, ") (not ")
+            if length(alternative.conclusions) == 1 {
+                smt_append(selected, get(alternative.conclusions, 0))
+            } else {
+                smt_append(selected, "(and true")
+                var conclusion = 0
+                while conclusion < length(alternative.conclusions) {
+                    smt_append(selected, concat(" ", get(alternative.conclusions, conclusion)))
+                    conclusion = conclusion + 1
+                }
+                smt_append(selected, ")")
+            }
+            smt_append(selected, ")))")
             branch = branch + 1
         }
         smt_append(selected, "))\n")

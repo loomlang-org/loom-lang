@@ -24,6 +24,13 @@ ensures result >= 0
     integer_quotient(value, divisor)
 }
 
+fn smaller_magnitude(value Int, divisor Int) Bool
+requires divisor > 0 && value > -divisor && value < divisor
+ensures value / divisor == 0 && value % divisor == value
+{
+    true
+}
+
 fn division_cases() {
     assert integer_quotient(-7, 3) == -2 && integer_quotient(7, -3) == -2
     assert integer_quotient(-7, -3) == 2 && integer_quotient(7, 3) == 2
@@ -37,6 +44,10 @@ fn division_cases() {
     assert division_identity(-9223372036854775808) && division_identity(9223372036854775807)
     assert division_identity(-7) && division_identity(0) && division_identity(7)
     assert nonnegative_quotient(7, 3) == 2
+    assert smaller_magnitude(-3, 7) && smaller_magnitude(3, 7)
+    assert smaller_magnitude(0, 1) && smaller_magnitude(9223372036854775806, 9223372036854775807)
+    assert integer_quotient(-3, -7) == 0 && integer_remainder(-3, -7) == -3
+    assert integer_quotient(3, -7) == 0 && integer_remainder(3, -7) == 3
 }
 
 test fn signed_division_contracts_match_native_truncation_and_extremes() {
