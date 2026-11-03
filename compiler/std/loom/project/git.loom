@@ -317,6 +317,12 @@ fn source_owner(resolution Resolution, base Text) Result[Text, Text] {
     Result.Ok(hashed(concat("path\n", relative_source(base, resolution.root)?)))
 }
 
+fn module_owner(resolution Resolution, module ModuleRoot) Result[Text, Text] {
+    let source = source_owner(resolution, module.base)?
+    if length(module.configuration) == 0 { return Result.Ok(source) }
+    Result.Ok(hashed(concat(source, concat("\nconfiguration\n", configuration_encoding(module.configuration)?))))
+}
+
 fn source_boundary(resolution Resolution, base Text, dependency Text) Result[Bool, Text] {
     if resolution.source_root != "" && inside(base, resolution.source_root) && !inside(dependency, resolution.source_root) {
         return Result.Err("path dependency escapes the selected source boundary")
@@ -435,8 +441,7 @@ fn snapshot_module(root Text, subdir Text) Result[Text, Text] {
     Result.Ok(directory)
 }
 
-fn git_dependency(resolution Resolution, base Text, name Text, git Text, rev Text, subdir Text, request Text, version Text, comptime fetch Bool) Result[Text, Text] {
-    let owner = source_owner(resolution, base)?
+fn git_dependency(resolution Resolution, owner Text, name Text, git Text, rev Text, subdir Text, request Text, version Text, arguments List[ConfigurationValue], comptime fetch Bool) Result[Text, Text] {
     let index = lock_index(resolution.locks, owner, name)
     comptime if !fetch {
         if index < 0 {
@@ -461,6 +466,12 @@ fn git_dependency(resolution Resolution, base Text, name Text, git Text, rev Tex
     if version != "" && read_module(directory)?.version != version {
         return Result.Err("selected SemVer tag does not match module.version")
     }
+    let configuration = configuration_digest(std.loom.manifest.module_configuration(read_module(directory)?.configuration, arguments)?)?
+    comptime if !fetch {
+        if get(resolution.locks, index).configuration != configuration {
+            return Result.Err("Git dependency configuration changed from loom.lock; run loom resolve")
+        }
+    }
     let locked = LockedSource {
         owner = owner
         name = name
@@ -470,6 +481,7 @@ fn git_dependency(resolution Resolution, base Text, name Text, git Text, rev Tex
         subdir = subdir
         request = request
         version = version
+        configuration = configuration
     }
     if lock_index(resolution.plan.used, owner, name) < 0 {
         push(resolution.plan.used, locked)

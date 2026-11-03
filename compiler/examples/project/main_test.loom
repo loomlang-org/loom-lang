@@ -24,6 +24,7 @@ test fn bind_supplied_source_without_reading_a_project() {
                 })
             let modules = new[ModuleInstance]()
             push(modules, ModuleInstance {
+                    configuration = []
                     name = "app"
                     source = "memory:app"
                 })

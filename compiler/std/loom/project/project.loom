@@ -1,5 +1,7 @@
 import std.loom.ast.has
 import std.loom.manifest.Dependency
+import std.loom.manifest.ConfigurationValue
+import std.list.clone
 import std.loom.manifest.segment
 import std.loom.manifest.parse
 import std.loom.parser.parse
@@ -25,6 +27,7 @@ pub record SourceFile {
 pub record ModuleInstance {
     name Text
     source Text
+    configuration List[ConfigurationValue]
 }
 
 pub record PackageImport {
@@ -59,6 +62,7 @@ record ModuleRoot {
     version Text
     base Text
     dependencies List[Dependency]
+    configuration List[ConfigurationValue]
 }
 
 record Loader {
@@ -184,6 +188,7 @@ fn module_root(directory Text) Result[ModuleRoot, Text] {
                     version = ""
                     base = directory
                     dependencies = new[Dependency]()
+                    configuration = []
                 })
         }
         current = next
@@ -455,7 +460,7 @@ pub fn resolve(path Text, std_root Text, tests Bool, git_tool Text, credential_t
         } else {
             let prior = get(initial.resolution.locks, previous)
             if prior.git != current.git || prior.rev != current.rev || prior.subdir != current.subdir ||
-            prior.request != current.request || prior.version != current.version {
+            prior.request != current.request || prior.version != current.version || prior.configuration != current.configuration {
                 changed = changed + 1
             }
         }
@@ -532,6 +537,7 @@ fn prepare_loader(path Text, std_root Text, git_tool Text, credential_tool Text,
             version = ""
             base = standard
             dependencies = new[Dependency]()
+            configuration = []
         })?
     let owner = register_module(loader, module)?
     let root = registered_package(loader, owner, directory)?
@@ -559,6 +565,7 @@ fn loaded_project(loader Loader, root Int) Project {
     while index < length(loader.modules) {
         let module = get(loader.modules, index)
         push(modules, ModuleInstance {
+                configuration = std.list.clone(module.configuration)
                 name = module.name
                 source = module.base
             })

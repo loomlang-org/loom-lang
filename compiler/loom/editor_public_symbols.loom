@@ -128,16 +128,16 @@ fn editor_public_imports(analysis EditorAnalysis, file Int, target Location, tok
 
 fn editor_public_target(analysis EditorAnalysis, path Text, span Span) Option[Location] {
     var file = 0
+    var selected = -1
     while file < length(editor_data(analysis).bindings.files) {
         if get(editor_data(analysis).bindings.files, file).path == path {
-            return Option.Some(Location {
-                    file = file
-                    span = span
-                })
+            if selected >= 0 { return Option.None }
+            selected = file
         }
         file = file + 1
     }
-    Option.None
+    if selected < 0 { return Option.None }
+    Option.Some(Location { file = selected span = span })
 }
 
 fn editor_public_visible(analysis EditorAnalysis, file Int, target Location, spelling Text) Bool {

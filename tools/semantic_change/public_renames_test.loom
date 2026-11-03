@@ -196,7 +196,7 @@ fn public_external_consumer(project Project) Project {
     let modules = std.list.clone(project.modules)
     let packages = std.list.clone(project.packages)
     let files = std.list.clone(project.files)
-    push(modules, ModuleInstance {
+    push(modules, ModuleInstance { configuration = []
             name = "external"
             source = "/external"
         })

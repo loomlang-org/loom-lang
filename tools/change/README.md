@@ -42,7 +42,9 @@ differ. The ordinary offline loader must already have every required Git source;
 this command never resolves a moving version or fetches a repository.
 
 The application presentation root is normalized for comparison, but dependency
-origins are not equated by name or byte equality. Separately copied local
+origins and effective configurations are not equated by name or byte equality.
+Configuration-only changes appear in binding observations even when the source
+path and digest stay identical. Separately copied local
 dependencies therefore conservatively appear as different origins. Production
 and every package's independent private test scope pass ordinary type/contract
 checks. The output inventories source origins/hashes and changed checked

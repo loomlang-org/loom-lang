@@ -1,0 +1,8 @@
+[module]
+name = "search"
+
+[dependencies.codec]
+path = "../codec"
+
+[dependencies.codec.configuration]
+representation = "hex"

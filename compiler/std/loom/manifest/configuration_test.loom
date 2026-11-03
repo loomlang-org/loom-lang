@@ -1,0 +1,128 @@
+fn setting(name Text, value Text) ConfigurationValue {
+    ConfigurationValue {
+        name = name,
+        value = value
+    }
+}
+
+fn settings(values List[ConfigurationValue]) List[ConfigurationValue] {
+    match configuration_snapshot(values) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            assert false
+            []
+        }
+    }
+}
+
+test fn module_configuration_tables_preserve_values_and_canonicalize_names() {
+    let module = parsed("""
+        [dependencies.codec.configuration]
+        wire = "cbor"
+        "format.level" = "two=2#literal"
+        [configuration]
+        wire = "json"
+        enabled = ""
+        [module]
+        name = "app"
+        [dependencies.codec]
+        path = "../codec"
+        """)
+    assert length(module.configuration) == 2
+    assert get(module.configuration, 0).name == "enabled" && get(module.configuration, 0).value == ""
+    assert get(module.configuration, 1).name == "wire" && get(module.configuration, 1).value == "json"
+    let dependency = get(module.dependencies, 0)
+    assert dependency.name == "codec"
+    assert length(dependency.configuration) == 2
+    assert get(dependency.configuration, 0).name == "format.level" &&
+    get(dependency.configuration, 0).value == "two=2#literal"
+    assert get(dependency.configuration, 1).name == "wire" && get(dependency.configuration, 1).value == "cbor"
+    let other = parsed("""
+        [module]
+        name = "app"
+        [dependencies.codec]
+        path = "../codec"
+        [dependencies.codec.configuration]
+        'format.level' = 'two=2#literal'
+        wire = 'cbor'
+        """)
+    assert same_configuration(dependency.configuration, get(other.dependencies, 0).configuration)
+}
+
+test fn configuration_tables_reject_duplicate_names_and_unsupported_shapes() {
+    let cases = [
+        "[configuration]\nwire='a'\nwire='b'\n",
+        "[configuration]\nwire='a'\n\"wire\"='a'\n",
+        "[configuration]\nwire='a'\n[configuration]\nwire='a'\n",
+        "[configuration]\nwire=1\n",
+        "[configuration]\nwire=['a']\n",
+        "[configuration]\nformat.level='a'\n",
+        "[configuration]\n'bad name'='a'\n",
+        "[dependencies.codec.configuration]\nwire='a'\n",
+        "[dependencies.codec.configuration]\nwire='a'\n[dependencies.codec.configuration.extra]\nwire='a'\n",
+    ]
+    var index = 0
+    while index < length(cases) {
+        rejects(concat("[module]\nname='app'\n", get(cases, index)))
+        index = index + 1
+    }
+}
+
+test fn configuration_snapshots_detach_maps_and_keep_empty_distinct_from_absent() {
+    let source = [setting("wire", "json"), setting("enabled", "")]
+    let saved = settings(source)
+    set(source, 0, setting("wire", "cbor"))
+    assert get(saved, 1).value == "json"
+    assert same_configuration(saved, [setting("wire", "json"), setting("enabled", "")])
+    assert !same_configuration(saved, [setting("wire", "json")])
+    assert !same_configuration(saved, [setting("wire", "json"), setting("enabled", "false")])
+    assert match configuration_snapshot([setting("wire", "a"), setting("wire", "a")]) {
+        Result.Err(_) => true
+        _ => false
+    }
+}
+
+test fn configuration_identity_preserves_delimiters_unicode_and_empty_values() {
+    let first = [setting("mode", "雪\n1:x"), setting("empty", "")]
+    let second = [setting("empty", ""), setting("mode", "雪\n1:x")]
+    let a = match configuration_encoding(first) {
+        Result.Ok(value) => value,
+        Result.Err(_) => {
+            assert false
+            ""
+        }
+    }
+    assert match configuration_encoding(second) {
+        Result.Ok(value) => value == a,
+        Result.Err(_) => false
+    }
+    assert match configuration_encoding([setting("mode", "雪\n1:x")]) {
+        Result.Ok(value) => value != a,
+        Result.Err(_) => false
+    }
+    assert match configuration_encoding([setting("mode", "雪"), setting("empty", "\n1:x")]) {
+        Result.Ok(value) => value != a,
+        Result.Err(_) => false
+    }
+}
+
+test fn dependency_arguments_override_defaults_but_graph_requirements_must_agree() {
+    let defaults = [setting("wire", "json"), setting("level", "one")]
+    let selected = match module_configuration(defaults, [setting("wire", "cbor")]) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            assert false
+            []
+        }
+    }
+    assert same_configuration(selected, [setting("level", "one"), setting("wire", "cbor")])
+    assert get(defaults, 0).value == "json"
+    assert match configuration_requirements([setting("wire", "json")], [setting("wire", "json"), setting("level", "one")]) {
+        Result.Ok(value) => same_configuration(value, defaults)
+        Result.Err(_) => false
+    }
+    assert match configuration_requirements([setting("wire", "json")], [setting("wire", "cbor")]) {
+        Result.Err(_) => true
+        Result.Ok(_) => false
+    }
+}

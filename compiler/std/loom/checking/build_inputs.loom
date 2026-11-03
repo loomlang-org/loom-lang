@@ -7,6 +7,7 @@ import std.loom.project.input_snapshot
 import std.loom.project.BuildOption
 import std.loom.project.build_option_snapshot
 import std.loom.project.valid_build_option
+import std.loom.manifest.configuration_snapshot
 import std.loom.project.valid_target_property
 import std.loom.source.Span
 import std.bytes.decode_utf8
@@ -117,7 +118,8 @@ pub fn no_input_reader(request InputRequest) Result[InputFile, Text] {
 
 fn build_intrinsic(env Environment, owner Int) Bool {
     let item = symbol(env, owner)
-    if (item.name != "input_file" && item.name != "input_bytes" && item.name != "option_present" && item.name != "option_text" && item.name != "target") ||
+    if (item.name != "input_file" && item.name != "input_bytes" && item.name != "option_present" && item.name != "option_text" &&
+        item.name != "configuration_present" && item.name != "configuration_text" && item.name != "target") ||
     !has(item.node, NodeKind.Intrinsic) {
         return false
     }
@@ -131,7 +133,7 @@ fn build_call(context Context, node Node, owner Int, value StaticValue) Result[E
     if name == "input_file" || name == "input_bytes" {
         return input_call(context, node, value, name == "input_bytes")
     }
-    let ty = if name == "option_present" {
+    let ty = if name == "option_present" || name == "configuration_present" {
         2
     } else {
         3
@@ -150,6 +152,33 @@ fn build_call(context Context, node Node, owner Int, value StaticValue) Result[E
     }
     if !valid_build_option(value.text) {
         return Result.Err(error(context, node, "invalid build option name"))
+    }
+    if name == "configuration_present" || name == "configuration_text" {
+        let file = get(context.env.source.files, symbol(context.env, context.signature.symbol).file)
+        let package = get(context.env.source.packages, file.package)
+        let module = get(context.env.source.modules, package.instance)
+        let configuration = match configuration_snapshot(module.configuration) {
+            Result.Ok(values) => values
+            Result.Err(message) => {
+                return Result.Err(error(context, node, message))
+            }
+        }
+        var selected = 0
+        while selected < length(configuration) && get(configuration, selected).name != value.text {
+            selected = selected + 1
+        }
+        let present = selected < length(configuration)
+        if ty == 2 {
+            return Result.Ok(expression(ExprKind.Bool, 2, node, if present {
+                        "true"
+                    } else {
+                        "false"
+                    }, -1, new[Expr](), true))
+        }
+        if !present {
+            return Result.Err(error(context, node, "module configuration has no supplied value"))
+        }
+        return Result.Ok(expression(ExprKind.Text, 3, node, get(configuration, selected).value, -1, new[Expr](), true))
     }
     let options = get(context.env.inputs, 0).build.options
     var index = 0
@@ -185,7 +214,11 @@ fn input_expression(context Context, node Node, file InputFile, binary Bool) Res
 
 fn input_call(context Context, node Node, value StaticValue, binary Bool) Result[Expr, Failure] {
     if !value.known {
-        return Result.Ok(expression(ExprKind.Deferred, if binary { 4 } else { 3 }, node, "", -1, new[Expr](), true))
+        return Result.Ok(expression(ExprKind.Deferred, if binary {
+                    4
+                } else {
+                    3
+                }, node, "", -1, new[Expr](), true))
     }
     let source = get(context.env.source.files, symbol(context.env, context.signature.symbol).file)
     let package = get(context.env.source.packages, source.package)

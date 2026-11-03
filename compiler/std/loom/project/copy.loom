@@ -2,13 +2,18 @@ import std.list.new
 import std.list.get
 import std.list.push
 import std.list.length
+import std.list.clone
 import std.loom.ast.snapshot
 
 pub fn snapshot(project Project) Project {
     let modules = new[ModuleInstance](length(project.modules))
     var index = 0
     while index < length(project.modules) {
-        push(modules, get(project.modules, index))
+        let module = get(project.modules, index)
+        push(modules, ModuleInstance {
+                configuration = std.list.clone(module.configuration)
+                ..module
+            })
         index = index + 1
     }
     let packages = new[Package](length(project.packages))

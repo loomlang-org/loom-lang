@@ -45,8 +45,15 @@ fn dependency_module_review(standard Text, before Text, after Text) Result[Depen
 }
 
 fn dependency_source_line(source DependencySource) Text {
+    var configuration = ""
+    var index = 0
+    while index < length(source.module.configuration) {
+        let value = get(source.module.configuration, index)
+        configuration = concat(configuration, concat(" ", concat(value.name, concat("=", git_quote_path(value.value)))))
+        index = index + 1
+    }
     concat(source.module.name, concat(" ", concat(source.module.source,
-                concat(" ", concat(source.path, concat(" sha256:", source.digest))))))
+                concat(configuration, concat(" ", concat(source.path, concat(" sha256:", source.digest)))))))
 }
 
 fn preview_dependencies(standard Text, before Text, after Text) Result[Text, Text] {

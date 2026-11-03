@@ -96,13 +96,20 @@ fn count(line Text, label Text) Result[Int, Text] {
     Result.Ok(parsed)
 }
 
-fn module_line(line Text) Result[Bool, Text] {
+fn module_line(line Text, configured Bool) Result[Bool, Text] {
     let fields = split(line, " ")
-    if std.list.length(fields) != 3 || get(fields, 0) != "module" {
+    if std.list.length(fields) != if configured {
+        4
+    } else {
+        3
+    } || get(fields, 0) != "module" {
         return Result.Err("invalid build receipt module")
     }
     if decoded_hex(get(fields, 1))? == "" || decoded_hex(get(fields, 2))? == "" {
         return Result.Err("invalid build receipt module")
+    }
+    if configured && !digest_text(get(fields, 3)) {
+        return Result.Err("invalid build receipt module configuration")
     }
     Result.Ok(true)
 }
@@ -133,13 +140,15 @@ fn input_line(line Text) Result[Bool, Text] {
     }
     var index = 1
     while index < 5 {
-        if decoded_hex(get(fields, index))? == "" { return Result.Err("invalid build receipt input") }
+        if decoded_hex(get(fields, index))? == "" {
+            return Result.Err("invalid build receipt input")
+        }
         index = index + 1
     }
     Result.Ok(true)
 }
 
-// The receipt must be exactly the compiler's v3 line protocol. It is checked
+// Accept the compiler's v3 and configuration-bound v4 line protocols. Check
 // against the artifact currently at its canonical path; source files need not
 // still exist because deployment may use an immutable earlier build.
 pub fn read_build_receipt(path Text) Result[BuildReceipt, Text] {
@@ -159,7 +168,11 @@ pub fn read_build_receipt(path Text) Result[BuildReceipt, Text] {
         }
     }
     let lines = split(raw, "\n")
-    if std.list.length(lines) < 13 || get(lines, 0) != "loom-build-receipt 3" {
+    if std.list.length(lines) < 13 {
+        return Result.Err("invalid build receipt version")
+    }
+    let configured = get(lines, 0) == "loom-build-receipt 4"
+    if !configured && get(lines, 0) != "loom-build-receipt 3" {
         return Result.Err("invalid build receipt version")
     }
     let checked = value(get(lines, 1), "checked-sha256")?
@@ -170,14 +183,16 @@ pub fn read_build_receipt(path Text) Result[BuildReceipt, Text] {
         return Result.Err("invalid build receipt identity")
     }
     let modules = count(get(lines, 5), "module-count")?
-    if modules == 0 { return Result.Err("empty build receipt modules") }
+    if modules == 0 {
+        return Result.Err("empty build receipt modules")
+    }
     var position = 6
     var index = 0
     while index < modules {
         if position >= std.list.length(lines) {
             return Result.Err("truncated build receipt")
         }
-        discard module_line(get(lines, position))?
+        discard module_line(get(lines, position), configured)?
         position = position + 1
         index = index + 1
     }
@@ -185,7 +200,9 @@ pub fn read_build_receipt(path Text) Result[BuildReceipt, Text] {
         return Result.Err("truncated build receipt")
     }
     let sources = count(get(lines, position), "source-count")?
-    if sources == 0 { return Result.Err("empty build receipt sources") }
+    if sources == 0 {
+        return Result.Err("empty build receipt sources")
+    }
     position = position + 1
     index = 0
     while index < sources {
@@ -196,32 +213,44 @@ pub fn read_build_receipt(path Text) Result[BuildReceipt, Text] {
         position = position + 1
         index = index + 1
     }
-    if position >= std.list.length(lines) { return Result.Err("truncated build receipt") }
+    if position >= std.list.length(lines) {
+        return Result.Err("truncated build receipt")
+    }
     let inputs = count(get(lines, position), "input-count")?
     position = position + 1
     index = 0
     while index < inputs {
-        if position >= std.list.length(lines) { return Result.Err("truncated build receipt") }
+        if position >= std.list.length(lines) {
+            return Result.Err("truncated build receipt")
+        }
         discard input_line(get(lines, position))?
         position = position + 1
         index = index + 1
     }
-    if position >= std.list.length(lines) { return Result.Err("truncated build receipt") }
+    if position >= std.list.length(lines) {
+        return Result.Err("truncated build receipt")
+    }
     let options = count(get(lines, position), "option-count")?
     position = position + 1
     let names = std.list.new[Text]()
     index = 0
     while index < options {
-        if position >= std.list.length(lines) { return Result.Err("truncated build receipt") }
+        if position >= std.list.length(lines) {
+            return Result.Err("truncated build receipt")
+        }
         let fields = split(get(lines, position), " ")
         if std.list.length(fields) != 3 || get(fields, 0) != "option" || !digest_text(get(fields, 2)) {
             return Result.Err("invalid build receipt option")
         }
         let name = decoded_hex(get(fields, 1))?
-        if name == "" { return Result.Err("invalid build receipt option") }
+        if name == "" {
+            return Result.Err("invalid build receipt option")
+        }
         var earlier = 0
         while earlier < std.list.length(names) {
-            if get(names, earlier) == name { return Result.Err("duplicate build receipt option") }
+            if get(names, earlier) == name {
+                return Result.Err("duplicate build receipt option")
+            }
             earlier = earlier + 1
         }
         std.list.push(names, name)

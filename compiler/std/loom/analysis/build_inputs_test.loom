@@ -59,7 +59,7 @@ test fn analysis_detaches_build_snapshots_and_freshness_checks_their_contents() 
             discard message
         }
         """)
-    push(project.modules, ModuleInstance {
+    push(project.modules, ModuleInstance { configuration = []
             name = "std"
             source = "/std"
         })

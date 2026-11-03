@@ -1,0 +1,5 @@
+import codec.encode
+
+pub fn row(value Text) Text {
+    encode(value).wire
+}

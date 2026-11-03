@@ -1,6 +1,6 @@
 fn qualified_project(body Text) Project {
     let project = input(concat("import helper.util.decode\nimport helper.util.Token\nimport helper.util.Show\n", body))
-    push(project.modules, ModuleInstance {
+    push(project.modules, ModuleInstance { configuration = []
             name = "helper"
             source = "/helper"
         })
@@ -23,7 +23,7 @@ fn qualified_project(body Text) Project {
             trusted_std = false
         })
     // The same display name in another source instance is not this import.
-    push(project.modules, ModuleInstance {
+    push(project.modules, ModuleInstance { configuration = []
             name = "helper"
             source = "/fork"
         })
@@ -144,7 +144,7 @@ test fn qualified_paths_do_not_override_value_or_type_parameter_bindings() {
         Option.Some(_) => false
     }
     let self_source = input("record Token {}\nconcept C { fn demo(self Self, value Self.To) }")
-    set(self_source.modules, 0, ModuleInstance {
+    set(self_source.modules, 0, ModuleInstance { configuration = []
             name = "Self"
             source = "/Self"
         })

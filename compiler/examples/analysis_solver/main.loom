@@ -29,6 +29,8 @@ fn accepts(source Text, inputs BuildInputs) Bool {
                 trusted_std = false
             }]
         modules = [ModuleInstance {
+                configuration = []
+
                 name = "sample"
                 source = "/virtual/sample"
             }]

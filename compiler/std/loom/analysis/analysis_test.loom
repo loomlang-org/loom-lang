@@ -1,4 +1,5 @@
 import std.loom.parser.parse
+import std.loom.manifest.ConfigurationValue
 import std.loom.source.Span
 import std.loom.ast.NodeKind
 import std.loom.typed.ExprKind
@@ -22,7 +23,7 @@ fn input(text Text) Project {
     push(files, SourceFile { package = 0 path = "main.loom" text = text tree = tree
         test_only = false trusted_std = false })
     let modules = new[ModuleInstance]()
-    push(modules, ModuleInstance { name = "app" source = "/app" })
+    push(modules, ModuleInstance { configuration = [] name = "app" source = "/app" })
     let packages = new[Package]()
     push(packages, Package { instance = 0 relative = "" imports = new[PackageImport]() })
     Project { files = files modules = modules packages = packages root = 0 }
@@ -165,7 +166,7 @@ test fn snapshots_detect_metadata_text_and_nested_ast_edits() {
 
 test fn snapshots_track_module_origins_packages_and_import_edges() {
     let project = input("import helper.number\nfn main() { assert number() == 3 }")
-    push(project.modules, ModuleInstance { name = "helper" source = "/helper" })
+    push(project.modules, ModuleInstance { configuration = [] name = "helper" source = "/helper" })
     push(project.packages, Package { instance = 1 relative = "" imports = new[PackageImport]() })
     let imports = get(project.packages, 0).imports
     push(imports, PackageImport { spelling = "helper" target = 1 })
@@ -181,13 +182,24 @@ test fn snapshots_track_module_origins_packages_and_import_edges() {
     assert is_current(analysis, project, false)
 
     let module = get(project.modules, 1)
-    set(project.modules, 1, ModuleInstance { name = module.name source = "/other-helper" })
+    set(project.modules, 1, ModuleInstance { configuration = [] name = module.name source = "/other-helper" })
     assert !is_current(analysis, project, false)
     assert get(analysis.bindings.modules, 1).source == "/helper"
-    set(project.modules, 1, ModuleInstance { name = "renamed" source = module.source })
+    set(project.modules, 1, ModuleInstance { configuration = [] name = "renamed" source = module.source })
     assert !is_current(analysis, project, false)
     set(project.modules, 1, module)
     assert is_current(analysis, project, false)
+
+    let configuration = [std.loom.manifest.ConfigurationValue { name = "mode" value = "first" }]
+    set(project.modules, 1, ModuleInstance { configuration = configuration, ..module })
+    assert !is_current(analysis, project, false)
+    let configured = accepted(project)
+    set(configuration, 0, std.loom.manifest.ConfigurationValue { name = "mode" value = "second" })
+    assert !is_current(configured, project, false)
+    assert get(get(configured.bindings.modules, 1).configuration, 0).value == "first"
+    set(configuration, 0, std.loom.manifest.ConfigurationValue { name = "mode" value = "first" })
+    assert is_current(configured, project, false)
+    set(project.modules, 1, module)
 
     let package = get(project.packages, 1)
     set(project.packages, 1, Package { instance = 0 relative = package.relative imports = package.imports })

@@ -1,4 +1,5 @@
 import std.list.set
+import std.loom.manifest.same_configuration
 
 record DependencyPackage {
     module ModuleInstance
@@ -28,6 +29,7 @@ fn dependency_package(graph PackageComponents, project Project, id Int) Result[I
     while index < length(graph.packages) {
         let previous = get(graph.packages, index)
         if previous.module.name == module.name && previous.module.source == module.source &&
+        same_configuration(previous.module.configuration, module.configuration) &&
         previous.relative == package.relative {
             return Result.Ok(index)
         }

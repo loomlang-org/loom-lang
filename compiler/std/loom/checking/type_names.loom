@@ -11,6 +11,9 @@ import std.list.new
 import std.list.push
 import std.text.concat
 import std.int.to_text
+import std.loom.manifest.configuration_encoding
+import std.hash.sha256.hex
+import std.text.to_bytes
 
 fn qualified_type_name(bindings std.loom.binding.Program, file Int, name Text) Text {
     let package = get(bindings.files, file).package
@@ -21,7 +24,15 @@ fn qualified_type_name(bindings std.loom.binding.Program, file Int, name Text) T
     while index < length(bindings.modules) {
         if index != instance && get(bindings.modules, index).name == module.name {
             // Project loading records the canonical local source root, not a remote URL.
-            return concat(label, concat(" (from ", concat(module.source, ")")))
+            var origin = module.source
+            if length(module.configuration) > 0 {
+                let configuration = match configuration_encoding(module.configuration) {
+                    Result.Ok(value) => hex(to_bytes(value)),
+                    Result.Err(_) => "invalid"
+                }
+                origin = concat(origin, concat("; configuration sha256:", configuration))
+            }
+            return concat(label, concat(" (from ", concat(origin, ")")))
         }
         index = index + 1
     }

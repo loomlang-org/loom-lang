@@ -1,0 +1,105 @@
+import std.file.write_bytes
+import std.file.write_text
+import std.fs.create_dir
+import std.fs.remove_file
+import std.fs.remove_empty_dir
+import std.text.to_bytes
+import std.text.join
+import std.encoding.hex.encode
+import std.loom.manifest.configuration_encoding
+import std.loom.manifest.ConfigurationValue
+
+fn receipt_fixture_text(artifact Text, configured Bool, configuration Text, artifact_hash Text) Text {
+    let identity = hex(to_bytes("checked fixture"))
+    join([if configured {
+                "loom-build-receipt 4"
+            } else {
+                "loom-build-receipt 3"
+            },
+            concat("checked-sha256 ", identity), concat("artifact-sha256 ", artifact_hash),
+            concat("backend-identity ", identity), concat("artifact-path ", encode(to_bytes(artifact))),
+            "module-count 1", concat("module 617070 2f617070", if configured {
+                    concat(" ", configuration)
+                } else {
+                    ""
+                }),
+            "source-count 1", concat("source 0 6d61696e2e6c6f6f6d ", identity),
+            "input-count 0", "option-count 0", "end", ""], "\n")
+}
+
+fn receipt_fixture(configuration Text) Result[Bool, Text] {
+    var index = 0
+    var directory = ""
+    while directory == "" {
+        let candidate = concat("tools/deployment/target/receipt-configuration-", to_text(index))
+        match create_dir(candidate) {
+            Result.Ok(_) => {
+                directory = candidate
+            }
+            Result.Err(_) => {
+                index = index + 1
+                if index > 1024 {
+                    return Result.Err("cannot create receipt fixture")
+                }
+            }
+        }
+    }
+    let artifact = concat(directory, "/artifact")
+    let receipt = concat(directory, "/build.receipt")
+    defer {
+        discard remove_file(receipt)
+        discard remove_file(artifact)
+        discard remove_empty_dir(directory)
+    }
+    let bytes = to_bytes("actual artifact bytes")
+    match write_bytes(artifact, bytes) {
+        Result.Ok(_) => {
+        }
+        Result.Err(_) => {
+            return Result.Err("cannot write receipt fixture artifact")
+        }
+    }
+    let canonical = match canonicalize(artifact) {
+        Result.Ok(value) => value,
+        Result.Err(_) => {
+            return Result.Err("cannot canonicalize receipt fixture artifact")
+        }
+    }
+    let first = receipt_fixture_text(canonical, true, configuration, hex(bytes))
+    discard write_text(receipt, first)
+    let bound = read_build_receipt(receipt)?
+    assert bound.artifact == hex(bytes) && bound.receipt == hex(to_bytes(first))
+    let legacy = receipt_fixture_text(canonical, false, "", hex(bytes))
+    discard write_text(receipt, legacy)
+    let prior = read_build_receipt(receipt)?
+    assert prior.artifact == bound.artifact && prior.checked == bound.checked && prior.receipt != bound.receipt
+    discard write_text(receipt, receipt_fixture_text(canonical, true, "invalid", hex(bytes)))
+    assert match read_build_receipt(receipt) {
+        Result.Err(_) => true,
+        Result.Ok(_) => false
+    }
+    discard write_text(receipt, first)
+    discard write_bytes(artifact, to_bytes("changed artifact"))
+    assert match read_build_receipt(receipt) {
+        Result.Err(_) => true,
+        Result.Ok(_) => false
+    }
+    Result.Ok(true)
+}
+
+test fn configuration_bound_receipts_and_legacy_artifacts_are_strictly_verified() {
+    let encoded = match configuration_encoding([ConfigurationValue {
+                name = "mode"
+                value = "search"
+            }]) {
+        Result.Ok(value) => value,
+        Result.Err(_) => {
+            assert false
+            return
+        }
+    }
+    assert match receipt_fixture(hex(to_bytes(encoded))) {
+        Result.Ok(value) => value,
+        Result.Err(_) => false
+    }
+}

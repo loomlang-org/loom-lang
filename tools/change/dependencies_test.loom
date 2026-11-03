@@ -66,6 +66,21 @@ fn dependency_trial_lifecycle(staging Text) Result[Text, Text] {
     assert contains(summary, "not behavioral compatibility")
     assert contains(summary, "sha256:")
     assert contains(summary, "changed binding observations:")
+    // Identical dependency files can still select different module instances.
+    let configured = "[module]\nname='sample'\n[dependencies.library]\npath='../library'\n[dependencies.library.configuration]\nmode='MODE'\n"
+    discard std.file.write_text(path(before, "loom.toml"), replace(configured, "MODE", "search"))
+    discard std.file.write_text(path(after, "loom.toml"), replace(configured, "MODE", "export"))
+    let configuration = dependency_module_review("compiler/std", before, after)?
+    assert length(configuration.bindings) > 0
+    index = 0
+    while index < length(configuration.bindings) {
+        let change = get(configuration.bindings, index)
+        assert change.before.source.path == change.after.source.path
+        assert change.before.source.digest == change.after.source.digest
+        index = index + 1
+    }
+    let configured_summary = preview_dependencies("compiler/std", before, after)?
+    assert contains(configured_summary, "mode=\"search\"") && contains(configured_summary, "mode=\"export\"")
     let file = path(after, "main.loom")
     discard std.file.write_text(file, replace(text_at(file), "amount() > 0", "amount() > 1"))
     assert match dependency_module_review("compiler/std", before, after) {

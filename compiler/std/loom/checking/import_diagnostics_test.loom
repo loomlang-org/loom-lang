@@ -111,11 +111,11 @@ test fn import_diagnostics_use_package_edges_instead_of_coalescing_fork_names() 
         push(files, source_file("left.api", "pub fn seed() {}\npub fn count(values List[Int]) Int { 1 }", false))
         push(files, source_file("right.api", "pub fn seed() {}", false))
         let project = fixture_project(files)
-        set(project.modules, 1, ModuleInstance {
+        set(project.modules, 1, ModuleInstance { configuration = []
                 name = "same"
                 source = "memory:left"
             })
-        set(project.modules, 2, ModuleInstance {
+        set(project.modules, 2, ModuleInstance { configuration = []
                 name = "same"
                 source = "memory:right"
             })

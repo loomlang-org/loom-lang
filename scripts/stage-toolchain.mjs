@@ -107,6 +107,15 @@ try {
     throw new Error("relocated native file tool produced the wrong result");
   }
   run(loom, ["test", join(prefix, "lib/loom/std/net/tls")], app, environment);
+  const configured = join(temporary, "configured applications");
+  copyTree(join(root, "compiler/examples/module_configuration"), configured);
+  const configuredApp = join(configured, "app");
+  const configuredArtifact = join(configuredApp, `configured${suffix}`);
+  run(loom, ["build", "--output", configuredArtifact], configuredApp, environment);
+  run(configuredArtifact, [], configuredApp, { ...environment, LOOM_GC_STRESS: "1" });
+  if (run(loom, ["test"], configuredApp, environment) !== "1 tests passed\n") {
+    throw new Error("relocated module configuration lost its defining instance");
+  }
   const change = verifyChangeCommand(loom, join(root, "tools/change/fixtures"),
     join(temporary, "semantic change"), environment);
   // Check/editor use needs only the frontend and std, not a working LLVM bridge.
@@ -116,6 +125,7 @@ try {
     throw new Error("semantic change required the disabled native backend");
   }
   run(loom, ["check"], app, environment);
+  run(loom, ["check"], configuredApp, environment);
   const proofs = join(temporary, "proofs");
   copyTree(join(root, "compiler/examples/smt_contracts"), proofs);
   run(loom, ["check", proofs], app, environment);

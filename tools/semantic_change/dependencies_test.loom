@@ -1,3 +1,5 @@
+import std.loom.manifest.ConfigurationValue
+
 fn dependency_fixture(origin Text, api Text, tests Bool, reordered Bool) Project {
     let owner = if reordered {
         1
@@ -12,11 +14,11 @@ fn dependency_fixture(origin Text, api Text, tests Bool, reordered Bool) Project
     }
     let child = 1
     let library = 2 - root
-    let own_module = ModuleInstance {
+    let own_module = ModuleInstance { configuration = []
         name = "sample"
         source = "/module"
     }
-    let dependency_module = ModuleInstance {
+    let dependency_module = ModuleInstance { configuration = []
         name = "library"
         source = origin
     }
@@ -107,6 +109,36 @@ fn dependency_api() Text {
             1
         }
         """
+}
+
+fn dependency_configured_fixture(values List[ConfigurationValue], tests Bool, reordered Bool) Project {
+    let project = dependency_fixture("/cache/library", dependency_api(), tests, reordered)
+    let owner = if reordered { 0 } else { 1 }
+    set(project.modules, owner, ModuleInstance { configuration = values, ..get(project.modules, owner) })
+    project
+}
+
+test fn dependency_review_reports_configuration_changes_with_identical_source_bytes() {
+    let first = [ConfigurationValue { name = "mode" value = "search" }, ConfigurationValue { name = "empty" value = "" }]
+    let same = [ConfigurationValue { name = "empty" value = "" }, ConfigurationValue { name = "mode" value = "search" }]
+    let different = [ConfigurationValue { name = "mode" value = "export" }, ConfigurationValue { name = "empty" value = "" }]
+    let before = dependency_configured_fixture(first, false, false)
+    let before_tests = dependency_configured_fixture(first, true, false)
+    let normalized = dependency_checked_review(before, before_tests,
+        dependency_configured_fixture(same, false, true), dependency_configured_fixture(same, true, true))
+    assert length(normalized.bindings) == 0
+    let changed = dependency_checked_review(before, before_tests,
+        dependency_configured_fixture(different, false, true), dependency_configured_fixture(different, true, true))
+    assert length(changed.bindings) > 0
+    var index = 0
+    while index < length(changed.bindings) {
+        let change = get(changed.bindings, index)
+        assert change.before.source.path == change.after.source.path
+        assert change.before.source.digest == change.after.source.digest
+        assert same_configuration(change.before.source.module.configuration, first)
+        assert same_configuration(change.after.source.module.configuration, different)
+        index = index + 1
+    }
 }
 
 fn dependency_checked_review(before Project, before_tests Project,

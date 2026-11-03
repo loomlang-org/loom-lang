@@ -42,7 +42,7 @@ fn fixture_package(modules List[ModuleInstance], packages List[Package], spellin
     let relative = if dot == length(spelling) { "" } else { slice(spelling, dot + 1, length(spelling)) }
     var owner = 0
     while owner < length(modules) && get(modules, owner).name != name { owner = owner + 1 }
-    if owner == length(modules) { push(modules, ModuleInstance { name = name source = concat("/", name) }) }
+    if owner == length(modules) { push(modules, ModuleInstance { configuration = [] name = name source = concat("/", name) }) }
     var index = 0
     while index < length(packages) {
         let current = get(packages, index)
@@ -176,11 +176,11 @@ test fn same_name_module_instances_keep_imports_privacy_and_tests_separate() {
     push(inputs, source("seed", "seed-v1/main.loom", "pub record Token {}\npub fn value() Int { 42 }\nfn secret() {}\ntest fn dependency_test() {}", false, false))
     push(inputs, source("seed", "seed-v2/main.loom", "pub record Token {}\npub fn value() Int { 99 }\nfn secret() {}\ntest fn dependency_test() {}", false, false))
     let modules = new[ModuleInstance]()
-    push(modules, ModuleInstance { name = "app" source = "/app" })
-    push(modules, ModuleInstance { name = "left" source = "/left" })
-    push(modules, ModuleInstance { name = "right" source = "/right" })
-    push(modules, ModuleInstance { name = "seed" source = "/seed-v1" })
-    push(modules, ModuleInstance { name = "seed" source = "/seed-v2" })
+    push(modules, ModuleInstance { configuration = [] name = "app" source = "/app" })
+    push(modules, ModuleInstance { configuration = [] name = "left" source = "/left" })
+    push(modules, ModuleInstance { configuration = [] name = "right" source = "/right" })
+    push(modules, ModuleInstance { configuration = [] name = "seed" source = "/seed-v1" })
+    push(modules, ModuleInstance { configuration = [] name = "seed" source = "/seed-v2" })
     let packages = new[Package]()
     let files = new[SourceFile]()
     var index = 0

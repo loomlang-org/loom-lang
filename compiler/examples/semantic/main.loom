@@ -56,6 +56,8 @@ fn inspect() Result[Text, Text] {
         })
     let modules = new[ModuleInstance]()
     push(modules, ModuleInstance {
+            configuration = []
+
             name = "app"
             source = "memory:app"
         })

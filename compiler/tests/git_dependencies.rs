@@ -1222,3 +1222,128 @@ fn authenticated_semver_discovery_is_scoped_and_redacts_untrusted_advertisements
     );
     assert_eq!(fs::read(app.join("loom.lock")).unwrap(), lock);
 }
+
+#[test]
+fn configured_git_instances_lock_effective_values_and_reject_stale_edges_offline() {
+    let fixture = Fixture::new();
+    let root = fixture.root();
+    write(
+        root,
+        "remote/loom.toml",
+        "[module]\nname='codec'\nversion='1.0.0'\n[configuration]\nmode='default'\nempty=''\n",
+    );
+    write(
+        root,
+        "remote/main.loom",
+        r#"import std.build.configuration_text
+pub record Message { value Int }
+pub fn make() Message { Message { value = 42 } }
+pub fn consume(value Message) Int { value.value }
+pub fn mode() Text { configuration_text("mode") }
+"#,
+    );
+    fixture.git(&["-C", "remote", "add", "."]);
+    fixture.git(&[
+        "-C",
+        "remote",
+        "commit",
+        "--quiet",
+        "-m",
+        "configured codec",
+    ]);
+    fixture.git(&["-C", "remote", "tag", "v1.0.0"]);
+    write(
+        root,
+        "app/loom.toml",
+        "[module]\nname='app'\n[dependencies.search]\npath='../search'\n[dependencies.export]\npath='../export'\n",
+    );
+    let app = "import search.mode\nimport search.make\nimport export.mode\nimport export.consume\nimport std.io.write_text\nfn main() { discard write_text(search.mode())\ndiscard write_text(\"|\")\ndiscard write_text(export.mode()) }\n";
+    write(root, "app/main.loom", app);
+    let importer = |name: &str, mode: &str, explicit_empty: bool| {
+        write(
+            root,
+            &format!("{name}/loom.toml"),
+            format!(
+                "[module]\nname='{name}'\n[dependencies.codec]\ngit='{URL}'\nversion='^1'\n[dependencies.codec.configuration]\nmode='{mode}'\n{}",
+                if explicit_empty { "empty=''\n" } else { "" }
+            ),
+        );
+    };
+    for (name, mode) in [("search", "search"), ("export", "export")] {
+        importer(name, mode, true);
+        write(
+            root,
+            &format!("{name}/main.loom"),
+            "import codec.mode\nimport codec.Message\nimport codec.make\nimport codec.consume\npub fn mode() Text { codec.mode() }\npub fn make() Message { codec.make() }\npub fn consume(value Message) Int { codec.consume(value) }\n",
+        );
+    }
+    let package = root.join("app");
+    let resolved = fixture.resolve(&package, false);
+    success(&resolved);
+    assert_eq!(
+        resolved.stdout,
+        b"resolved 2 Git edges into 2 source instances; 2 changed edges\n"
+    );
+    let lock_path = package.join("loom.lock");
+    let initial_lock = fs::read_to_string(&lock_path).unwrap();
+    assert!(initial_lock.starts_with("loom-lock 4\n"));
+    let entries: Vec<_> = initial_lock
+        .lines()
+        .skip(1)
+        .map(|line| line.split('\t').collect::<Vec<_>>())
+        .collect();
+    assert_eq!(entries.len(), 2);
+    assert!(entries.iter().all(|fields| fields.len() == 9));
+    assert_eq!(entries[0][3], entries[1][3]);
+    assert_eq!(entries[0][4], entries[1][4]);
+    assert_ne!(entries[0][8], entries[1][8]);
+    write(root, "offline", "no Git calls permitted");
+    let calls = fixture.log();
+    let run = fixture.command("run", &package).output().unwrap();
+    success(&run);
+    assert_eq!(run.stdout, b"search|export");
+    assert_eq!(fixture.log(), calls);
+
+    // Same source bytes and version are insufficient to reuse another configuration.
+    importer("export", "search", false);
+    let stale = fixture.command("check", &package).output().unwrap();
+    assert_eq!(stale.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&stale.stderr).contains("loom resolve"));
+    assert_eq!(fs::read_to_string(&lock_path).unwrap(), initial_lock);
+    assert_eq!(fixture.log(), calls);
+    fs::remove_file(root.join("offline")).unwrap();
+    let shared = fixture.resolve(&package, false);
+    success(&shared);
+    assert_eq!(
+        shared.stdout,
+        b"resolved 2 Git edges into 1 source instances; 1 changed edges\n"
+    );
+    write(root, "offline", "the shared instance is locked");
+    // Defaults and explicit arguments normalize to the same nominal instance.
+    write(
+        root,
+        "app/main.loom",
+        app.replace("fn main() {", "fn main() { assert consume(make()) == 42\n"),
+    );
+    let run = fixture.command("run", &package).output().unwrap();
+    success(&run);
+    assert_eq!(run.stdout, b"search|search");
+    let shared_lock = fs::read_to_string(&lock_path).unwrap();
+    let calls = fixture.log();
+    // The importing module's own configuration also belongs to the lock owner.
+    let manifest = fs::read_to_string(root.join("search/loom.toml")).unwrap();
+    write(
+        root,
+        "search/loom.toml",
+        format!("{manifest}[configuration]\nchannel='new'\n"),
+    );
+    let stale_owner = fixture.command("check", &package).output().unwrap();
+    assert_eq!(stale_owner.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&stale_owner.stderr).contains("loom resolve"));
+    assert_eq!(fs::read_to_string(&lock_path).unwrap(), shared_lock);
+    assert_eq!(fixture.log(), calls);
+    fs::remove_file(root.join("offline")).unwrap();
+    success(&fixture.resolve(&package, false));
+    write(root, "offline", "repaired owner is locked");
+    success(&fixture.command("run", &package).output().unwrap());
+}

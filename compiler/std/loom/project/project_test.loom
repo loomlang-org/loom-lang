@@ -266,7 +266,7 @@ test fn production_cycles_still_reject_before_loading_files() {
         failures = new[LoadFailure]()
         parse_file = file_tree
     }
-    push(loader.modules, ModuleRoot {
+    push(loader.modules, ModuleRoot { configuration = []
             name = "app"
             version = ""
             base = "/app"
@@ -312,19 +312,19 @@ test fn module_roots_reuse_identity_independently_of_display_names() {
         failures = new[LoadFailure]()
         parse_file = file_tree
     }
-    let standard = ModuleRoot {
+    let standard = ModuleRoot { configuration = []
         name = "std"
         version = ""
         base = "/std"
         dependencies = new[Dependency]()
     }
-    let app = ModuleRoot {
+    let app = ModuleRoot { configuration = []
         name = "app"
         version = ""
         base = "/app"
         dependencies = new[Dependency]()
     }
-    let codec = ModuleRoot {
+    let codec = ModuleRoot { configuration = []
         name = "codec"
         version = ""
         base = "/codec"
@@ -347,7 +347,7 @@ test fn module_roots_reuse_identity_independently_of_display_names() {
         Result.Err(_) => false
     }
     assert length(loader.modules) == 3
-    assert match register_module(loader, ModuleRoot {
+    assert match register_module(loader, ModuleRoot { configuration = []
             name = "codec"
             version = ""
             base = "/fork"
@@ -356,7 +356,7 @@ test fn module_roots_reuse_identity_independently_of_display_names() {
         Result.Ok(index) => index == 3,
         Result.Err(_) => false
     }
-    assert match register_module(loader, ModuleRoot {
+    assert match register_module(loader, ModuleRoot { configuration = []
             name = "renamed"
             version = ""
             base = "/codec"
@@ -393,4 +393,37 @@ test fn module_roots_reuse_identity_independently_of_display_names() {
     }
     push(loader.active, first)
     assert !package_seen(loader.active, second, 1)
+    let configured = ModuleRoot {
+        configuration = [ConfigurationValue { name = "mode" value = "search" }, ConfigurationValue { name = "empty" value = "" }]
+        ..codec
+    }
+    assert match register_module(loader, configured) {
+        Result.Ok(index) => index == 4,
+        Result.Err(_) => false
+    }
+    assert match register_module(loader, ModuleRoot {
+        configuration = [ConfigurationValue { name = "empty" value = "" }, ConfigurationValue { name = "mode" value = "search" }]
+        ..codec
+    }) {
+        Result.Ok(index) => index == 4,
+        Result.Err(_) => false
+    }
+    assert match register_module(loader, ModuleRoot {
+        configuration = [ConfigurationValue { name = "mode" value = "export" }, ConfigurationValue { name = "empty" value = "" }]
+        ..codec
+    }) {
+        Result.Ok(index) => index == 5,
+        Result.Err(_) => false
+    }
+    let configured_package = match registered_package(loader, 4, "/codec/parser") {
+        Result.Ok(index) => index,
+        Result.Err(_) => -1
+    }
+    assert configured_package >= 0 && configured_package != first && length(loader.modules) == 6
+    let published = loaded_project(loader, first)
+    let detached = snapshot(published)
+    set(configured.configuration, 0, ConfigurationValue { name = "mode" value = "changed" })
+    assert get(get(published.modules, 4).configuration, 0).value == "search"
+    set(get(published.modules, 4).configuration, 0, ConfigurationValue { name = "mode" value = "edited" })
+    assert get(get(detached.modules, 4).configuration, 0).value == "search"
 }

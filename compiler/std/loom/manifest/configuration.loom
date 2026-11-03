@@ -1,0 +1,163 @@
+import std.list.new
+import std.list.get
+import std.list.set
+import std.list.push
+import std.list.length
+import std.text.byte
+import std.text.length
+import std.text.contains
+import std.text.concat
+import std.int.to_text
+import std.result.Result
+
+// Module configuration is distinct from application-wide build options.
+pub record ConfigurationValue {
+    name Text
+    value Text
+}
+
+pub fn valid_configuration_name(name Text) Bool {
+    if length(name) == 0 {
+        return false
+    }
+    var index = 0
+    while index < length(name) {
+        let char = byte(name, index)
+        let letter = (char >= 65 && char <= 90) || (char >= 97 && char <= 122) || char == 95
+        if !letter && !(index > 0 && ((char >= 48 && char <= 57) || char == 45 || char == 46)) {
+            return false
+        }
+        index = index + 1
+    }
+    true
+}
+
+fn configuration_before(first Text, second Text) Bool {
+    var index = 0
+    while index < length(first) && index < length(second) {
+        if byte(first, index) != byte(second, index) {
+            return byte(first, index) < byte(second, index)
+        }
+        index = index + 1
+    }
+    length(first) < length(second)
+}
+
+// Detach and canonicalize before using values in instance or artifact identity.
+pub fn configuration_snapshot(values List[ConfigurationValue]) Result[List[ConfigurationValue], Text] {
+    let output = new[ConfigurationValue]()
+    var index = 0
+    while index < length(values) {
+        let value = get(values, index)
+        if !valid_configuration_name(value.name) {
+            return Result.Err("invalid module configuration name")
+        }
+        var position = 0
+        while position < length(output) && configuration_before(get(output, position).name, value.name) {
+            position = position + 1
+        }
+        if position < length(output) && get(output, position).name == value.name {
+            return Result.Err("duplicate module configuration name")
+        }
+        push(output, value)
+        var move = length(output) - 1
+        while move > position {
+            set(output, move, get(output, move - 1))
+            move = move - 1
+        }
+        set(output, position, value)
+        index = index + 1
+    }
+    Result.Ok(output)
+}
+
+pub fn same_configuration(first List[ConfigurationValue], second List[ConfigurationValue]) Bool {
+    if length(first) == 0 && length(second) == 0 {
+        return true
+    }
+    let a = match configuration_snapshot(first) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            return false
+        }
+    }
+    let b = match configuration_snapshot(second) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            return false
+        }
+    }
+    if length(a) != length(b) {
+        return false
+    }
+    var index = 0
+    while index < length(a) {
+        let x = get(a, index)
+        let y = get(b, index)
+        if x.name != y.name || x.value != y.value {
+            return false
+        }
+        index = index + 1
+    }
+    true
+}
+
+// Length framing preserves empty values, Unicode, newlines and delimiters.
+pub fn configuration_encoding(values List[ConfigurationValue]) Result[Text, Text] {
+    let selected = configuration_snapshot(values)?
+    var output = concat("loom-module-configuration 1\n", concat(to_text(length(selected)), "\n"))
+    var index = 0
+    while index < length(selected) {
+        let value = get(selected, index)
+        output = concat(output, concat(to_text(length(value.name)), concat(":", value.name)))
+        output = concat(output, concat(to_text(length(value.value)), concat(":", value.value)))
+        index = index + 1
+    }
+    Result.Ok(output)
+}
+
+// Dependency arguments override source defaults. Graph selections, in contrast,
+// must satisfy an importer's explicit requirements instead of replacing them.
+pub fn module_configuration(defaults List[ConfigurationValue], arguments List[ConfigurationValue]) Result[List[ConfigurationValue], Text] {
+    combine_configuration(defaults, arguments, true)
+}
+
+pub fn configuration_requirements(first List[ConfigurationValue], second List[ConfigurationValue]) Result[List[ConfigurationValue], Text] {
+    combine_configuration(first, second, false)
+}
+
+fn combine_configuration(first List[ConfigurationValue], second List[ConfigurationValue], replace Bool) Result[List[ConfigurationValue], Text] {
+    let output = configuration_snapshot(first)?
+    let additions = configuration_snapshot(second)?
+    var index = 0
+    while index < length(additions) {
+        let value = get(additions, index)
+        var position = 0
+        while position < length(output) && get(output, position).name != value.name {
+            position = position + 1
+        }
+        if position < length(output) {
+            if !replace && get(output, position).value != value.value {
+                return Result.Err("incompatible module configuration requirements")
+            }
+            set(output, position, value)
+        } else {
+            push(output, value)
+        }
+        index = index + 1
+    }
+    configuration_snapshot(output)
+}
+
+fn configuration_name(raw Text) Result[Text, Text] {
+    var name = raw
+    if length(raw) > 0 && (byte(raw, 0) == 34 || byte(raw, 0) == 39) {
+        name = quoted(raw)?
+    } else if std.text.contains(raw, ".") {
+        return Result.Err("qualified module configuration names must be quoted")
+    }
+    if !valid_configuration_name(name) {
+        return Result.Err("invalid module configuration name")
+    }
+    Result.Ok(name)
+}

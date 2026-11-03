@@ -33,8 +33,9 @@ fn shared_cache_lifecycle(stage Text) Result[Bool, Text] {
                 rev = revision
                 tree = snapshot_fingerprint(source)?
                 subdir = ""
-                request = dependency_request(declaration, declaration)
+                request = dependency_request(declaration, declaration)?
                 version = ""
+                configuration = configuration_digest([])?
             }])
     let lock_path = join_path(selected, "loom.lock")
     discard write_text(lock_path, lock)

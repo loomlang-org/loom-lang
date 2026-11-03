@@ -13,6 +13,7 @@ import std.text.slice
 import std.text.concat
 import std.text.from_codepoint
 import std.text.starts_with
+import std.text.ends_with
 import std.semver.parse_version
 import std.semver.requirement
 
@@ -34,12 +35,14 @@ pub record Dependency {
     source DependencySource
     scope DependencyScope
     version Text
+    configuration List[ConfigurationValue]
 }
 
 pub record Module {
     name Text
     version Text
     dependencies List[Dependency]
+    configuration List[ConfigurationValue]
 }
 
 pub fn segment(value Text) Bool {
@@ -393,6 +396,8 @@ pub fn parse(text Text) Result[Module, Text] {
     var version = ""
     var dependency = -1
     var inline_dependencies = false
+    var in_configuration = false
+    let configuration = new[ConfigurationValue]()
     let dependencies = std.list.new[Dependency]()
     let seen = std.list.new[Text]()
     while offset < length(text) {
@@ -411,8 +416,12 @@ pub fn parse(text Text) Result[Module, Text] {
                 }
                 push(seen, line)
                 dependency = -1
+                in_configuration = false
                 if line == "[module]" {
                     section = "module"
+                } else if line == "[configuration]" {
+                    section = "configuration"
+                    in_configuration = true
                 } else {
                     if line == "[dependencies]" {
                         section = "dependencies"
@@ -425,18 +434,33 @@ pub fn parse(text Text) Result[Module, Text] {
                         if inline_dependencies {
                             return Result.Err("inline dependencies cannot be extended by tables")
                         }
-                        let key = slice(line, length(prefix), length(line) - 1)
+                        var key = slice(line, length(prefix), length(line) - 1)
+                        let suffix = ".configuration"
+                        if ends_with(key, suffix) {
+                            key = slice(key, 0, length(key) - length(suffix))
+                            in_configuration = true
+                        }
                         if !segment(key) || key == "std" {
                             return Result.Err("dependency name must be a lowercase package identifier other than std")
                         }
                         section = concat("dependencies.", key)
-                        dependency = length(dependencies)
-                        push(dependencies, Dependency {
-                                name = key
-                                source = DependencySource.Path("")
-                                scope = DependencyScope.Local
-                                version = ""
-                            })
+                        if in_configuration {
+                            section = concat(section, suffix)
+                        }
+                        var existing = 0
+                        while existing < length(dependencies) && get(dependencies, existing).name != key {
+                            existing = existing + 1
+                        }
+                        dependency = existing
+                        if existing == length(dependencies) {
+                            push(dependencies, Dependency {
+                                    name = key
+                                    source = DependencySource.Path("")
+                                    scope = DependencyScope.Local
+                                    version = ""
+                                    configuration = []
+                                })
+                        }
                     }
                 }
             } else {
@@ -447,7 +471,12 @@ pub fn parse(text Text) Result[Module, Text] {
                 if equal == length(line) {
                     return Result.Err("expected a manifest key = value")
                 }
-                let key = trim(slice(line, 0, equal))
+                let raw_key = trim(slice(line, 0, equal))
+                let key = if in_configuration {
+                    configuration_name(raw_key)?
+                } else {
+                    raw_key
+                }
                 let value = trim(slice(line, equal + 1, length(line)))
                 let full = if section == "" {
                     key
@@ -458,7 +487,17 @@ pub fn parse(text Text) Result[Module, Text] {
                     return Result.Err("duplicate manifest key")
                 }
                 push(seen, full)
-                if section == "" {
+                if in_configuration {
+                    let entry = ConfigurationValue {
+                        name = key
+                        value = quoted(value)?
+                    }
+                    if dependency < 0 {
+                        push(configuration, entry)
+                    } else {
+                        push(get(dependencies, dependency).configuration, entry)
+                    }
+                } else if section == "" {
                     if key == "schema" {
                         if value != "2" {
                             return Result.Err("expected manifest schema 2")
@@ -545,6 +584,7 @@ pub fn parse(text Text) Result[Module, Text] {
                                 } else {
                                     current.version
                                 }
+                                configuration = current.configuration
                             })
                     } else {
                         if key == "name" {
@@ -605,11 +645,16 @@ pub fn parse(text Text) Result[Module, Text] {
                 }
             }
         }
+        set(dependencies, index, Dependency {
+                configuration = configuration_snapshot(current.configuration)?
+                ..current
+            })
         index = index + 1
     }
     Result.Ok(Module {
             name = name
             version = version
             dependencies = dependencies
+            configuration = configuration_snapshot(configuration)?
         })
 }

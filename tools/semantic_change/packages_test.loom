@@ -122,7 +122,7 @@ fn batch_context(base List[PackageRevision], tests Bool) Project {
         })
     Project {
         files = files
-        modules = [ModuleInstance {
+        modules = [ModuleInstance { configuration = []
                 name = "sample"
                 source = "/module"
             }]

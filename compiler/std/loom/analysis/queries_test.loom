@@ -654,7 +654,7 @@ test fn inspections_do_not_guess_dynamic_overloads_or_generated_constraint_refer
     assert length(dynamic.definitions) == 0
     let text = "import std.result.Result\nimport std.result.ConstraintError\ntype Positive = Int where valid(self)\nfn valid(value Int) Bool { value > 0 }\npub fn make(value Int) Result[Positive, ConstraintError] { Positive(value) }"
     let project = input(text)
-    push(project.modules, ModuleInstance {
+    push(project.modules, ModuleInstance { configuration = []
             name = "std"
             source = "/std"
         })

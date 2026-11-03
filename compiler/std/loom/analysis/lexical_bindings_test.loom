@@ -50,7 +50,7 @@ test fn public_import_navigation_agrees_with_regular_inspection() {
         }
         """
     let project = input(text)
-    push(project.modules, ModuleInstance {
+    push(project.modules, ModuleInstance { configuration = []
             name = "helper"
             source = "/helper"
         })

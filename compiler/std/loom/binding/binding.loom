@@ -354,7 +354,8 @@ fn bind_mode(project Project, tests Bool, strict Bool) Result[Program, Failure] 
                             other = other + 1
                         }
                     }
-                    let build_input = (node.value == "input_file" || node.value == "input_bytes" || node.value == "target") &&
+                    let build_input = (node.value == "input_file" || node.value == "input_bytes" || node.value == "target" ||
+                        node.value == "configuration_present" || node.value == "configuration_text") &&
                         std.loom.project.package_label(project.modules, project.packages, source.package) == "std.build"
                     let reflection = ((node.value == "describe" || node.value == "from_fields") &&
                         std.loom.project.package_label(project.modules, project.packages, source.package) == "std.reflect") ||

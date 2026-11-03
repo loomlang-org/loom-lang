@@ -105,7 +105,7 @@ test fn nested_destructuring_completion_uses_only_established_names() {
 test fn completion_uses_package_imports_and_keeps_test_names_out_of_production() {
     let text = "import helper.public_name\nfn local_private() {}\nfn main() { discard local }\ntest fn embedded() { discard test_ }"
     let project = input(text)
-    push(project.modules, ModuleInstance {
+    push(project.modules, ModuleInstance { configuration = []
             name = "helper"
             source = "/helper"
         })

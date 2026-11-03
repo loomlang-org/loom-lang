@@ -3,6 +3,7 @@ import std.loom.ast.same
 import std.loom.source.Span
 import std.loom.project.select_source
 import std.text.to_bytes
+import std.loom.manifest.same_configuration
 
 // Origins and spans describe these checked snapshots, not durable declaration
 // IDs or a promise that two versions have equivalent behavior.
@@ -140,6 +141,7 @@ fn dependency_target(analysis CheckedAnalysis, sources List[DependencySource], l
     while index < length(sources) {
         let source = get(sources, index)
         if source.module.name == module.name && source.module.source == module.source &&
+        same_configuration(source.module.configuration, module.configuration) &&
         source.package == package.relative && source.path == file.path {
             return Result.Ok(DependencyTarget {
                     source = source
@@ -155,6 +157,7 @@ fn dependency_same_target(before DependencyTarget, after DependencyTarget) Bool 
     let a = before.source
     let b = after.source
     a.module.name == b.module.name && a.module.source == b.module.source &&
+    same_configuration(a.module.configuration, b.module.configuration) &&
     a.package == b.package && a.path == b.path && a.digest == b.digest &&
     before.span.start == after.span.start && before.span.end == after.span.end
 }
@@ -169,7 +172,8 @@ fn dependency_source_union(first List[DependencySource], second List[DependencyS
         while previous < length(output) {
             let other = get(output, previous)
             found = found || (source.module.name == other.module.name &&
-                source.module.source == other.module.source && source.package == other.package &&
+                source.module.source == other.module.source &&
+                same_configuration(source.module.configuration, other.module.configuration) && source.package == other.package &&
                 source.path == other.path && source.digest == other.digest)
             previous = previous + 1
         }
