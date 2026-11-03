@@ -22,6 +22,10 @@ fn source_collections_keep_managed_values_and_private_storage() {
             .unwrap(),
     );
 
+    for package in ["compiler/std/map", "compiler/std/set"] {
+        success(&common::managed(&["test", package], common::root()));
+    }
+
     for (source, diagnostic) in [
         (
             "import std.map.new\nfn main() { discard new[Float, Int]() }",

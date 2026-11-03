@@ -75,7 +75,7 @@ test fn collisions_replacement_removal_and_rehash_preserve_aliases() {
 }
 
 test fn entry_snapshot_keeps_shared_values_without_sharing_map_storage() {
-    let map = new[Text, List[Int]]()
+    let map = comptime { new[Text, List[Int]]() }
     let values = std.list.new[Int]()
     push(values, 7)
     discard insert(map, concat("ke", "y"), values)
@@ -106,4 +106,32 @@ fn map_computation() Int {
 test fn native_and_compile_time_maps_agree() {
     assert comptime { map_computation() } == 10
     assert map_computation() == 10
+}
+
+fn empty_map_reuse() Int {
+    let map = new[Int, Int]()
+    let alias = map
+    var round = 0
+    while round < 3 {
+        assert is_empty(map) && length(alias) == 0
+        assert !contains(alias, -1)
+        assert match get(map, -1) { Option.None => true, Option.Some(_) => false }
+        assert match remove(alias, -1) { Option.None => true, Option.Some(_) => false }
+        assert std.list.length(entries(map)) == 0
+        assert std.list.length(keys(alias)) == 0
+        clear(alias)
+        clear(map)
+        assert match insert(alias, -1, round) { Option.None => true, Option.Some(_) => false }
+        assert length(map) == 1
+        assert match get(map, -1) { Option.Some(value) => value == round, Option.None => false }
+        clear(alias)
+        round = round + 1
+    }
+    discard insert(map, 9223372036854775807, 7)
+    match get(alias, 9223372036854775807) { Option.Some(value) => value, Option.None => -1 }
+}
+
+test fn empty_queries_and_first_insert_preserve_shared_state_after_clear() {
+    assert comptime { empty_map_reuse() } == 7
+    assert empty_map_reuse() == 7
 }
