@@ -781,8 +781,14 @@ General synchronized-heap reasoning remains open.
 [Dependencies](../../compiler/README.md#module-dependencies) support path, exact
 HTTPS Git/forks, monorepo subdirectories, explicit graph overrides and SemVer
 tag resolution. Compatible requests prefer a shared source instance; disjoint
-ones retain separate nominal types. Locks bind source identity, commits, requests
-and verified contents. Ordinary commands stay offline; only `resolve` fetches.
+ones retain separate nominal types. Module defaults and dependency arguments form
+a canonical per-instance Text configuration. Equal effective values share nominal
+identity; different values remain separate even for one physical source directory.
+Defining-scope build intrinsics preserve configuration through generics, closures
+and macro generators; global build options remain application-wide. Locks bind
+source identity, commits, requests, configuration and verified contents. Ordinary
+commands stay offline; only `resolve` fetches. Configuration changes invalidate
+caches and analysis snapshots; build receipts bind each instance's configuration.
 Authenticated sources require an explicit trusted helper. Credentials are not
 persisted or exposed in diagnostics, and caches validate real bytes/membership,
 not sidecars alone. Conflicting graph search can be combinatorial.
@@ -815,7 +821,7 @@ not a second performance changelog here.
 The [dependency review](../../tools/change/README.md#dependency-binding-review)
 checks unchanged application sources against two offline dependency graphs,
 including each package's private tests. It reports source origins/hashes and
-changed explicit bindings without conflating same-named forks or project-local
+changed explicit bindings without conflating same-named forks, configurations or project-local
 IDs. Required contracts still apply; incomplete/generated binding evidence
 rejects. It does not rewrite locks, run applications/tests, prove behavioral
 compatibility or authorize deployment.

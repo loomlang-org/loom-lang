@@ -2,6 +2,8 @@ import std.loom.project.ModuleInstance
 import std.loom.project.Package
 import std.loom.project.PackageImport
 import std.loom.project.select_source
+import std.loom.manifest.ConfigurationValue
+import std.loom.manifest.configuration_snapshot
 
 pub record SnapshotCheck {
     checked CachedCheck
@@ -89,6 +91,15 @@ fn cache_project(output Bytes, project Project, selection List[Int]) Result[Bool
         let module = get(project.modules, index)
         cache_text(output, module.name)
         cache_text(output, module.source)
+        let configuration = configuration_snapshot(module.configuration)?
+        cache_int(output, length(configuration))
+        var item = 0
+        while item < length(configuration) {
+            let value = get(configuration, item)
+            cache_text(output, value.name)
+            cache_text(output, value.value)
+            item = item + 1
+        }
         index = index + 1
     }
     cache_int(output, length(project.packages))
@@ -149,9 +160,22 @@ fn cache_read_project(reader CacheReader, selection List[Int]) Result[Project, T
     let modules = new[ModuleInstance](cache_capacity(module_count))
     var index = 0
     while index < module_count {
+        let name = cache_read_text(reader)?
+        let source = cache_read_text(reader)?
+        let count = cache_read_count(reader)?
+        let configuration = new[ConfigurationValue](cache_capacity(count))
+        var item = 0
+        while item < count {
+            push(configuration, ConfigurationValue {
+                    name = cache_read_text(reader)?
+                    value = cache_read_text(reader)?
+                })
+            item = item + 1
+        }
         push(modules, ModuleInstance {
-                name = cache_read_text(reader)?
-                source = cache_read_text(reader)?
+                configuration = configuration_snapshot(configuration)?
+                name = name
+                source = source
             })
         index = index + 1
     }
@@ -238,7 +262,7 @@ pub fn export_definition_cache(cache DefinitionCache) Result[Text, Text] {
     }
     let saved = get(definition_state(cache).bodies, 0)
     let output = std.bytes.new()
-    cache_text(output, "loom-definition-snapshot 14")
+    cache_text(output, "loom-definition-snapshot 15")
     cache_bool(output, saved.definitions.tests)
     discard cache_definition_source(output, saved.definitions)?
     cache_int(output, length(saved.definitions.reusable))
@@ -278,7 +302,7 @@ pub fn import_trusted_definition_cache(text Text) Result[DefinitionCache, Text] 
     // Decoded IR is private and read-only. Empty lists can share storage;
     // replay and resident snapshots detach every mutable public list.
     let reader = cache_reader(text)
-    if cache_read_text(reader)? != "loom-definition-snapshot 14" {
+    if cache_read_text(reader)? != "loom-definition-snapshot 15" {
         return Result.Err("invalid definition snapshot")
     }
     let tests = cache_read_bool(reader)?

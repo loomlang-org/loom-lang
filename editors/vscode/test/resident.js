@@ -147,6 +147,7 @@ fn main() {
     compiler.close();
     await fs.rm(temporary, { recursive: true, force: true });
   }
+  await require('./module-configuration').moduleConfigurationSmoke(executable, stdRoot);
 }
 
 module.exports = { residentSmoke };

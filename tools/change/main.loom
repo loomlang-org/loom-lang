@@ -1,3 +1,4 @@
+import std.loom.manifest.configuration_encoding
 import semantic_change.File
 import semantic_change.Identity
 import semantic_change.Revision
@@ -556,6 +557,7 @@ fn framed_project(output Bytes, project Project, physical Text, logical Text) Re
         let module = get(project.modules, index)
         frame(output, module.name)
         frame(output, basis_path(module.source, physical, logical))
+        frame(output, std.loom.manifest.configuration_encoding(module.configuration)?)
         if module.name != "std" {
             let manifest = join_path(module.source, "loom.toml")
             match entry_kind(manifest) {

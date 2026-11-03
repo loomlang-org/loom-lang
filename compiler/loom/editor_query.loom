@@ -8,12 +8,19 @@ import std.loom.project.Project
 
 fn editor_source(project Project, path Text) Result[Int, Text] {
     var index = 0
+    var selected = -1
     while index < length(project.files) {
         // Overlay spellings and explicit package identities take precedence.
         if get(project.files, index).path == path {
-            return Result.Ok(index)
+            if selected >= 0 {
+                return Result.Err("query source belongs to multiple module instances; select an importing package that reaches one instance")
+            }
+            selected = index
         }
         index = index + 1
+    }
+    if selected >= 0 {
+        return Result.Ok(selected)
     }
     let physical = match canonicalize(path) {
         Result.Ok(value) => value,
@@ -21,7 +28,6 @@ fn editor_source(project Project, path Text) Result[Int, Text] {
             return Result.Err("query source is outside the selected package and import closure")
         }
     }
-    var selected = -1
     index = 0
     while index < length(project.files) {
         let file = get(project.files, index)
@@ -35,7 +41,7 @@ fn editor_source(project Project, path Text) Result[Int, Text] {
         }
         if same {
             if selected >= 0 {
-                return Result.Err("query source has multiple package identities; use its loaded source path")
+                return Result.Err("query source belongs to multiple module instances; select an importing package that reaches one instance")
             }
             selected = index
         }

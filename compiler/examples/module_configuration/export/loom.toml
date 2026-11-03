@@ -1,0 +1,8 @@
+[module]
+name = "export"
+
+[dependencies.codec]
+path = "../codec/."
+
+[dependencies.codec.configuration]
+representation = "utf8"

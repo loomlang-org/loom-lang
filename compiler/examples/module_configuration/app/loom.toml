@@ -1,0 +1,8 @@
+[module]
+name = "app"
+
+[dependencies.search]
+path = "../search"
+
+[dependencies.export]
+path = "../export"

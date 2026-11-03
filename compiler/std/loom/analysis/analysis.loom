@@ -4,6 +4,7 @@ import std.loom.ast.same
 import std.loom.project.Project
 import std.loom.project.SourceFile
 import std.loom.project.ModuleInstance
+import std.loom.manifest.same_configuration
 import std.loom.project.Package
 import std.loom.project.PackageImport
 import std.loom.project.package_label
@@ -172,7 +173,8 @@ fn is_current_with_inputs(analysis AnalysisState, project Project, tests Bool, i
     while index < length(saved.modules) {
         let left = get(saved.modules, index)
         let right = get(project.modules, index)
-        if left.name != right.name || left.source != right.source {
+        if left.name != right.name || left.source != right.source ||
+        !same_configuration(left.configuration, right.configuration) {
             return false
         }
         index = index + 1

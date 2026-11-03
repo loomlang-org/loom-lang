@@ -8,6 +8,7 @@ fn lock_fixture() LockedSource {
         subdir = ""
         request = hashed("request")
         version = ""
+        configuration = hashed("loom-module-configuration 1\n0\n")
     }
 }
 
@@ -24,6 +25,7 @@ test fn lock_roundtrip_is_deterministic_and_source_checked() {
         subdir = "packages/another"
         request = entry.request
         version = ""
+        configuration = hashed("loom-module-configuration 1\n0\n")
     }
     push(locks, other)
     let decoded = match parse_lock(encode_lock(locks)) {
@@ -46,7 +48,20 @@ test fn lock_roundtrip_is_deterministic_and_source_checked() {
     push(locks, entry)
     // Manually repeat the encoded line: encoding deliberately canonicalizes.
     let line = get(parts(encode_lock(decoded), 10), 1)
-    push(invalid, concat("loom-lock 3\n", concat(line, concat("\n", concat(line, "\n")))))
+    let fields = parts(line, 9)
+    var legacy = "loom-lock 3\n"
+    var field = 0
+    while field < 8 {
+        if field > 0 { legacy = concat(legacy, "\t") }
+        legacy = concat(legacy, get(fields, field))
+        field = field + 1
+    }
+    legacy = concat(legacy, "\n")
+    assert match parse_lock(legacy) {
+        Result.Ok(values) => length(values) == 1 && get(values, 0).configuration == entry.configuration,
+        Result.Err(_) => false
+    }
+    push(invalid, concat("loom-lock 4\n", concat(line, concat("\n", concat(line, "\n")))))
     set(locks, 2, LockedSource {
             owner = entry.owner
             name = "third"
@@ -56,6 +71,7 @@ test fn lock_roundtrip_is_deterministic_and_source_checked() {
             subdir = ""
             request = entry.request
             version = ""
+            configuration = hashed("loom-module-configuration 1\n0\n")
         })
     push(invalid, encode_lock(locks))
     set(locks, 2, LockedSource {
@@ -67,6 +83,7 @@ test fn lock_roundtrip_is_deterministic_and_source_checked() {
             subdir = ""
             request = entry.request
             version = ""
+            configuration = hashed("loom-module-configuration 1\n0\n")
         })
     push(invalid, encode_lock(locks))
     set(locks, 2, LockedSource {
@@ -78,6 +95,7 @@ test fn lock_roundtrip_is_deterministic_and_source_checked() {
             subdir = "../escape"
             request = entry.request
             version = ""
+            configuration = hashed("loom-module-configuration 1\n0\n")
         })
     push(invalid, encode_lock(locks))
     var index = 0

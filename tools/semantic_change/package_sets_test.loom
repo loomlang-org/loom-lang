@@ -53,7 +53,7 @@ fn independent_context(values List[PackageRevision], testing Bool) Project {
     Project {
         files = files
         packages = packages
-        modules = [ModuleInstance {
+        modules = [ModuleInstance { configuration = []
                 name = "sample"
                 source = "/module"
             }]

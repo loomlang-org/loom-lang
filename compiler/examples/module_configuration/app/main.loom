@@ -1,0 +1,7 @@
+import search.key
+import export.row
+
+fn main() {
+    assert key("雪") == "e99baa"
+    assert row("雪") == "雪"
+}

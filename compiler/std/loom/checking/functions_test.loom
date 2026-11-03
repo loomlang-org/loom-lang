@@ -54,7 +54,7 @@ fn source_files(text Text) List[TestFile] {
 
 fn fixture_project(inputs List[TestFile]) Project {
     let modules = new[ModuleInstance]()
-    push(modules, ModuleInstance {
+    push(modules, ModuleInstance { configuration = []
             name = "app"
             source = "memory:app"
         })
@@ -87,7 +87,7 @@ fn fixture_project(inputs List[TestFile]) Project {
                 instance = instance + 1
             }
             if instance == length(modules) {
-                push(modules, ModuleInstance {
+                push(modules, ModuleInstance { configuration = []
                         name = name
                         source = concat("memory:", name)
                     })

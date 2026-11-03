@@ -34,16 +34,16 @@ fn graph_fixture(text Text) Project {
                     }
                     """, true), graph_source(1, "pub fn decode() {}\n", false),
             graph_source(3, "pub fn secret() {}\n", false), graph_source(4, "pub fn decode() {}\n", false)]
-        modules = [ModuleInstance {
+        modules = [ModuleInstance { configuration = []
                 name = "app"
                 source = "/app"
-            }, ModuleInstance {
+            }, ModuleInstance { configuration = []
                 name = "codec"
                 source = "/codec"
-            }, ModuleInstance {
+            }, ModuleInstance { configuration = []
                 name = "codec"
                 source = "/fork"
-            }, ModuleInstance {
+            }, ModuleInstance { configuration = []
                 name = "hidden"
                 source = "/hidden"
             }]

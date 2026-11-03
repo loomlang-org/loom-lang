@@ -248,7 +248,7 @@ test fn member_scope_reuses_match_bindings_and_selected_comptime_evidence() {
 test fn foreign_private_fields_and_unimported_concepts_do_not_leak_into_completion() {
     let text = "import helper.make\nfn main() { let value = make()\ndiscard value._ }"
     let project = input(text)
-    push(project.modules, ModuleInstance {
+    push(project.modules, ModuleInstance { configuration = []
             name = "helper"
             source = "/helper"
         })

@@ -495,7 +495,7 @@ fn validate_intrinsic(env Environment, id Int) Result[Text, Failure] {
         if !same(current.compile_time, ints(0)) {
             return Result.Err(failure(env, current.symbol, item.node, "build inputs require one comptime Text parameter"))
         }
-        runtime(0, ints(3), if item.name == "option_present" {
+        runtime(0, ints(3), if item.name == "option_present" || item.name == "configuration_present" {
                 2
             } else {
                 if item.name == "input_bytes" {

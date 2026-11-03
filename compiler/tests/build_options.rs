@@ -90,7 +90,7 @@ test fn configured() {
         success(&output);
         assert_eq!(output.stdout, channel.as_bytes());
         let receipt = fs::read_to_string(&receipt).unwrap();
-        assert!(receipt.starts_with("loom-build-receipt 3\n"));
+        assert!(receipt.starts_with("loom-build-receipt 4\n"));
         assert!(receipt.contains("option-count 2\noption 6170702e6368616e6e656c "));
         assert!(!receipt.contains(channel));
     }

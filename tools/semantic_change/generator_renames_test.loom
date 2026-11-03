@@ -30,7 +30,7 @@ fn generator_revision(name Text, step Text, generator Text, imported Bool) Revis
 
 fn generator_context(base Revision) Project {
     let project = rename_context(base)
-    push(project.modules, ModuleInstance {
+    push(project.modules, ModuleInstance { configuration = []
             name = "std"
             source = "/standard"
         })

@@ -2391,7 +2391,7 @@ granting access to private or dependency-test declarations.
 Package identity includes the module instance, not just its declared name.
 Distinct roots with the same name can coexist through separate dependency
 edges, and their nominal types remain distinct. Paths resolving to the same
-canonical root reuse one instance. Display names do not grant access to another
+canonical root and effective configuration reuse one instance. Display names do not grant access to another
 instance's declarations or make its entry point/tests part of the selected root.
 
 The [module example](examples/modules/app/main.loom) uses two independent `seed`
@@ -2403,6 +2403,51 @@ target/loom test compiler/examples/modules/app
 ```
 
 Path dependencies are editable source, not content frozen by a lockfile.
+
+### Instance configuration
+
+A module can declare Text defaults separately from its name/version:
+
+```toml
+[module]
+name = "codec"
+
+[configuration]
+representation = "hex"
+```
+
+Each dependency can override those defaults for its instance:
+
+```toml
+[dependencies.codec]
+path = "../codec"
+
+[dependencies.codec.configuration]
+representation = "utf8"
+```
+
+Read the defining module instance through the public compile-time intrinsics
+`std.build.configuration_present(comptime name Text) Bool` and
+`std.build.configuration_text(comptime name Text) Text`. Missing text values
+reject; presence distinguishes missing from explicitly empty values. Generic
+functions, closures and macro generators retain their defining module's values.
+The separate `std.build.option` API remains application-wide. Parent configuration
+and global options never implicitly become dependency arguments.
+
+Names follow build-option spelling; quote qualified keys such as
+`"format.level"` in TOML. Values must be quoted Text. Duplicate keys and unsupported
+nested tables reject. Table/key order does not affect identity. Defaults plus
+explicit arguments form one canonical map: equivalent maps share nominal types,
+while different maps remain distinct even with the same source and declarations.
+A graph selection must agree with each importer's explicit configuration
+requirements; it cannot silently replace a conflicting requirement.
+
+The [search/export example](examples/module_configuration/README.md) applies two
+configurations to one codec source. Build receipts bind every instance's
+canonical configuration digest. Frontend/definition caches and analysis freshness
+include configuration, including changes with no `.loom` edits. A source query
+reached through several instances rejects ambiguous paths; select an importing
+package reaching one instance to query that context.
 
 A dependency may instead select a Git repository, including a fork, directly:
 
@@ -2468,12 +2513,14 @@ dependencies are not fetched. The lock preserves unrelated package edges, uses
 location-independent owner identities, and anchors exact source identities to
 SHA-256 snapshots, including each edge's selected subdirectory. Changing `subdir`
 or a declared/effective requirement requires resolution even when the commit is
-unchanged. Lock format 3 records the request identity, selected version, full
-commit and digest; no old lock-format compatibility is maintained. Resolution
+unchanged. Lock format 4 also binds the importing instance's configuration,
+requested/selected arguments and effective target configuration. Configuration
+changes require explicit resolution. Unconfigured format-3 locks remain readable;
+resolution writes format 4. Resolution
 reports selected Git edge/instance counts and changed edges without echoing remote
 tag data. Local path inputs remain
 editable. Different Git URLs/commits/module directories remain different nominal
-instances; identical module sources reuse an instance. Modules from one URL/commit
+instances; identical sources and effective configurations reuse an instance. Modules from one URL/commit
 share a single verified whole-repository snapshot and content digest.
 Path dependencies inside a Git source may select sibling modules but cannot
 escape that snapshot. Selecting a subdirectory does not bypass validation of
@@ -2495,7 +2542,7 @@ This never grants an undeclared direct dependency, replaces `std`, or rewrites
 another module's own namespace. A graph-selected path is relative to the root
 manifest, including when replacing an edge inside a Git snapshot. A Git selector
 retains its URL, exact commit and optional `subdir`; all matching edges reuse the
-same nominal module instance. Each importing Git edge locks the effective source.
+same nominal module instance when their effective configurations agree. Each importing Git edge locks the effective source and configuration.
 Changing that source requires `resolve` before offline use; local path sources
 remain editable and are not made immutable by graph selection. An incompatible
 fork must satisfy both original and root-selected version requirements and can
@@ -4295,7 +4342,7 @@ Environment-derived values must be passed explicitly by the calling shell/build
 step. Values can enter artifacts and are **not a secret channel**.
 
 `check`, `build`, `test`, `run`, and `emit-checked` accept the same options.
-Frontend-cache keys include the canonical option map. V3 build receipts include
+Frontend-cache keys include the canonical option map. V4 build receipts include
 names and value digests. Public checking/analysis can supply `BuildInputs.options`
 without filesystem access; analysis snapshots and freshness checks include it.
 Editor requests use workspace `loom.buildOptions`. Target metadata is separate,

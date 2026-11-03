@@ -172,7 +172,7 @@ test fn package_components_keep_transitive_test_consumers_and_fork_identities() 
     }
     assert library >= 0 && utility >= 0
     assert component_root(graph.parents, library) == component_root(graph.parents, utility)
-    let fork = ModuleInstance {
+    let fork = ModuleInstance { configuration = []
         name = "sample"
         source = "/fork"
     }

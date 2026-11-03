@@ -1,0 +1,23 @@
+import std.build.configuration_text
+import std.encoding.hex.encode
+import std.text.to_bytes
+
+pub record Encoded {
+    wire Text
+}
+
+pub fn encode(value Text) Encoded {
+    comptime if configuration_text("representation") == "hex" {
+        Encoded {
+            wire = std.encoding.hex.encode(to_bytes(value))
+        }
+    } else {
+        comptime if configuration_text("representation") == "utf8" {
+            Encoded {
+                wire = value
+            }
+        } else {
+            unsupported_representation()
+        }
+    }
+}

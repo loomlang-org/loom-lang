@@ -108,6 +108,7 @@ fn selected_module(directory Text, standard Text) Result[ModuleRoot, Text] {
                 version = ""
                 base = standard
                 dependencies = new[Dependency]()
+                configuration = []
             }
         } else {
             discovered

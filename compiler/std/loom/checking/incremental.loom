@@ -1,4 +1,5 @@
 import std.loom.project.Project
+import std.loom.manifest.same_configuration
 import std.loom.project.SourceFile
 import std.loom.project.snapshot
 import std.loom.binding.bind
@@ -224,7 +225,7 @@ fn definition_context(first DefinitionBasis, second DefinitionBasis) Bool {
     while index < length(left.modules) {
         let a = get(left.modules, index)
         let b = get(right.modules, index)
-        if a.name != b.name || a.source != b.source {
+        if a.name != b.name || a.source != b.source || !same_configuration(a.configuration, b.configuration) {
             return false
         }
         index = index + 1

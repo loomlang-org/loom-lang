@@ -32,20 +32,24 @@ fn empty_plan() VersionPlan {
     }
 }
 
-fn source_request(dependency Dependency) Text {
+fn source_request(dependency Dependency) Result[Text, Text] {
     let source = match dependency.source {
         DependencySource.Path(path) => concat("path\n", path),
         DependencySource.Git(git, rev, subdir) => concat("git\n", concat(git, concat("\n", concat(rev, concat("\n", subdir)))))
     }
-    hashed(concat(source, concat("\n", concat(dependency.version, if dependency.scope == DependencyScope.Graph {
+    let original = hashed(concat(source, concat("\n", concat(dependency.version, if dependency.scope == DependencyScope.Graph {
                         "\ngraph"
                     } else {
                         "\nlocal"
                     }))))
+    if length(dependency.configuration) == 0 {
+        return Result.Ok(original)
+    }
+    Result.Ok(hashed(concat(original, concat("\nconfiguration\n", configuration_encoding(dependency.configuration)?))))
 }
 
-fn dependency_request(declared Dependency, selected Dependency) Text {
-    hashed(concat(source_request(declared), source_request(selected)))
+fn dependency_request(declared Dependency, selected Dependency) Result[Text, Text] {
+    Result.Ok(hashed(concat(source_request(declared)?, source_request(selected)?)))
 }
 
 fn satisfies(range Text, version Text) Result[Bool, Text] {
@@ -65,7 +69,7 @@ fn module_requirement(module ModuleRoot, range Text) Result[Bool, Text] {
     Result.Ok(true)
 }
 
-fn dependency_revision(resolution Resolution, base Text, declared Dependency, selected Dependency, request Text, comptime fetch Bool) Result[(Text, Text), Text] {
+fn dependency_revision(resolution Resolution, owner Text, declared Dependency, selected Dependency, request Text, comptime fetch Bool) Result[(Text, Text), Text] {
     let git, rev, subdir = match selected.source {
         DependencySource.Git(git, rev, subdir) => (git, rev, subdir),
         DependencySource.Path(_) => {
@@ -75,7 +79,6 @@ fn dependency_revision(resolution Resolution, base Text, declared Dependency, se
     if rev != "" {
         return Result.Ok(("", rev))
     }
-    let owner = source_owner(resolution, base)?
     comptime if !fetch {
         let index = lock_index(resolution.locks, owner, declared.name)
         if index < 0 {
@@ -179,7 +182,8 @@ fn instance_count(values List[LockedSource]) Int {
         var found = false
         while previous < index {
             let other = get(values, previous)
-            if value.git == other.git && value.subdir == other.subdir && value.rev == other.rev {
+            if value.git == other.git && value.subdir == other.subdir && value.rev == other.rev &&
+            value.configuration == other.configuration {
                 found = true
             }
             previous = previous + 1

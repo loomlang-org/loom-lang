@@ -1,0 +1,5 @@
+import codec.encode
+
+pub fn key(value Text) Text {
+    encode(value).wire
+}
