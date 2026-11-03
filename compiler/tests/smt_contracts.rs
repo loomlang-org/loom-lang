@@ -709,6 +709,14 @@ fn symbolic_division_rechecks_truncation_and_independent_fault_domains() {
             "value / 3 * 3 + value % 3 == value",
             "value / 3 * 3 + value % 3 == 0",
         ),
+        program.replace(
+            "value > -divisor && value < divisor",
+            "value >= -divisor && value < divisor",
+        ),
+        program.replace(
+            "value > -divisor && value < divisor",
+            "value > -divisor && value <= divisor",
+        ),
     ] {
         assert_ne!(changed, program, "test edit did not apply");
         fs::write(&source, &changed).unwrap();

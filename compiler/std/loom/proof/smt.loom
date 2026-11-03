@@ -467,7 +467,15 @@ fn smt_truncated_division(operator Text, left Text, right Text) Text {
     let output = std.bytes.new()
     smt_append(output, concat("(let ((loom_dividend ", concat(left,
                 concat(") (loom_divisor ", concat(right, ")) ")))))
-    smt_append(output, "(let ((loom_magnitude (div (ite (< loom_dividend 0) (- loom_dividend) loom_dividend) (ite (< loom_divisor 0) (- loom_divisor) loom_divisor)))) ")
+    let dividend = "(ite (< loom_dividend 0) (- loom_dividend) loom_dividend)"
+    let divisor = "(ite (< loom_divisor 0) (- loom_divisor) loom_divisor)"
+    // A smaller mathematical magnitude has quotient zero for either sign.
+    // Expose that exact case before nonlinear division, including under scan
+    // binders. At divisor zero the guard is false and the original total SMT
+    // term remains; source zero/overflow checks stay separate obligations.
+    smt_append(output, "(let ((loom_magnitude (ite (< ")
+    smt_append(output, concat(dividend, concat(" ", concat(divisor, ") 0 (div "))))
+    smt_append(output, concat(dividend, concat(" ", concat(divisor, ")))) "))))
     smt_append(output, "(let ((loom_quotient (ite (= (< loom_dividend 0) (< loom_divisor 0)) loom_magnitude (- loom_magnitude)))) ")
     smt_append(output, if operator == "/" {
             "loom_quotient"
@@ -624,6 +632,7 @@ fn smt_query(obligations List[Obligation], extended Bool, guarded_order Bool) Re
 
 record SmtEncoding {
     text Text
+    // Canonical logical input, independent of equivalent counterexample syntax.
     theory Text
     abstracted Bool
 }
@@ -641,6 +650,79 @@ fn smt_arithmetic_query(obligations List[Obligation]) Result[Text, Text] {
 fn smt_encoding(obligations List[Obligation], extended Bool, guarded_order Bool,
     abstract_remainder Bool, scalar_normalization Bool) Result[SmtEncoding, Text] {
     smt_encoding(obligations, extended, guarded_order, abstract_remainder, scalar_normalization, false)
+}
+
+fn smt_has_premise(values List[Text], value Text) Bool {
+    var index = 0
+    while index < length(values) {
+        if get(values, index) == value {
+            return true
+        }
+        index = index + 1
+    }
+    false
+}
+
+fn smt_common_premises(alternatives List[List[Text]]) List[Text] {
+    let common = new[Text]()
+    if length(alternatives) == 0 {
+        return common
+    }
+    let first = get(alternatives, 0)
+    var index = 0
+    while index < length(first) {
+        let candidate = get(first, index)
+        var shared = !smt_has_premise(common, candidate)
+        var branch = 1
+        while shared && branch < length(alternatives) {
+            shared = smt_has_premise(get(alternatives, branch), candidate)
+            branch = branch + 1
+        }
+        if shared {
+            push(common, candidate)
+        }
+        index = index + 1
+    }
+    common
+}
+
+record SmtAlternative {
+    index Int
+    facts List[Text]
+    conclusions List[Text]
+}
+
+fn smt_same_premises(left List[Text], right List[Text]) Bool {
+    if length(left) != length(right) {
+        return false
+    }
+    var index = 0
+    while index < length(left) {
+        if get(left, index) != get(right, index) {
+            return false
+        }
+        index = index + 1
+    }
+    true
+}
+
+fn smt_add_alternative(alternatives List[SmtAlternative], index Int, facts List[Text], conclusion Text) {
+    var branch = 0
+    while branch < length(alternatives) {
+        let existing = get(alternatives, branch)
+        if smt_same_premises(existing.facts, facts) {
+            if !smt_has_premise(existing.conclusions, conclusion) {
+                push(existing.conclusions, conclusion)
+            }
+            return
+        }
+        branch = branch + 1
+    }
+    push(alternatives, SmtAlternative {
+            index = index
+            facts = facts
+            conclusions = [conclusion]
+        })
 }
 
 fn smt_encoding(obligations List[Obligation], extended Bool, guarded_order Bool,
@@ -676,8 +758,15 @@ fn smt_encoding(obligations List[Obligation], extended Bool, guarded_order Bool,
         relation_search = [false]
     }
     let body = std.bytes.new()
+    let selected = std.bytes.new()
+    let choices = std.bytes.new()
+    let alternatives = new[SmtAlternative]()
+    let select_obligation = witness_normalization && length(obligations) > 1
     let roots = new[SmtFact]()
     smt_append(body, "(assert (not (and true")
+    if select_obligation {
+        smt_append(choices, "(declare-const loom_counterexample Int)\n(assert (or false")
+    }
     var index = 0
     while index < length(obligations) {
         let obligation = get(obligations, index)
@@ -687,17 +776,25 @@ fn smt_encoding(obligations List[Obligation], extended Bool, guarded_order Bool,
             continue
         }
         smt_append(body, " (=> (and true")
+        let encoded_facts = new[Text]()
         var fact = 0
         while fact < length(obligation.facts) {
             if !smt_redundant_fact(obligation.facts, fact) {
                 smt_append(body, " ")
-                smt_append(body, smt_root(writer, get(obligation.facts, fact), roots)?)
+                let premise = smt_root(writer, get(obligation.facts, fact), roots)?
+                smt_append(body, premise)
+                if select_obligation {
+                    push(encoded_facts, premise)
+                }
             }
             fact = fact + 1
         }
         smt_append(body, ") ")
         smt_append(body, conclusion)
         smt_append(body, ")")
+        if select_obligation {
+            smt_add_alternative(alternatives, index, encoded_facts, conclusion)
+        }
         index = index + 1
     }
     // Split at most one explicit alternative, then substitute branch-local
@@ -722,11 +819,84 @@ fn smt_encoding(obligations List[Obligation], extended Bool, guarded_order Bool,
     }
     smt_append(body, ")))\n")
     let theory = concat(options, concat(std.bytes.to_text(writer.declarations), std.bytes.to_text(body)))
+    // A failed conjunction has one failing obligation. The fresh selector
+    // chooses it; every selected branch retains exactly its own premises and
+    // negated conclusion. Put its finite alternatives before theory assertions
+    // so the existing single clause split exposes those independent cases.
+    // This is one equivalent query under the same host limit, not one query
+    // per obligation. Keep canonical theory above for refinement eligibility.
+    let query = if select_obligation {
+        let premises = new[List[Text]]()
+        var branch = 0
+        while branch < length(alternatives) {
+            let alternative = get(alternatives, branch)
+            let guard = concat("(= loom_counterexample ", concat(std.int.to_text(alternative.index), ")"))
+            smt_append(choices, concat(" ", guard))
+            push(premises, alternative.facts)
+            branch = branch + 1
+        }
+        smt_append(choices, "))\n")
+        // Factor only byte-identical premises present in every live alternative.
+        // G && OR_i(F_i && !C_i) keeps each branch's private facts isolated.
+        // Sharing G avoids repeatedly normalizing it in every selected case;
+        // canonical theory and the host query/time budgets stay unchanged.
+        let common = smt_common_premises(premises)
+        smt_append(selected, "(assert (and true")
+        var shared = 0
+        while shared < length(common) {
+            smt_append(selected, concat(" ", get(common, shared)))
+            shared = shared + 1
+        }
+        smt_append(selected, "))\n(assert (and true")
+        // Identical premise sequences share one counterexample context:
+        // (F && !C1) || (F && !C2) == F && !(C1 && C2).
+        // Retain every distinct conclusion, without combining private facts
+        // from different contexts or changing canonical refinement eligibility.
+        branch = 0
+        while branch < length(alternatives) {
+            let alternative = get(alternatives, branch)
+            let guard = concat("(= loom_counterexample ", concat(std.int.to_text(alternative.index), ")"))
+            smt_append(selected, concat(" (=> ", concat(guard, " (and (and true")))
+            let facts = alternative.facts
+            var fact = 0
+            while fact < length(facts) {
+                let premise = get(facts, fact)
+                if !smt_has_premise(common, premise) {
+                    smt_append(selected, concat(" ", premise))
+                }
+                fact = fact + 1
+            }
+            smt_append(selected, ") (not ")
+            if length(alternative.conclusions) == 1 {
+                smt_append(selected, get(alternative.conclusions, 0))
+            } else {
+                smt_append(selected, "(and true")
+                var conclusion = 0
+                while conclusion < length(alternative.conclusions) {
+                    smt_append(selected, concat(" ", get(alternative.conclusions, conclusion)))
+                    conclusion = conclusion + 1
+                }
+                smt_append(selected, ")")
+            }
+            smt_append(selected, ")))")
+            branch = branch + 1
+        }
+        smt_append(selected, "))\n")
+        concat(options, concat(std.bytes.to_text(choices),
+                concat(std.bytes.to_text(writer.declarations), std.bytes.to_text(selected))))
+    } else {
+        theory
+    }
     let command = if scalar_normalization {
         // Open existential counterexample witnesses before arithmetic
         // substitution, so their interval bounds participate in rewriting.
         // This is the same obligation and the same host time limit.
         "(check-sat-using (then simplify snf simplify solve-eqs simplify smt))\n"
+    } else if select_obligation {
+        // Split the explicit counterexample choice before normalization can
+        // introduce unrelated alternatives. Then open quantified witnesses in
+        // each case, retaining the same single query and host time limit.
+        "(check-sat-using (then (or-else split-clause skip) simplify snf simplify solve-eqs simplify aig simplify default))\n"
     } else if witness_normalization {
         // Open quantified counterexamples before branch substitution. All
         // source premises and theory laws remain in the same single query.
@@ -735,7 +905,7 @@ fn smt_encoding(obligations List[Obligation], extended Bool, guarded_order Bool,
         "(check-sat-using (then simplify solve-eqs simplify (or-else split-clause skip) solve-eqs simplify aig simplify default))\n"
     }
     Result.Ok(SmtEncoding {
-            text = concat(theory, command)
+            text = concat(query, command)
             theory = theory
             abstracted = get(writer.abstracted, 0)
         })

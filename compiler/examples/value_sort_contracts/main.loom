@@ -45,9 +45,61 @@ fn permutation(first List[Row], second List[Row]) Bool {
     length(first) == length(second) && same_counts(first, second)
 }
 
+fn ascending(values List[Row]) Bool {
+    var index = 1
+    while index < length(values) {
+        if values[index - 1].key.id > values[index].key.id {
+            return false
+        }
+        index = index + 1
+    }
+    true
+}
+
+fn descending(values List[Row]) Bool {
+    var index = 1
+    while index < length(values) {
+        if values[index - 1].key.id < values[index].key.id {
+            return false
+        }
+        index = index + 1
+    }
+    true
+}
+
 pub fn sorted_rows(values List[Row], less fn(Row, Row) Bool) List[Row]
 ensures permutation(old(values), result) {
     sorted(values, less)
+}
+
+pub fn sorted_ascending(values List[Row]) List[Row]
+ensures ascending(result)
+ensures permutation(old(values), result) {
+    sorted(values, fn(a Row, b Row) Bool {
+            if length(values) > 0 {
+                values[0] = Row {
+                    amount = 99,
+                    ..a
+                }
+            }
+            push(values, a)
+            a.key.id < b.key.id
+        })
+}
+
+pub fn sorted_descending(values List[Row]) List[Row]
+ensures descending(result)
+ensures permutation(old(values), result) {
+    sorted(values, fn(a Row, b Row) Bool {
+            if length(values) > 0 {
+                values[0] = Row {
+                    amount = 99,
+                    ..a
+                }
+            }
+            push(values, a)
+            a.key.id > b.key.id
+        })
 }
 
 fn exercise() {
@@ -82,10 +134,46 @@ fn exercise() {
     assert length(original) > 3
 }
 
+fn exercise_ordered() {
+    let first = Row {
+        key = Key {
+            id = 1
+        },
+        amount = 10,
+        active = true,
+        label = "first"
+    }
+    let second = Row {
+        key = Key {
+            id = 3
+        },
+        amount = 20,
+        active = false,
+        label = "second"
+    }
+    let ascending_input = [second, first, first]
+    let increasing = sorted_ascending(ascending_input)
+    assert length(increasing) == 3
+    assert count(increasing, first) == 2 && count(increasing, second) == 1
+    assert same_row(increasing[0], first) && same_row(increasing[2], second)
+    assert length(ascending_input) > 3
+    let descending_input = [first, second, first]
+    let decreasing = sorted_descending(descending_input)
+    assert length(decreasing) == 3
+    assert count(decreasing, first) == 2 && count(decreasing, second) == 1
+    assert same_row(decreasing[0], second) && same_row(decreasing[2], first)
+    assert length(descending_input) > 3
+}
+
 fn main() {
     exercise()
+    exercise_ordered()
 }
 
 test fn sorting_preserves_complete_immutable_rows() {
     exercise()
+}
+
+test fn sorting_orders_nested_keys_and_preserves_complete_rows() {
+    exercise_ordered()
 }

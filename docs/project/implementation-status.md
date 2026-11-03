@@ -129,6 +129,16 @@ one indexed element; conjunction and operand order normalize. Generic finite
 histogram laws reuse the existing immutable-value encoding and preserve source
 store premises, indices and scopes. Float, enum and mutable-graph equality remain
 open, as do general comparator laws.
+Known ascending and descending comparisons on the nested key now compose order
+with full-row permutation in the same contract, including callbacks that change
+and grow the input. The refined SMT query selects a failing context within a
+single query. Identical encoded premise sequences share a context while retaining
+every distinct conclusion; different contexts keep their own private premises.
+Signed division exposes the exact zero-quotient case when the dividend's
+mathematical magnitude is smaller, retaining the original division elsewhere
+and all independent source fault checks. The complete theories remain, and the
+original host-query and time limits remain unchanged;
+equivalent query syntax alone cannot authorize another solver call.
 The [composed predicate trial](../../compiler/examples/predicate_sort_contracts)
 also preserves counts of unions, complements and guarded alternatives. It uses
 finite indicator algebra over the same equality keys, including overlap and empty
