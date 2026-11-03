@@ -186,7 +186,6 @@ fn joined_declaration_bodies(base Entry, left Entry, right Entry) Result[Text, T
 record BodySourceMap {
     id Text
     package Int
-    before Entry
     after Entry
     regions List[RetainedRegion]
 }
@@ -259,7 +258,6 @@ fn body_source_maps(base Indexed, left Indexed, right Indexed, after Indexed,
             push(maps, BodySourceMap {
                     id = current.id
                     package = package
-                    before = get(source.entries, previous)
                     after = current
                     regions = if from_left {
                         joined.left

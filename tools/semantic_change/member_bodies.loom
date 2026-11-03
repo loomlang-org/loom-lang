@@ -82,60 +82,6 @@ fn aligned_members(before Entry, after Entry) Bool {
     slice(before.body, previous, length(before.body)) == slice(after.body, current, length(after.body))
 }
 
-// These are existing checked API slots, not inferred new persistent identities.
-// Headers stay exact; method blocks and inter-member trivia join independently.
-fn joined_member_bodies(base Entry, left Entry, right Entry) Result[Text, Text] {
-    if !aligned_members(base, left) || !aligned_members(base, right) {
-        return Result.Err(concat("concurrent body edits require unchanged container headers: ", base.id))
-    }
-    var original = 0
-    var a = 0
-    var b = 0
-    var output = ""
-    var index = 0
-    while index < length(base.members) {
-        let member = get(base.members, index)
-        let first_member = get(left.members, index)
-        let second_member = get(right.members, index)
-        let gap = joined_source_gap(slice(base.body, original, member.span.start - base.start),
-            slice(left.body, a, first_member.span.start - left.start),
-            slice(right.body, b, second_member.span.start - right.start), base.id)?
-        let header_end = if member.body.start >= 0 {
-            member.body.start
-        } else {
-            member.span.end
-        }
-        output = concat(output, concat(gap,
-                slice(base.body, member.span.start - base.start, header_end - base.start)))
-        if member.body.start >= 0 {
-            let previous_span = member.body
-            let l = first_member.body
-            let r = second_member.body
-            let previous = slice(base.body, previous_span.start - base.start, previous_span.end - base.start)
-            let first = slice(left.body, l.start - left.start, l.end - left.start)
-            let second = slice(right.body, r.start - right.start, r.end - right.start)
-            let selected = if first == second || previous == second {
-                first
-            } else if previous == first {
-                second
-            } else {
-                return Result.Err(concat("concurrent method body edits: ", concat(base.id, concat(" / ", member.locator))))
-            }
-            output = concat(output, concat(selected,
-                    slice(base.body, previous_span.end - base.start, member.span.end - base.start)))
-        }
-        original = member.span.end - base.start
-        a = first_member.span.end - left.start
-        b = second_member.span.end - right.start
-        index = index + 1
-    }
-    let tail = slice(base.body, original, length(base.body))
-    if tail != slice(left.body, a, length(left.body)) || tail != slice(right.body, b, length(right.body)) {
-        return Result.Err("container scaffolding changed after a method body")
-    }
-    Result.Ok(concat(output, tail))
-}
-
 fn retained_region(regions List[RetainedRegion], before Entry, after Entry,
     start Int, end Int, current Int, last Int) Result[Bool, Text] {
     if slice(before.body, start, end) != slice(after.body, current, last) {

@@ -33,6 +33,20 @@ test fn body_composition_joins_independent_expression_children() {
     assert contains(get(joined.files, 0).text, "11 + 22")
 }
 
+test fn body_composition_rechecks_the_composed_function_contract() {
+    let valid = "fn value() Int ensures result <= 10 { 1 + 1 }\nfn main() {}\n"
+    let joined = accepted_body_composition(valid, replace(valid, "1 + 1", "4 + 1"), replace(valid, "1 + 1", "1 + 4"))
+    assert contains(get(joined.files, 0).text, "4 + 4")
+    let strict = replace(valid, "<= 10", "<= 5")
+    let left = replace(strict, "1 + 1", "4 + 1")
+    let right = replace(strict, "1 + 1", "1 + 4")
+    assert checked_body_composition_branch(left) && checked_body_composition_branch(right)
+    assert match merge(body_composition_case(strict), body_composition_case(left), body_composition_case(right)) {
+        Result.Err(message) => contains(message, "proof") || contains(message, "postcondition")
+        _ => false
+    }
+}
+
 test fn body_composition_preserves_local_definitions_after_initializer_length_changes() {
     let base = """
         fn left_value() Int { 1 }
