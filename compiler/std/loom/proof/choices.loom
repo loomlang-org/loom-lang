@@ -48,6 +48,100 @@ fn lifted_choice(condition Expr, yes Expr, no Expr, budget List[Int], depth Int)
     Result.Ok(proof_choice(condition, yes, no))
 }
 
+// Only an explicit entry sequence supplies a stable outer value across
+// independent reads. Following a mutable child performs another ordinary read
+// and cannot use this comparison. Observation identities elsewhere stay exact.
+fn choice_entry_projection(left Expr, right Expr, depth Int) Bool {
+    if depth >= 16 || left.ty != right.ty {
+        return false
+    }
+    if exact_expression(left, right) {
+        return true
+    }
+    if list_read_expression(left) && list_read_expression(right) &&
+    length(left.children) == 2 && length(right.children) == 2 {
+        let first = get(left.children, 0)
+        let second = get(right.children, 0)
+        return entry_list_expression(first) && first.index >= 0 &&
+        entry_list_expression(second) && exact_expression(first, second) &&
+        exact_expression(get(left.children, 1), get(right.children, 1))
+    }
+    if left.kind != right.kind || left.index != right.index || left.text != right.text ||
+    length(left.children) != length(right.children) {
+        return false
+    }
+    if (left.kind == ExprKind.Field || left.kind == ExprKind.Coerce) && length(left.children) == 1 {
+        return choice_entry_projection(get(left.children, 0), get(right.children, 0), depth + 1)
+    }
+    if left.kind == ExprKind.Intrinsic && left.text == "proof_enum_payload" && length(left.children) == 3 {
+        return exact_expression(get(left.children, 1), get(right.children, 1)) &&
+        exact_expression(get(left.children, 2), get(right.children, 2)) &&
+        choice_entry_projection(get(left.children, 0), get(right.children, 0), depth + 1)
+    }
+    false
+}
+
+fn choice_tag_equality(value Expr) Option[(Expr, Expr)] {
+    if value.kind != ExprKind.Binary || value.text != "==" || length(value.children) != 2 {
+        return Option.None
+    }
+    var tag = get(value.children, 0)
+    var selected = get(value.children, 1)
+    if tag.kind == ExprKind.Integer {
+        tag = get(value.children, 1)
+        selected = get(value.children, 0)
+    }
+    if tag.kind != ExprKind.Intrinsic || tag.text != "proof_enum_tag" ||
+    length(tag.children) != 1 || selected.kind != ExprKind.Integer {
+        return Option.None
+    }
+    Option.Some((get(tag.children, 0), selected))
+}
+
+fn selected_enum_guard(guard Expr, condition Expr, positive Bool) Option[Bool] {
+    let inverted = guard.kind == ExprKind.Unary && guard.text == "!"
+    let target = if inverted {
+        get(guard.children, 0)
+    } else {
+        guard
+    }
+    let negated = condition.kind == ExprKind.Unary && condition.text == "!"
+    let known = if negated {
+        get(condition.children, 0)
+    } else {
+        condition
+    }
+    let holds = if negated {
+        !positive
+    } else {
+        positive
+    }
+    let first, value = match choice_tag_equality(target) {
+        Option.Some(pair) => pair
+        Option.None => {
+            return Option.None
+        }
+    }
+    let second, observed = match choice_tag_equality(known) {
+        Option.Some(pair) => pair
+        Option.None => {
+            return Option.None
+        }
+    }
+    if !choice_entry_projection(first, second, 0) {
+        return Option.None
+    }
+    let same = compare(decimal(value.text), decimal(observed.text)) == 0
+    if !same && !holds {
+        return Option.None
+    }
+    Option.Some(if inverted {
+            !(same && holds)
+        } else {
+            same && holds
+        })
+}
+
 fn selected_choice(value Expr, condition Expr, positive Bool, budget List[Int], depth Int) Result[Expr, Text] {
     if value.kind != ExprKind.If {
         return Result.Ok(value)
@@ -67,6 +161,18 @@ fn selected_choice(value Expr, condition Expr, positive Bool, budget List[Int], 
                 } else {
                     1
                 }), condition, positive, budget, depth + 1)
+    }
+    match selected_enum_guard(guard, condition, positive) {
+        Option.Some(selected) => {
+            return selected_choice(get(value.children, if selected {
+                        1
+                    } else {
+                        2
+                    }),
+                condition, positive, budget, depth + 1)
+        }
+        Option.None => {
+        }
     }
     Result.Ok(value)
 }
