@@ -117,8 +117,8 @@ jobs:
   linux-llvm22:
     name: Linux native compiler (LLVM 22)
     runs-on: ubuntu-24.04
-    # The cold gate, companion command and relocated toolchain share this job.
-    timeout-minutes: 90
+    # Cold native/proof, companion and relocated archive gates share this job.
+    timeout-minutes: 120
     env:
       CARGO_TERM_COLOR: always
       LLVM_SYS_221_PREFIX: /usr/lib/llvm-22
@@ -186,8 +186,8 @@ jobs:
   windows-llvm22:
     name: Windows native compiler (LLVM 22)
     runs-on: windows-2022
-    # Cold LLVM setup plus the full gate can exceed an hour before packaging.
-    timeout-minutes: 90
+    # Cold LLVM setup and the full suite need time for final archive verification.
+    timeout-minutes: 120
     defaults:
       run:
         shell: bash
