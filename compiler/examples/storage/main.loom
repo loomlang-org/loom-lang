@@ -12,6 +12,8 @@ import std.storage.encode_prepared_row
 import std.storage.decode_prepared_row
 import std.storage.encode_refined_column
 import std.storage.decode_refined_column
+import std.storage.sqlite_record_check
+import std.storage.SqliteCheckError
 
 pub type Amount = Int where self >= 0
 
@@ -42,6 +44,10 @@ record PrivateNote {
 type ValidNote = Note where self.id > 0
 
 pub type IndexedNote = Note where self.id > 0 && self.id <= self.amount
+
+pub type SqliteIdGuard = Note where self.id > 0
+
+pub type SqliteAmountGuard = Note where self.amount > 0
 
 pub type HiddenNote = PrivateNote where self.body != ""
 
@@ -93,7 +99,22 @@ fn round_trip() Result[Bool, CodecError] {
         Result.Err(CodecError.InvalidSchema) => true
         _ => false
     }
+    assert match sqlite_record_check[HiddenNote](table) {
+        Result.Err(SqliteCheckError.UnsupportedType) => true
+        _ => false
+    }
     let codec = record_codec[Note](table, [("id", "note-id")])?
+    assert match sqlite_record_check[SqliteIdGuard](table, [("id", "note-id")]) {
+        Result.Ok(_) => true
+        _ => false
+    }
+    // The custom Amount codec is valid, but its representation is not inferred
+    // from an integer physical kind when translating a predicate on that field.
+    discard record_codec[SqliteAmountGuard](table, [("id", "note-id")])?
+    assert match sqlite_record_check[SqliteAmountGuard](table, [("id", "note-id")]) {
+        Result.Err(SqliteCheckError.UnsupportedPredicate) => true
+        _ => false
+    }
     let row = encode_prepared_row(codec, Note {
             id = 7
             body = "hello"

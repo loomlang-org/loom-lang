@@ -698,6 +698,11 @@ base-record derivation also checks whole-record refinements after field
 decoding, including cross-field predicates and CTFE. Ordinary constructor and
 continuing alias rules apply, and inaccessible or unrelated bases reject;
 they do not infer database migrations or discover erased runtime types.
+The same visible refined-record mappings can derive SQLite CHECK clauses for
+direct built-in Int/Bool predicates, with exact cell-class and Boolean guards.
+Real raw INSERT/UPDATE controls reject invalid rows before typed decoding.
+Helpers, partial arithmetic and custom encodings remain unsupported; the clause
+does not establish all-field decodability or application/deployment compatibility.
 [Iterators](../../compiler/std/iter/README.md),
 [file lines](../../compiler/std/file/lines/README.md) and
 [streams](../../compiler/std/stream/README.md) support ordered, short-circuiting

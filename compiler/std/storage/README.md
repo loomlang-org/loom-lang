@@ -80,3 +80,34 @@ without a logical codec.
 A valid descriptor or successful round trip does not prove an upgrade compatible.
 Deployed-state comparisons still require explicit migration, failure and recovery
 policies.
+
+## Source-derived SQLite checks
+
+`sqlite_record_check[T](table[, aliases])` returns a SQL `CHECK` clause as
+`Result[Text, SqliteCheckError]`. It uses the same visible refined-record mapping
+as `record_codec[T]`, then translates the direct source predicate. Stable IDs and
+aliases select quoted physical columns, including reordered fields. Preparation
+freezes the mapping and rejects names containing NUL or colliding under SQLite's
+ASCII-insensitive identifier comparison.
+
+The supported expressions use exact built-in `Int` and `Bool` fields, integer and
+Boolean literals, integer comparisons, same-type equality/inequality, `!`, `&&`
+and `||`. Signed literals include both Int limits. Emitted comparisons retain
+explicit parentheses, and referenced cells must have integer storage class;
+Bool cells must also be 0 or 1. The final `IS 1` rejects SQL NULL rather than
+allowing an unknown CHECK result. No partial arithmetic, helper invocation,
+custom/refined field encoding or unresolved syntax is translated. Unsupported
+types/predicates return an error, without executing a predicate to sample it.
+The helper also works in ordinary CTFE.
+
+See SQLite's [CHECK semantics](https://www.sqlite.org/lang_createtable.html#check_constraints)
+and [storage classes](https://www.sqlite.org/datatype3.html#storage_classes_and_datatypes).
+
+The caller installs the clause in its own schema; the helper neither executes
+SQL nor inspects an existing database. SQLite affinity and explicit disabling of
+constraints remain database policy. This clause enforces the modeled predicate
+on referenced scalar cells, not every field's decodability, arbitrary application
+writers, artifact identity or deployment compatibility. Other fields retain
+their ordinary codec and database validation. See the
+[real SQLite trial](../../../tools/deployment/sqlite_rows_trial/README.md) for
+raw INSERT/UPDATE rejection alongside typed decoding and insertion.

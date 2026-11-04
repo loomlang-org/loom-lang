@@ -1,0 +1,138 @@
+import std.storage.sqlite_record_check
+import std.process.capture_input
+import std.process.ExitStatus
+import std.text.to_bytes
+import std.text.join
+import std.int.to_text
+
+pub record SourceBoundsFields {
+    lower Int
+    upper Int
+    active Bool
+}
+
+pub type SourceBounds = SourceBoundsFields where !self.active || self.lower <= self.upper
+
+pub type SourceScalarChecks = SourceBoundsFields where
+(self).active == ((self).lower != (self).upper) &&
+self.lower >= -9223372036854775808 && self.upper <= 9223372036854775807 &&
+!(self.lower > self.upper) && (self.lower < self.upper || self.lower == self.upper)
+
+fn source_bounds_valid(value SourceBounds) Bool
+ensures result {
+    !value.active || value.lower <= value.upper
+}
+
+fn source_check_rejected(tool Text, database Text, statement Text) Bool {
+    match capture_input([tool, "-batch", "-bail", "--", database], to_bytes(statement)) {
+        Result.Ok(output) => match output.status {
+            ExitStatus.Exited(code) => code != 0
+            _ => false
+        }
+        _ => false
+    }
+}
+
+fn check_scalar_sqlite_operations(tool Text, database Text, table Table, aliases List[(Text, Text)]) {
+    let scalar_table = Table {
+        physical_name = "scalar checked bounds",
+        ..table
+    }
+    let constraint = match sqlite_record_check[SourceScalarChecks](scalar_table, aliases) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            assert false
+            return
+        }
+    }
+    sql(tool, database, concat("CREATE TABLE \"scalar checked bounds\" (\"UPPER value\", \"lo\"\"wer\", enabled, ", concat(constraint, ");")))
+    let points = [-9223372036854775808, -1, 0, 1, 9223372036854775807]
+    var lower = 0
+    while lower < std.list.length(points) {
+        var upper = 0
+        while upper < std.list.length(points) {
+            var flag = 0
+            while flag < 2 {
+                let lo = std.list.get(points, lower)
+                let hi = std.list.get(points, upper)
+                let accepted = match SourceScalarChecks(SourceBoundsFields {
+                        lower = lo
+                        upper = hi
+                        active = flag == 1
+                    }) {
+                    Result.Ok(_) => true
+                    Result.Err(_) => false
+                }
+                let row = std.text.join([std.int.to_text(hi), std.int.to_text(lo), std.int.to_text(flag)], ",")
+                let rejected = source_check_rejected(tool, database, concat("INSERT INTO \"scalar checked bounds\" VALUES (", concat(row, ");")))
+                assert accepted != rejected
+                flag = flag + 1
+            }
+            upper = upper + 1
+        }
+        lower = lower + 1
+    }
+}
+
+fn check_source_record_constraints(tool Text, database Text) {
+    let table = Table {
+        id = "source-bounds"
+        physical_name = "source checked bounds"
+        columns = [column("hi-id", "UPPER value", ValueKind.Int, false),
+            column("lo-id", "lo\"wer", ValueKind.Int, false),
+            column("active", "enabled", ValueKind.Int, false)]
+    }
+    let aliases = [("lower", "lo-id"), ("upper", "hi-id")]
+    let constraint = match sqlite_record_check[SourceBounds](table, aliases) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            assert false
+            return
+        }
+    }
+    // No affinity: SQLite must retain the actual integer class rather than
+    // coercing text/real/blob cells into a different representation.
+    sql(tool, database, concat("CREATE TABLE \"source checked bounds\" (\"UPPER value\", \"lo\"\"wer\", enabled, ", concat(constraint, ");")))
+    sql(tool, database, """
+        INSERT INTO "source checked bounds" VALUES (5,2,1), (1,9,0),
+        (9223372036854775807,-9223372036854775808,1);
+        """)
+    let invalid = ["(1,9,1)", "(NULL,2,1)", "(5,2,NULL)", "(5,2,2)",
+        "('5',2,1)", "(5.0,2,1)", "(x'35',2,1)", "(5,2,'1')"]
+    var index = 0
+    while index < std.list.length(invalid) {
+        assert source_check_rejected(tool, database, concat("INSERT INTO \"source checked bounds\" VALUES ", concat(std.list.get(invalid, index), ";")))
+        index = index + 1
+    }
+    assert source_check_rejected(tool, database, "UPDATE \"source checked bounds\" SET enabled=1 WHERE enabled=0;")
+    let codec = match record_codec[SourceBounds](table, aliases) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            assert false
+            return
+        }
+    }
+    let value = SourceBounds(SourceBoundsFields {
+            lower = -2
+            upper = -1
+            active = true
+        })
+    assert match insert_sqlite_rows(tool, database, codec, [value]) {
+        Result.Ok(true) => true
+        _ => false
+    }
+    let values = match read_sqlite_rows(tool, database, codec) {
+        Result.Ok(rows) => rows
+        Result.Err(_) => {
+            assert false
+            return
+        }
+    }
+    assert std.list.length(values) == 4
+    index = 0
+    while index < std.list.length(values) {
+        assert source_bounds_valid(std.list.get(values, index))
+        index = index + 1
+    }
+    check_scalar_sqlite_operations(tool, database, table, aliases)
+}
