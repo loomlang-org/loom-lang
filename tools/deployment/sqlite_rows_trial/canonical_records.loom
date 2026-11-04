@@ -1,0 +1,100 @@
+import std.storage.sqlite_record_codec
+import std.storage.sqlite_codec_check
+import std.storage.sqlite_codec_rows
+
+pub type CanonicalRowAmount = Int where self > 0
+
+pub record CanonicalRowFields {
+    id Int
+    amount CanonicalRowAmount
+    enabled Bool
+}
+
+pub type CanonicalRow = CanonicalRowFields where self.id >= 0 && self.amount >= self.id
+
+fn canonical_row_accepts(id Int, amount Int, enabled Bool) Bool {
+    match CanonicalRowAmount(amount) {
+        Result.Ok(value) => match CanonicalRow(CanonicalRowFields {
+                id = id
+                amount = value
+                enabled = enabled
+            }) {
+            Result.Ok(_) => true
+            Result.Err(_) => false
+        }
+        Result.Err(_) => false
+    }
+}
+
+fn canonical_row_valid(value CanonicalRow) Bool
+ensures result {
+    value.id >= 0 && value.amount >= value.id && value.amount > 0
+}
+
+fn check_canonical_record_constraints(tool Text, database Text) {
+    let prepared = match sqlite_record_codec[CanonicalRow](Table {
+            id = "canonical"
+            physical_name = "canonical source rows"
+            columns = [column("enabled", "enabled flag", ValueKind.Int, false),
+                column("amount-id", "amount cents", ValueKind.Int, false),
+                column("key-id", "order key", ValueKind.Int, false)]
+        }, [("id", "key-id"), ("amount", "amount-id")]) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            assert false
+            return
+        }
+    }
+    let check = sqlite_codec_check(prepared)
+    let codec = sqlite_codec_rows(prepared)
+    sql(tool, database, concat("CREATE TABLE \"canonical source rows\" (\"enabled flag\", \"amount cents\", \"order key\", ", concat(check, ");")))
+    let keys = [-1, 0, 1, 2, 9223372036854775807]
+    let amounts = [0, 1, 2, 9223372036854775807]
+    var key = 0
+    while key < std.list.length(keys) {
+        var amount = 0
+        while amount < std.list.length(amounts) {
+            var flag = 0
+            while flag < 2 {
+                let id = std.list.get(keys, key)
+                let value = std.list.get(amounts, amount)
+                let expected = canonical_row_accepts(id, value, flag == 1)
+                let row = std.text.join([std.int.to_text(flag), std.int.to_text(value), std.int.to_text(id)], ",")
+                assert source_check_rejected(tool, database, concat("INSERT INTO \"canonical source rows\" VALUES (", concat(row, ");"))) != expected
+                flag = flag + 1
+            }
+            amount = amount + 1
+        }
+        key = key + 1
+    }
+    let invalid = ["(2,3,2)", "(NULL,3,2)", "(1,0,0)", "(1,'3',2)",
+        "(1,3.0,2)", "(1,x'33',2)", "(1,3,NULL)", "(1,3,'2')"]
+    var index = 0
+    while index < std.list.length(invalid) {
+        assert source_check_rejected(tool, database, concat("INSERT INTO \"canonical source rows\" VALUES ", concat(std.list.get(invalid, index), ";")))
+        index = index + 1
+    }
+    assert source_check_rejected(tool, database, "UPDATE \"canonical source rows\" SET \"enabled flag\"=2;")
+    assert source_check_rejected(tool, database, "UPDATE \"canonical source rows\" SET \"amount cents\"=0;")
+    assert match insert_sqlite_rows(tool, database, codec, [CanonicalRow(CanonicalRowFields {
+                    id = 2
+                    amount = CanonicalRowAmount(3)
+                    enabled = true
+                })]) {
+        Result.Ok(true) => true
+        _ => false
+    }
+    let values = match read_sqlite_rows(tool, database, codec) {
+        Result.Ok(rows) => rows
+        Result.Err(_) => {
+            assert false
+            return
+        }
+    }
+    assert std.list.length(values) > 0
+    index = 0
+    while index < std.list.length(values) {
+        assert canonical_row_valid(std.list.get(values, index))
+        index = index + 1
+    }
+}

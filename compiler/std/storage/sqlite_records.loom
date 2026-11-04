@@ -1,0 +1,297 @@
+import std.meta.refinement_base
+import std.reflect.describe
+import std.reflect.Kind
+import std.reflect.from_fields
+import std.reflect.predicates.describe
+import std.text.concat
+import std.text.join
+
+// A canonical codec and the SQL clause derived from the same visible types and
+// frozen mapping. The factory does not delegate field conversion to user code.
+pub record SqliteRecordCodec[T] {
+    state SqliteRecordState[T]
+}
+
+record SqliteRecordState[T] {
+    rows PreparedRowCodec[T]
+    check Text
+}
+
+pub fn sqlite_codec_rows[T](codec SqliteRecordCodec[T]) PreparedRowCodec[T] {
+    codec.state.rows
+}
+
+pub fn sqlite_codec_check[T](codec SqliteRecordCodec[T]) Text {
+    codec.state.check
+}
+
+fn sqlite_canonical_kind[T]() SqliteCheckKind {
+    comptime if T == Int {
+        return SqliteCheckKind.Integer
+    }
+    comptime if T == Bool {
+        return SqliteCheckKind.Boolean
+    }
+    comptime if std.reflect.describe[T]().types[0].kind == Kind.Refined {
+        let Base = comptime {
+            match refinement_base[T]() {
+                Option.Some(value) => value
+                Option.None => T
+            }
+        }
+        comptime if Base == Int && refined_codec_base[T, Base]() {
+            return SqliteCheckKind.Integer
+        }
+        comptime if Base == Bool && refined_codec_base[T, Base]() {
+            return SqliteCheckKind.Boolean
+        }
+    }
+    SqliteCheckKind.Unsupported
+}
+
+fn sqlite_canonical_encode[T](value T) Result[Value, CodecError] {
+    comptime if T == Int {
+        return Result.Ok(Value.Int(value))
+    }
+    comptime if T == Bool {
+        return Result.Ok(Value.Int(if value {
+                    1
+                } else {
+                    0
+                }))
+    }
+    comptime if std.reflect.describe[T]().types[0].kind == Kind.Refined {
+        let Base = comptime {
+            match refinement_base[T]() {
+                Option.Some(value) => value
+                Option.None => T
+            }
+        }
+        comptime if (Base == Int || Base == Bool) && refined_codec_base[T, Base]() {
+            let base Base = value
+            return sqlite_canonical_encode(base)
+        }
+    }
+    Result.Err(CodecError.Rejected)
+}
+
+fn sqlite_canonical_decode[T](value Value) Result[T, CodecError] {
+    comptime if T == Int {
+        return match value {
+            Value.Int(number) => Result.Ok(number)
+            _ => Result.Err(CodecError.Rejected)
+        }
+    }
+    comptime if T == Bool {
+        return match value {
+            Value.Int(0) => Result.Ok(false)
+            Value.Int(1) => Result.Ok(true)
+            _ => Result.Err(CodecError.Rejected)
+        }
+    }
+    comptime if std.reflect.describe[T]().types[0].kind == Kind.Refined {
+        let Base = comptime {
+            match refinement_base[T]() {
+                Option.Some(value) => value
+                Option.None => T
+            }
+        }
+        comptime if (Base == Int || Base == Bool) && refined_codec_base[T, Base]() {
+            return checked_refined_value[T, Base](sqlite_canonical_decode[Base](value)?)
+        }
+    }
+    Result.Err(CodecError.Rejected)
+}
+
+fn sqlite_canonical_field_check[T](column Text) Result[Text, SqliteCheckError] {
+    let kind = sqlite_canonical_kind[T]()
+    if kind == SqliteCheckKind.Unsupported {
+        return Result.Err(SqliteCheckError.UnsupportedType)
+    }
+    let field = SqliteCheckField {
+        name = ""
+        column = column
+        kind = kind
+    }
+    let clauses = sqlite_check_cell(field)?.guards
+    comptime if std.reflect.describe[T]().types[0].kind == Kind.Refined {
+        let predicate = match std.reflect.predicates.describe[T]() {
+            Option.Some(value) => value.expression
+            Option.None => {
+                return Result.Err(SqliteCheckError.UnsupportedType)
+            }
+        }
+        let term = sqlite_check_expression(predicate, [field], 0)?
+        if term.kind != SqliteCheckKind.Boolean {
+            return Result.Err(SqliteCheckError.UnsupportedPredicate)
+        }
+        push(clauses, term.sql)
+    }
+    Result.Ok(concat("(", concat(join(clauses, ") AND ("), ")")))
+}
+
+fn sqlite_canonical_record_rows[T](table Table, positions List[Int]) Result[PreparedRowCodec[T], CodecError] {
+    comptime if std.reflect.describe[T]().types[0].kind == Kind.Record {
+        let encoder = fn(value T) Result[List[Value], CodecError] {
+            let row = new[Value]()
+            var index = 0
+            while index < length(positions) {
+                push(row, Value.Null)
+                index = index + 1
+            }
+            index = 0
+            comptime for name, field in value {
+                discard name
+                set(row, get(positions, index), sqlite_canonical_encode(field)?)
+                index = index + 1
+            }
+            Result.Ok(row)
+        }
+        let decoder = fn(row List[Value]) Result[T, CodecError] {
+            var index = 0
+            let fields = comptime map name, Field in T {
+                discard name
+                let position = get(positions, index)
+                index = index + 1
+                sqlite_canonical_decode[Field](get(row, position))?
+            }
+            let assembled T = from_fields(fields)
+            Result.Ok(assembled)
+        }
+        return Result.Ok(PreparedRowCodec {
+                state = PreparedState {
+                    table = table
+                    encode_value = encoder
+                    decode_value = decoder
+                }
+            })
+    }
+    Result.Err(CodecError.InvalidSchema)
+}
+
+fn sqlite_canonical_record[T, Base](table Table, aliases List[(Text, Text)]) Result[SqliteRecordCodec[T], SqliteCheckError] {
+    comptime if std.reflect.describe[Base]().types[0].kind == Kind.Record &&
+    (T == Base || refined_codec_base[T, Base]()) {
+        let frozen = snapshot(table)
+        let frozen_aliases = std.list.clone(aliases)
+        if !match validate_table(frozen) {
+            Result.Ok(_) => true
+            _ => false
+        } {
+            return Result.Err(SqliteCheckError.InvalidMapping)
+        }
+        discard sqlite_check_identifier(frozen.physical_name)?
+        var index = 0
+        while index < length(frozen.columns) {
+            let column = get(frozen.columns, index)
+            discard sqlite_check_identifier(column.physical_name)?
+            if column.kind != ValueKind.Int || column.nullable {
+                return Result.Err(SqliteCheckError.InvalidMapping)
+            }
+            var previous = 0
+            while previous < index {
+                if sqlite_check_same_name(column.physical_name, get(frozen.columns, previous).physical_name) {
+                    return Result.Err(SqliteCheckError.InvalidMapping)
+                }
+                previous = previous + 1
+            }
+            index = index + 1
+        }
+        let names = new[Text]()
+        let fields = new[SqliteCheckField]()
+        let clauses = new[Text]()
+        comptime for name, Field in Base {
+            let column = sqlite_check_column(frozen, frozen_aliases, name)?
+            push(names, name)
+            push(clauses, sqlite_canonical_field_check[Field](column)?)
+            push(fields, SqliteCheckField {
+                    name = name
+                    column = column
+                    kind = sqlite_canonical_kind[Field]()
+                })
+        }
+        let positions = match record_positions(frozen, names, frozen_aliases) {
+            Result.Ok(value) => value
+            Result.Err(_) => {
+                return Result.Err(SqliteCheckError.InvalidMapping)
+            }
+        }
+        comptime if T != Base {
+            let predicate = match std.reflect.predicates.describe[T]() {
+                Option.Some(value) => value.expression
+                Option.None => {
+                    return Result.Err(SqliteCheckError.UnsupportedType)
+                }
+            }
+            let term = sqlite_check_expression(predicate, fields, 0)?
+            if term.kind != SqliteCheckKind.Boolean {
+                return Result.Err(SqliteCheckError.UnsupportedPredicate)
+            }
+            push(clauses, term.sql)
+        }
+        let check = concat("CHECK (((", concat(join(clauses, ") AND ("), ")) IS 1)"))
+        let underlying = match sqlite_canonical_record_rows[Base](frozen, positions) {
+            Result.Ok(value) => value
+            Result.Err(_) => {
+                return Result.Err(SqliteCheckError.InvalidMapping)
+            }
+        }
+        comptime if T == Base {
+            return Result.Ok(SqliteRecordCodec {
+                    state = SqliteRecordState {
+                        rows = underlying,
+                        check = check
+                    }
+                })
+        } else {
+            let encoder = fn(value T) Result[List[Value], CodecError] {
+                let base Base = value
+                encode_prepared_row(underlying, base)
+            }
+            let decoder = fn(row List[Value]) Result[T, CodecError] {
+                checked_refined_value[T, Base](decode_prepared_row(underlying, row)?)
+            }
+            return Result.Ok(SqliteRecordCodec {
+                    state = SqliteRecordState {
+                        rows = PreparedRowCodec {
+                            state = PreparedState {
+                                table = frozen
+                                encode_value = encoder
+                                decode_value = decoder
+                            }
+                        }
+                        check = check
+                    }
+                })
+        }
+    } else {
+        Result.Err(SqliteCheckError.UnsupportedType)
+    }
+}
+
+pub fn sqlite_record_codec[T](table Table) Result[SqliteRecordCodec[T], SqliteCheckError] {
+    sqlite_record_codec[T](table, [])
+}
+
+// All fields use canonical non-null Int/Bool representations, including direct
+// visible refinements over those built-ins. Scalar and whole-record predicates
+// must use the supported total SQL expression fragment. Unsupported fields or
+// predicates reject even when the whole-record predicate does not mention them.
+// The caller installs the clause; database inspection, schema alteration and
+// deployment compatibility remain separate operations.
+pub fn sqlite_record_codec[T](table Table, aliases List[(Text, Text)]) Result[SqliteRecordCodec[T], SqliteCheckError] {
+    comptime if std.reflect.describe[T]().types[0].kind == Kind.Refined {
+        let Base = comptime {
+            match refinement_base[T]() {
+                Option.Some(value) => value
+                Option.None => T
+            }
+        }
+        comptime if Base != T {
+            return sqlite_canonical_record[T, Base](table, aliases)
+        }
+    } else {
+        return sqlite_canonical_record[T, T](table, aliases)
+    }
+    Result.Err(SqliteCheckError.UnsupportedType)
+}
