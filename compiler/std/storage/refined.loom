@@ -2,7 +2,7 @@ import std.reflect.describe
 import std.reflect.Kind
 import std.reflect.predicates.implies
 
-fn refined_column_base[T, Base]() Bool {
+fn refined_codec_base[T, Base]() Bool {
     let target = describe[T]().types[0].kind
     let base = describe[Base]().types[0].kind
     target == Kind.Refined && base != Kind.Opaque && base != Kind.Refined &&
@@ -12,7 +12,7 @@ fn refined_column_base[T, Base]() Bool {
 // Explicit delegation to a base codec, not an automatic conformance or a
 // representation/compatibility proof. Opaque and mismatched types reject.
 pub fn encode_refined_column[T, Base ColumnValue](value T) Result[Value, CodecError] {
-    comptime if refined_column_base[T, Base]() {
+    comptime if refined_codec_base[T, Base]() {
         let base Base = value
         base.to_column()
     } else {
@@ -22,7 +22,7 @@ pub fn encode_refined_column[T, Base ColumnValue](value T) Result[Value, CodecEr
 
 // A separate ordinary parameter keeps construction dependent only on Base's
 // guarantees, not on incidental observations of a particular decoder call.
-fn checked_refined_column[T, Base](value Base) Result[T, CodecError] {
+fn checked_refined_value[T, Base](value Base) Result[T, CodecError] {
     comptime if implies[Base, T]() {
         Result.Ok(T(value))
     } else {
@@ -34,8 +34,8 @@ fn checked_refined_column[T, Base](value Base) Result[T, CodecError] {
 }
 
 pub fn decode_refined_column[T, Base ColumnValue](value Value) Result[T, CodecError] {
-    comptime if refined_column_base[T, Base]() {
-        checked_refined_column[T, Base](ColumnValue.from_column[Base](value)?)
+    comptime if refined_codec_base[T, Base]() {
+        checked_refined_value[T, Base](ColumnValue.from_column[Base](value)?)
     } else {
         Result.Err(CodecError.Rejected)
     }

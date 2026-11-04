@@ -4,6 +4,7 @@ import std.list.set
 import std.reflect.describe
 import std.reflect.Kind
 import std.reflect.from_fields
+import std.meta.refinement_base
 
 // Prepare a bijection from source field names to stable column IDs. Physical
 // names and column order do not determine a field's identity.
@@ -89,9 +90,21 @@ pub fn record_codec[T](table Table) Result[PreparedRowCodec[T], CodecError] {
     record_codec[T](table, [])
 }
 
-// Visible unrefined records only. Each field needs an explicit ColumnValue
-// implementation; unsupported shapes and mismatched descriptors are errors.
+// Visible records and refinements over visible records. Each field needs an
+// explicit ColumnValue; unsupported shapes and descriptors are errors.
 pub fn record_codec[T](table Table, aliases List[(Text, Text)]) Result[PreparedRowCodec[T], CodecError] {
+    comptime if describe[T]().types[0].kind == Kind.Refined {
+        let Base = comptime {
+            match refinement_base[T]() {
+                Option.Some(base) => base
+                Option.None => T
+            }
+        }
+        comptime if Base != T {
+            return refined_record_codec[T, Base](table, aliases)
+        }
+        return Result.Err(CodecError.InvalidSchema)
+    }
     comptime if describe[T]().types[0].kind == Kind.Record {
         let frozen = snapshot(table)
         discard validate_table(frozen)?

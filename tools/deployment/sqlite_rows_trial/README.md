@@ -15,6 +15,12 @@ Bytes and Float. It exercises reordered columns, stable-ID aliases, quoted
 identifiers, empty/binary/multiline values, integer limits and a subnormal Float.
 Invalid constraints, kinds, NULLs and UTF-8 are rejected at the typed boundary.
 
+The trial also derives `record_codec[OrderedBounds]` for a
+whole-record `lower <= upper` predicate. It reads valid rows through reordered
+stable-ID aliases, rejects a stored row whose two valid integer fields violate
+that relationship, then inserts and reads a checked boundary value. A source
+postcondition uses the decoded record's complete constraint.
+
 The trusted CLI runs one read-only SELECT, with literal arguments and quoted
 identifiers; user startup commands are disabled. Cells use tagged hexadecimal
 payloads, including SQLite CLI's

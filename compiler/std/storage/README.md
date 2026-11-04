@@ -7,8 +7,9 @@ identities, independent of physical SQL names.
 ## Record codecs
 
 `record_codec[T](table[, aliases])` returns `Result[PreparedRowCodec[T], CodecError]`.
-For a visible unrefined record, ordinary compile-time field iteration generates
-the field encoders and checked assembly. Records used from another package must
+For a visible record, ordinary compile-time field iteration generates the field
+encoders and checked assembly. Visible refinements also retain their complete
+constructor check after field decoding. Records used from another package must
 be `pub`; private types remain opaque. Normal resource-construction restrictions
 still apply.
 
@@ -48,9 +49,24 @@ reject; visibility is the library's lexical visibility. The conformance and its
 physical kind/nullability remain explicit. Delegation does not prove that an
 arbitrary base codec preserves values or that deployments are compatible.
 
+For a refined `T`, `record_codec[T]` obtains the visible non-refined base identity
+through `std.meta.refinement_base`, then derives its ordinary record mapping.
+`T` must admit weakening to that base, and the field codecs and mapping must pass
+the ordinary checks. An opaque or non-record base returns `InvalidSchema`;
+names and similar fields do not substitute for the actual base identity.
+
+Encoding delegates through the base record. Decoding first checks all fields,
+then uses `T`'s ordinary constructor to check the complete record predicate,
+including relationships between fields. A failed predicate returns `Rejected`;
+field errors retain their original categories. Redundant refinements can use a
+statically proved constructor, and the same derivation works in CTFE. Constructor
+evaluation and continuing alias constraints still apply. No implicit isolation
+or new protection for shared Bytes is added.
+
 See the [runnable example](../../examples/storage/README.md), including stable-ID
-mapping and a constrained amount decoder. No per-record handwritten encoder or
-runtime type registry is required.
+mapping, a constrained amount decoder and a whole-record relationship between
+the ID and amount. No per-record handwritten encoder or runtime type registry
+is required.
 
 ## Custom mappings
 

@@ -41,7 +41,16 @@ record PrivateNote {
 
 type ValidNote = Note where self.id > 0
 
+pub type IndexedNote = Note where self.id > 0 && self.id <= self.amount
+
+pub type HiddenNote = PrivateNote where self.body != ""
+
 type PrivateAmount = Int where self > 0
+
+fn indexed_amount(value IndexedNote) Int
+ensures result >= value.id {
+    value.amount
+}
 
 fn round_trip() Result[Bool, CodecError] {
     assert match decode_refined_column[PrivateAmount, Int](Value.Int(1)) {
@@ -80,6 +89,10 @@ fn round_trip() Result[Bool, CodecError] {
         Result.Err(CodecError.InvalidSchema) => true
         _ => false
     }
+    assert match record_codec[HiddenNote](table) {
+        Result.Err(CodecError.InvalidSchema) => true
+        _ => false
+    }
     let codec = record_codec[Note](table, [("id", "note-id")])?
     let row = encode_prepared_row(codec, Note {
             id = 7
@@ -94,6 +107,26 @@ fn round_trip() Result[Bool, CodecError] {
     }
     set(row, 1, Value.Int(-1))
     assert match decode_prepared_row(codec, row) {
+        Result.Err(CodecError.Rejected) => true
+        _ => false
+    }
+    set(row, 1, Value.Int(1250))
+    let refined = record_codec[IndexedNote](table, [("id", "note-id")])?
+    let indexed = decode_prepared_row(refined, row)?
+    assert indexed.id == 7 && indexed_amount(indexed) == 1250
+    let encoded = encode_prepared_row(refined, indexed)?
+    assert match get(encoded, 2) {
+        Value.Int(7) => true
+        _ => false
+    }
+    // All cells still satisfy their field types; the record relationship fails.
+    set(row, 2, Value.Int(1251))
+    assert match decode_prepared_row(refined, row) {
+        Result.Err(CodecError.Rejected) => true
+        _ => false
+    }
+    set(row, 2, Value.Int(0))
+    assert match decode_prepared_row(refined, row) {
         Result.Err(CodecError.Rejected) => true
         _ => false
     }
