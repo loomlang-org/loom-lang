@@ -1,4 +1,3 @@
-import std.loom.checking.optimize_loop_assertions
 import std.loom.project.load
 import std.loom.project.resolve
 import std.loom.project.is_windows_path
@@ -15,8 +14,9 @@ import std.loom.checking.build_inputs
 import std.loom.project.read_input
 import std.loom.project.BuildInput
 import std.loom.project.InputRequest
-import std.loom.lowering.lower
-import frontend.artifact.encode
+import std.loom.compilation.prepare_native
+import std.loom.compilation.select_tests
+import std.loom.compilation.NativeInput
 import std.loom.typed.Program
 import std.loom.source.render
 import std.int.to_text
@@ -314,22 +314,22 @@ fn prepare_loaded(options Options, loaded Project, inputs BuildInputs) Result[Pr
 
 fn prepare_checked(options Options, project Project, inputs BuildInputs, value std.loom.typed.Program,
     bindings std.loom.binding.Program) Prepared {
-    let optimized = if options.command == "check" {
-        value
+    let native = if options.command == "check" {
+        let selected = select_tests(value, options.test_filter)
+        NativeInput {
+            text = ""
+            entry = selected.entry
+            tests = length(selected.tests)
+        }
     } else {
-        optimize_loop_assertions(value, inputs.proof_backend)
+        prepare_native(value, inputs.targets, bindings, inputs.proof_backend, options.test_filter)
     }
-    let selected = select_tests(optimized, options.test_filter)
     Prepared {
         inputs = inputs.files
         targets = inputs.targets
-        input = if options.command == "check" {
-            ""
-        } else {
-            encode(lower(selected), inputs.targets, bindings)
-        }
-        entry = selected.entry
-        tests = length(selected.tests)
+        input = native.text
+        entry = native.entry
+        tests = native.tests
         project = project
     }
 }

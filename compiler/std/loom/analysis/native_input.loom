@@ -1,0 +1,16 @@
+import std.loom.compilation.prepare_native
+
+// The exact source-written lowering/encoding path used by build/emit-checked.
+// The retained checked program stays immutable. Its observed targets and proof
+// backend determine preparation; different observations or optional proof
+// outcomes can produce different input, which must not count as a match.
+//
+// Comparing its SHA-256 with a trusted local build receipt's checked-sha256
+// relates this analysis to that receipt's backend input. Artifact bytes,
+// receipt provenance, source/config/input observations and storage/writer
+// compatibility remain independent checks.
+pub fn native_input(analysis Analysis) Text {
+    let state = analysis.state
+    prepare_native(std.loom.typed.snapshot(state.program), state.targets,
+        state.bindings, state.proof_backend, "").text
+}

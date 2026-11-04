@@ -1,4 +1,32 @@
-# Checked call closure
+# Checked analysis
+
+## Native compiler input
+
+`native_input(analysis)` returns the encoded native backend input prepared from
+the checked program retained by an `Analysis`. It uses the same assertion
+optimization, executable-root selection, lowering and encoding as the compiler's
+ordinary build path. Preparation works on a deep copy, including async dispatch
+and type tables, and leaves the retained analysis unchanged. It does not invoke
+application functions.
+
+The SHA-256 of these bytes can be compared with `checked-sha256` in a trusted
+local build receipt. The checked AST matters: editing its body without changing
+`SourceFile.text` can change native input. Matching source-file hashes alone
+cannot establish this link.
+
+Analysis must use the build's test mode, observed inputs, target options and
+proof backend. This query includes all executable roots retained by the analysis
+and applies no test-name filter. Optional proof outcomes can affect preparation;
+different input must remain a mismatch. The encoded format is an internal
+compiler/backend boundary, not a stable artifact interchange format.
+
+An equal hash establishes equality of prepared backend input, subject to the
+ordinary SHA-256 assumption and trust in that receipt. Artifact bytes, receipt
+provenance, module/configuration/input freshness and storage/writer compatibility
+still need their own checks. See the
+[native input example](../../../examples/analysis_native_input/README.md).
+
+## Checked call closure
 
 `call_closure(analysis, root, boundaries)` inspects the checked source IR retained
 by an `Analysis`. `root` and each boundary are function indices in that same
