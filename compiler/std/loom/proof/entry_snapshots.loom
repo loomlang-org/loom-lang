@@ -297,8 +297,7 @@ fn capture_guarded_entry(proof Verification, value Expr, guard Expr,
             let location = element_location(read, before)?
             let valid = Predicate.And(predicates(
                     Predicate.Compare(">=", location.index),
-                    Predicate.Compare("<", add(location.index,
-                            scale(list_extent(location.identity, before)?, integer(-1))))))
+                    Predicate.Compare("<", add_scaled(location.index, list_extent(location.identity, before)?, integer(-1)))))
             // A copied reference does not renew a mutable child predicate in
             // the post-call heap. Immutable logical snapshots remain typed.
             after_scope = guarded_type_invariants(proof.program.types, value.ty, observed, valid,

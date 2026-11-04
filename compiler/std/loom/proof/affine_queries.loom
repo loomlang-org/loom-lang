@@ -45,7 +45,7 @@ fn affine_reduce(value Linear, basis List[Linear], budget List[Int]) Result[Line
         let pivot = get(row.terms, 0)
         let factor = affine_coefficient(reduced, pivot.id)
         if number_size(factor) != 0 {
-            reduced = add(scale(reduced, pivot.factor), scale(row, negate(factor)))
+            reduced = add_scaled(scale(reduced, pivot.factor), row, negate(factor))
             if !affine_size(reduced) {
                 return Result.Err("affine proof size budget exhausted")
             }

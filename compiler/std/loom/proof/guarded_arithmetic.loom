@@ -641,8 +641,7 @@ fn cut_path(scan ArithmeticScan, first ArithmeticRead, second ArithmeticRead) Op
                 // end. Every target index is smaller than that end, so the
                 // resulting guard fact covers its path without another binder.
                 // The stronger fact itself still needs the scalar solver proof.
-                let projected = add(add(outer.end, add(second.index,
-                            scale(variable(outer.identity), integer(-1)))), offset)
+                let projected = add(add(outer.end, add_scaled(second.index, variable(outer.identity), integer(-1))), offset)
                 if !order_mentions(projected, outer.identity) {
                     upper = projected
                     retained = retained - 1
@@ -691,8 +690,8 @@ fn cut_order(scan ArithmeticScan, condition Predicate, facts List[Predicate]) Op
                             edges.step.relation == scan.step.relation && same_projection(edges.step.path, scan.step.path) &&
                             cut_same_linear(edges.step.offset, scan.step.offset) && same(edges.guard, scan.guard) {
                                 let contained = Predicate.And([
-                                        Predicate.Compare("<=", add(lower, scale(first, integer(-1)))),
-                                        Predicate.Compare("<=", add(last, scale(upper, integer(-1))))])
+                                        Predicate.Compare("<=", add_scaled(lower, first, integer(-1))),
+                                        Predicate.Compare("<=", add_scaled(last, upper, integer(-1)))])
                                 if holds(contained, facts) || difference_holds(contained, facts) {
                                     let next = add(variable(identity), scan.step.offset)
                                     let edge = Predicate.IntegerCompare(scan.step.relation,

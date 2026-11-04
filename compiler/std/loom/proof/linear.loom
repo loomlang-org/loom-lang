@@ -84,6 +84,82 @@ fn scale(value Linear, factor Number) Linear {
     }
 }
 
+// Equivalent to add(a, scale(b, factor)), without materializing the scaled
+// term list. Keep the existing identity behavior, including sparse zero inputs.
+fn add_scaled(a Linear, b Linear, factor Number) Linear {
+    if number_size(factor) == 0 {
+        return a
+    }
+    if !factor.negative && unit(factor) {
+        return add(a, b)
+    }
+    var nonzero = false
+    var index = 0
+    while index < length(b.terms) && !nonzero {
+        nonzero = number_size(get(b.terms, index).factor) != 0
+        index = index + 1
+    }
+    if !nonzero {
+        return Linear {
+            constant = sum(a.constant, product(b.constant, factor))
+            terms = a.terms
+        }
+    }
+    let terms = new[Term]()
+    var left = 0
+    var right = 0
+    while left < length(a.terms) || right < length(b.terms) {
+        // scale removes these before add sees them. Skipping before choosing
+        // an ID also preserves behavior when a zero precedes a repeated ID.
+        while right < length(b.terms) && number_size(get(b.terms, right).factor) == 0 {
+            right = right + 1
+        }
+        if left == length(a.terms) && right == length(b.terms) {
+            break
+        }
+        let id = if right == length(b.terms) {
+            get(a.terms, left).id
+        } else {
+            if left == length(a.terms) {
+                get(b.terms, right).id
+            } else {
+                let first = get(a.terms, left).id
+                let second = get(b.terms, right).id
+                if first < second {
+                    first
+                } else {
+                    second
+                }
+            }
+        }
+        let from_left = left < length(a.terms) && get(a.terms, left).id == id
+        var coefficient = if from_left {
+            get(a.terms, left).factor
+        } else {
+            product(get(b.terms, right).factor, factor)
+        }
+        if from_left {
+            left = left + 1
+        }
+        if right < length(b.terms) && get(b.terms, right).id == id {
+            if from_left {
+                coefficient = sum(coefficient, product(get(b.terms, right).factor, factor))
+            }
+            right = right + 1
+        }
+        if number_size(coefficient) != 0 {
+            push(terms, Term {
+                    id = id,
+                    factor = coefficient
+                })
+        }
+    }
+    Linear {
+        constant = sum(a.constant, product(b.constant, factor))
+        terms = terms
+    }
+}
+
 fn same_terms(a List[Term], b List[Term]) Bool {
     if length(a) != length(b) {
         return false

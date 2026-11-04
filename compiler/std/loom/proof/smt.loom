@@ -597,8 +597,8 @@ fn smt_redundant_fact(facts List[Predicate], index Int) Bool {
                 match get(facts, prior) {
                     Predicate.Forall(other, first, last, conditions) => {
                         if identity == other && same_predicates(body, conditions) {
-                            let lower = Predicate.Compare("<=", add(first, scale(start, integer(-1))))
-                            let upper = Predicate.Compare("<=", add(end, scale(last, integer(-1))))
+                            let lower = Predicate.Compare("<=", add_scaled(first, start, integer(-1)))
+                            let upper = Predicate.Compare("<=", add_scaled(end, last, integer(-1)))
                             if (holds(lower, facts) || difference_holds(lower, facts)) &&
                             (holds(upper, facts) || difference_holds(upper, facts)) {
                                 return true

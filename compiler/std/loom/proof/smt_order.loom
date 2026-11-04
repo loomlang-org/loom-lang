@@ -85,7 +85,7 @@ fn order_step(identity Int, value Predicate, negative Bool, depth Int) Option[Or
                         } else if compare(distance, integer(1)) != 0 {
                             return Option.None
                         }
-                        let offset = add(next, scale(variable(identity), integer(-1)))
+                        let offset = add_scaled(next, variable(identity), integer(-1))
                         // Unit index stride is essential: disjoint adjacent
                         // pairs in a strided scan do not form one chain.
                         if order_mentions(offset, identity) {

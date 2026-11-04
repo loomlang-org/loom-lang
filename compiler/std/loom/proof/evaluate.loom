@@ -63,7 +63,7 @@ fn numeric(operator Text, a Linear, b Linear) Result[Value, Text] {
         return Result.Ok(Value.Number(add(a, b)))
     }
     if operator == "-" {
-        return Result.Ok(Value.Number(add(a, scale(b, integer(-1)))))
+        return Result.Ok(Value.Number(add_scaled(a, b, integer(-1))))
     }
     if operator == "*" {
         if length(a.terms) == 0 {
@@ -100,7 +100,7 @@ fn numeric(operator Text, a Linear, b Linear) Result[Value, Text] {
         return Result.Ok(Value.Number(constant(integer(value))))
     }
     if operator == "==" || operator == "!=" || operator == "<" || operator == "<=" || operator == ">" || operator == ">=" {
-        return Result.Ok(Value.Boolean(Predicate.Compare(operator, add(a, scale(b, integer(-1))))))
+        return Result.Ok(Value.Boolean(Predicate.Compare(operator, add_scaled(a, b, integer(-1)))))
     }
     Result.Err("unsupported nonlinear proof arithmetic")
 }

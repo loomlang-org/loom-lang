@@ -1,0 +1,63 @@
+test fn scaled_add_matches_composition_for_sparse_exact_and_shared_inputs() {
+    let zero = integer(0)
+    let large = decimal("123456789012345678901234567890")
+    let rows = [constant(zero), constant(large), variable(2), Linear {
+            constant = negate(large)
+            terms = [Term {
+                    id = -1,
+                    factor = zero
+                },
+                Term {
+                    id = 2,
+                    factor = integer(-3)
+                },
+                Term {
+                    id = 7,
+                    factor = large
+                }]
+        }, Linear {
+            constant = large
+            terms = [Term {
+                    id = 2,
+                    factor = zero
+                },
+                Term {
+                    id = 2,
+                    factor = integer(3)
+                },
+                Term {
+                    id = 8,
+                    factor = zero
+                }]
+        }, Linear {
+            constant = large
+            terms = [Term {
+                    id = 2,
+                    factor = zero
+                }]
+        }]
+    let factors = [zero, integer(1), integer(-1), integer(2), large, negate(large)]
+    var left = 0
+    while left < length(rows) {
+        var right = 0
+        while right < length(rows) {
+            var index = 0
+            while index < length(factors) {
+                let a = get(rows, left)
+                let b = get(rows, right)
+                let factor = get(factors, index)
+                let original = add(a, scale(b, factor))
+                let fused = add_scaled(a, b, factor)
+                assert compare(original.constant, fused.constant) == 0
+                assert same_terms(original.terms, fused.terms)
+                index = index + 1
+            }
+            right = right + 1
+        }
+        left = left + 1
+    }
+    assert length(get(rows, 3).terms) == 3
+    assert compare(get(get(rows, 3).terms, 1).factor, integer(-3)) == 0
+    assert length(get(rows, 4).terms) == 3
+    assert number_size(get(get(rows, 4).terms, 0).factor) == 0
+}

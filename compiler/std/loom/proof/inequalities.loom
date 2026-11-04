@@ -84,7 +84,7 @@ fn inequality_eliminate(input List[Linear], budget List[Int]) Result[Bool, Text]
                 let b = negate(affine_coefficient(lower, pivot))
                 // b > 0 and a > 0, so this row is a consequence and its
                 // pivot cancels exactly. An impossible constant is a proof.
-                if inequality_row(remaining, add(scale(upper, b), scale(lower, a)))? {
+                if inequality_row(remaining, add_scaled(scale(upper, b), lower, a))? {
                     return Result.Ok(true)
                 }
                 other = other + 1

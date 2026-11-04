@@ -40,7 +40,7 @@ fn loop_affine_value(terms List[LoopTerm], state State) Result[Value, Text] {
     var index = 0
     while index < length(terms) {
         let term = get(terms, index)
-        value = add(value, scale(loop_observation_value(term.observation, state)?, term.factor))
+        value = add_scaled(value, loop_observation_value(term.observation, state)?, term.factor)
         index = index + 1
     }
     Result.Ok(Value.Number(value))
@@ -92,7 +92,7 @@ fn loop_affine_rates(proof Verification, expr Expr, symbols State, rates List[Li
     if expr.kind == ExprKind.Assign && get(proof.function.locals, expr.index).ty == 1 {
         match loop_affine_update(proof, get(expr.children, 0), symbols, hints) {
             Result.Ok(Value.Number(next)) => {
-                let delta = add(next, scale(variable(expr.index), integer(-1)))
+                let delta = add_scaled(next, variable(expr.index), integer(-1))
                 if length(delta.terms) == 0 && number_size(delta.constant) != 0 {
                     let choices = get(rates, expr.index)
                     var found = false

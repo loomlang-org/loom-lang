@@ -439,7 +439,7 @@ fn bag_length(value Predicate, bag Predicate) Bool {
     match value {
         Predicate.Compare(relation, term) => match bag {
             Predicate.BagEqual(_, size, _, count) => {
-                let delta = add(size, scale(count, integer(-1)))
+                let delta = add_scaled(size, count, integer(-1))
                 relation == "==" && ((same_terms(term.terms, delta.terms) && compare(term.constant, delta.constant) == 0) ||
                     (opposite_terms(term.terms, delta.terms) && compare(term.constant, negate(delta.constant)) == 0))
             }
@@ -480,7 +480,7 @@ fn bag_fact(value Predicate, facts List[Predicate]) Predicate {
     match bag_from_counts(value) {
         Option.Some(bag) => match bag {
             Predicate.BagEqual(_, first, _, second) => {
-                let equal = Predicate.Compare("==", add(first, scale(second, integer(-1))))
+                let equal = Predicate.Compare("==", add_scaled(first, second, integer(-1)))
                 if holds(equal, facts) {
                     return bag
                 }

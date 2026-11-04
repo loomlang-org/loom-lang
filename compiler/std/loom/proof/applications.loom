@@ -68,7 +68,7 @@ fn operation_safety(value Expr, state State) Result[Predicate, Text] {
         let size = list_value_extent(pure(get(value.children, 0), state)?, state)?
         let index = list_value_index(pure(get(value.children, 1), state)?)?
         return Result.Ok(Predicate.And([Predicate.Compare(">=", index),
-                    Predicate.Compare("<", add(index, scale(size, integer(-1))))]))
+                    Predicate.Compare("<", add_scaled(index, size, integer(-1)))]))
     }
     Result.Err("unsupported operation safety formula")
 }
