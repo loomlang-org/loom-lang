@@ -1,0 +1,168 @@
+fn call_closure_named(analysis Analysis, name Text) Int {
+    let state = analysis.state
+    var index = 0
+    while index < length(state.program.functions) {
+        let symbol = get(state.program.functions, index).symbol
+        if symbol >= 0 && get(state.bindings.symbols, symbol).name == name {
+            return index
+        }
+        index = index + 1
+    }
+    assert false
+    -1
+}
+
+fn call_closure_result(analysis Analysis, root Int, boundaries List[Int]) CallClosure {
+    match call_closure(analysis, root, boundaries) {
+        Option.Some(value) => value
+        Option.None => {
+            assert false
+            call_closure_result(analysis, root, boundaries)
+        }
+    }
+}
+
+test fn call_closure_cuts_callees_but_inspects_argument_calls_and_detaches_metadata() {
+    let analysis = published(input("""
+        fn trace() Int { 3 }
+        fn argument() Int { trace() }
+        fn inner(value Int) Int { value }
+        fn boundary(value Int) Int { inner(value) }
+        fn main() { discard boundary(argument()) }
+        """))
+    let root = call_closure_named(analysis, "main")
+    let boundary = call_closure_named(analysis, "boundary")
+    let inner = call_closure_named(analysis, "inner")
+    let trace = call_closure_named(analysis, "trace")
+    let inspected = call_closure_result(analysis, root, [boundary])
+    assert length(inspected.issues) == 0
+    assert call_closure_contains(inspected.functions, root)
+    assert call_closure_contains(inspected.functions, trace)
+    assert !call_closure_contains(inspected.functions, inner)
+    var found = false
+    var index = 0
+    while index < length(inspected.calls) {
+        let call = get(inspected.calls, index)
+        if call.target == boundary {
+            assert call.caller == root && call.boundary
+            found = true
+        }
+        index = index + 1
+    }
+    assert found
+    let first = get(inspected.calls, 0)
+    set(inspected.calls, 0, CallClosureSite {
+            caller = first.caller
+            target = 999999
+            span = first.span
+            boundary = true
+        })
+    let repeated = call_closure_result(analysis, root, [boundary])
+    assert get(repeated.calls, 0).target == first.target
+    assert call_closure_contains(call_closure_result(analysis, root, []).functions, inner)
+    // Merely listing the root as a boundary cannot hide its own body.
+    assert call_closure_contains(call_closure_result(analysis, root, [root]).functions, inner)
+}
+
+test fn call_closure_recursion_is_finite_and_erased_dispatch_stays_unresolved() {
+    let recursive = published(input("""
+        fn recursive(value Int) Int {
+            if value == 0 { return 0 }
+            recursive(value - 1)
+        }
+        fn main() { discard recursive(2) }
+        """))
+    let root = call_closure_named(recursive, "main")
+    let closure = call_closure_result(recursive, root, [])
+    assert length(closure.issues) == 0 && length(closure.functions) == 2
+    let erased = published(input("""
+        fn identity(value Int) Int { value }
+        fn apply(callback fn(Int) Int) Int { callback(1) }
+        fn main() { discard apply(identity) }
+        """))
+    let invoked = call_closure_result(erased, call_closure_named(erased, "main"), [])
+    assert length(invoked.issues) > 0
+    assert match call_closure(erased, -1, []) {
+        Option.None => true
+        _ => false
+    }
+    assert match call_closure(erased, call_closure_named(erased, "main"), [-1]) {
+        Option.None => true
+        _ => false
+    }
+}
+
+test fn call_closure_depth_exhaustion_leaves_explicit_incomplete_evidence() {
+    var source = ""
+    var index = 0
+    while index < 70 {
+        source = concat(source, concat("fn f", concat(std.int.to_text(index),
+                    concat("() Int { ", concat(if index == 69 {
+                                "0"
+                            } else {
+                                concat("f", concat(std.int.to_text(index + 1), "()"))
+                            }, " }\n")))))
+        index = index + 1
+    }
+    source = concat(source, "fn main() { discard f0() }")
+    let analysis = published(input(source))
+    let inspected = call_closure_result(analysis, call_closure_named(analysis, "main"), [])
+    assert length(inspected.issues) > 0
+    assert get(inspected.issues, 0).reason == "call closure inspection limit"
+}
+
+test fn call_closure_keeps_generic_instances_distinct() {
+    let analysis = published(input("""
+        fn identity[T](value T) T { value }
+        fn main() {
+            discard identity(7)
+            discard identity(true)
+        }
+        """))
+    let targets = new[Int]()
+    let state = analysis.state
+    var index = 0
+    while index < length(state.program.functions) {
+        let function = get(state.program.functions, index)
+        if function.symbol >= 0 && get(state.bindings.symbols, function.symbol).name == "identity" {
+            push(targets, index)
+        }
+        index = index + 1
+    }
+    assert length(targets) == 2
+    let cut = get(targets, 0)
+    let other = get(targets, 1)
+    let inspected = call_closure_result(analysis, call_closure_named(analysis, "main"), [cut])
+    assert !call_closure_contains(inspected.functions, cut)
+    assert call_closure_contains(inspected.functions, other)
+    assert length(inspected.issues) == 0
+}
+
+test fn call_closure_includes_entry_conditions_and_cleanup_calls() {
+    let analysis = published(input("""
+        fn condition() Bool { true }
+        fn cleanup() { }
+        fn guarded() Int requires condition() { 3 }
+        fn main() {
+            defer { cleanup() }
+            discard guarded()
+        }
+        """))
+    let root = call_closure_named(analysis, "main")
+    let condition = call_closure_named(analysis, "condition")
+    let cleanup = call_closure_named(analysis, "cleanup")
+    let inspected = call_closure_result(analysis, root, [])
+    assert length(inspected.issues) == 0
+    assert call_closure_contains(inspected.functions, condition)
+    assert call_closure_contains(inspected.functions, cleanup)
+    let cut = call_closure_result(analysis, root, [cleanup])
+    assert !call_closure_contains(cut.functions, cleanup)
+    var found = false
+    var index = 0
+    while index < length(cut.calls) {
+        let call = get(cut.calls, index)
+        found = found || call.target == cleanup && call.boundary
+        index = index + 1
+    }
+    assert found
+}

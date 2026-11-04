@@ -1,0 +1,196 @@
+import std.loom.source.Span
+import std.loom.typed.ExprKind
+
+// Function IDs address this Analysis only. A boundary records an opaque direct
+// call; the query makes no assertion about the callee's behavior or authority.
+pub record CallClosureSite {
+    caller Int
+    target Int
+    span Span
+    boundary Bool
+}
+
+pub record CallClosureOperation {
+    function Int
+    operation Text
+    span Span
+    is_intrinsic Bool
+}
+
+pub record CallClosureIssue {
+    function Int
+    span Span
+    reason Text
+}
+
+pub record CallClosure {
+    root Int
+    functions List[Int]
+    calls List[CallClosureSite]
+    operations List[CallClosureOperation]
+    issues List[CallClosureIssue]
+}
+
+record CallClosureBuilder {
+    program std.loom.typed.Program
+    boundaries List[Int]
+    functions List[Int]
+    calls List[CallClosureSite]
+    operations List[CallClosureOperation]
+    issues List[CallClosureIssue]
+    budget List[Int]
+}
+
+fn call_closure_contains(values List[Int], value Int) Bool {
+    var index = 0
+    while index < length(values) {
+        if get(values, index) == value {
+            return true
+        }
+        index = index + 1
+    }
+    false
+}
+
+fn call_closure_issue(state CallClosureBuilder, function Int, span Span, reason Text) {
+    push(state.issues, CallClosureIssue {
+            function = function
+            span = span
+            reason = reason
+        })
+}
+
+fn call_closure_expression(state CallClosureBuilder, caller Int, value std.loom.typed.Expr, depth Int) {
+    if get(state.budget, 0) <= 0 {
+        call_closure_issue(state, caller, value.span, "call closure inspection limit")
+        return
+    }
+    set(state.budget, 0, get(state.budget, 0) - 1)
+    if depth >= 128 {
+        call_closure_issue(state, caller, value.span, "call closure inspection limit")
+        return
+    }
+    // Arguments and capture construction execute outside an opaque callee.
+    var index = 0
+    while index < length(value.children) && get(state.budget, 0) > 0 {
+        call_closure_expression(state, caller, get(value.children, index), depth + 1)
+        index = index + 1
+    }
+    index = 0
+    while index < length(value.arms) && get(state.budget, 0) > 0 {
+        let body = get(value.arms, index).body
+        var item = 0
+        while item < length(body) && get(state.budget, 0) > 0 {
+            call_closure_expression(state, caller, get(body, item), depth + 1)
+            item = item + 1
+        }
+        index = index + 1
+    }
+    if get(state.budget, 0) <= 0 {
+        call_closure_issue(state, caller, value.span, "call closure inspection limit")
+        return
+    }
+    if value.kind == ExprKind.Call || value.kind == ExprKind.TaskCall {
+        if value.index < 0 || value.index >= length(state.program.functions) {
+            call_closure_issue(state, caller, value.span, "unresolved direct call")
+            return
+        }
+        let boundary = call_closure_contains(state.boundaries, value.index)
+        push(state.calls, CallClosureSite {
+                caller = caller
+                target = value.index
+                span = value.span
+                boundary = boundary
+            })
+        if !boundary {
+            call_closure_function(state, value.index, depth + 1)
+        }
+    }
+    if value.kind == ExprKind.Intrinsic {
+        push(state.operations, CallClosureOperation {
+                function = caller
+                operation = value.text
+                span = value.span
+                is_intrinsic = true
+            })
+    }
+    if value.kind == ExprKind.IndirectCall || value.kind == ExprKind.DynCall ||
+    value.kind == ExprKind.Deferred || value.kind == ExprKind.ResourceDrain ||
+    value.kind == ExprKind.Await || value.kind == ExprKind.Suspend {
+        call_closure_issue(state, caller, value.span, "unresolved execution or implicit traversal")
+    }
+}
+
+fn call_closure_function(state CallClosureBuilder, target Int, depth Int) {
+    let function = get(state.program.functions, target)
+    if call_closure_contains(state.functions, target) {
+        return
+    }
+    if depth >= 64 || get(state.budget, 0) <= 0 {
+        call_closure_issue(state, target, function.span, "call closure inspection limit")
+        return
+    }
+    push(state.functions, target)
+    var index = 0
+    while index < length(function.preconditions) && get(state.budget, 0) > 0 {
+        call_closure_expression(state, target, get(function.preconditions, index), depth + 1)
+        index = index + 1
+    }
+    if function.runtime_name != "" {
+        push(state.operations, CallClosureOperation {
+                function = target
+                operation = function.runtime_name
+                span = function.span
+                is_intrinsic = false
+            })
+    } else {
+        call_closure_expression(state, target, function.body, depth + 1)
+    }
+    // Completed Tasks may carry latent result drops, including on cancellation.
+    index = 0
+    while index < length(function.result_cleanup) && get(state.budget, 0) > 0 {
+        call_closure_expression(state, target, get(function.result_cleanup, index), depth + 1)
+        index = index + 1
+    }
+}
+
+// Inspect checked source IR, including arguments, entry conditions and cleanup.
+// The root is always inspected; boundaries cut only calls entered from it.
+// All source branches are visited, so the result may overapproximate execution.
+// Unused function values are not calls. Erased dispatch, implicit traversals,
+// awaited Tasks and exhausted inspection leave explicit issues.
+//
+// This is detached metadata, not a proof of purity, argument domains, results,
+// termination, a database mapping or deployment permission. Callers must inspect
+// issues and independently justify every opaque boundary and runtime operation.
+pub fn call_closure(analysis Analysis, root Int, boundaries List[Int]) Option[CallClosure] {
+    let program = analysis.state.program
+    if root < 0 || root >= length(program.functions) {
+        return Option.None
+    }
+    var index = 0
+    while index < length(boundaries) {
+        let target = get(boundaries, index)
+        if target < 0 || target >= length(program.functions) {
+            return Option.None
+        }
+        index = index + 1
+    }
+    let state = CallClosureBuilder {
+        program = program
+        boundaries = std.list.clone(boundaries)
+        functions = []
+        calls = []
+        operations = []
+        issues = []
+        budget = [4096]
+    }
+    call_closure_function(state, root, 0)
+    Option.Some(CallClosure {
+            root = root
+            functions = state.functions
+            calls = state.calls
+            operations = state.operations
+            issues = state.issues
+        })
+}
