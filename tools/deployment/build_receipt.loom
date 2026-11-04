@@ -312,8 +312,9 @@ pub fn read_build_receipt(path Text) Result[BuildReceipt, Text] {
         })
 }
 
-// The complete receipt digest binds its dependency/source closure and artifact
-// path. The checked bytes, artifact and backend identity remain separate inputs.
+// The receipt digest binds every recorded field and its artifact path. Only v5
+// records the complete graph/AST/input basis; legacy module/source lists do not.
+// Checked input, actual artifact and backend identity remain separate inputs.
 pub fn basis_from_receipt(schema Schema, receipt_path Text) Result[Text, Text] {
     let receipt = read_build_receipt(receipt_path)?
     basis_for(schema, receipt.checked, receipt.receipt, receipt.artifact, receipt.backend)
