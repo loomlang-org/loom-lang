@@ -891,7 +891,7 @@ fn smt_encoding(obligations List[Obligation], extended Bool, guarded_order Bool,
         // Open existential counterexample witnesses before arithmetic
         // substitution, so their interval bounds participate in rewriting.
         // This is the same obligation and the same host time limit.
-        "(check-sat-using (then simplify snf simplify solve-eqs simplify smt))\n"
+        "(check-sat-using (then simplify snf simplify propagate-ineqs solve-eqs simplify smt))\n"
     } else if select_obligation {
         // Split the explicit counterexample choice before normalization can
         // introduce unrelated alternatives. Then open quantified witnesses in
@@ -901,6 +901,11 @@ fn smt_encoding(obligations List[Obligation], extended Bool, guarded_order Bool,
         // Open quantified counterexamples before branch substitution. All
         // source premises and theory laws remain in the same single query.
         "(check-sat-using (then simplify snf simplify solve-eqs simplify (or-else split-clause skip) solve-eqs simplify aig simplify default))\n"
+    } else if length(writer.histograms) > 0 {
+        // Tight scalar intervals can identify prefix boundaries. Propagate
+        // them before scalar substitution and branching so mapped histogram
+        // terms simplify together. Keep every premise, query and host limit.
+        "(check-sat-using (then simplify propagate-ineqs solve-eqs simplify (or-else split-clause skip) solve-eqs simplify aig simplify default))\n"
     } else {
         "(check-sat-using (then simplify solve-eqs simplify (or-else split-clause skip) solve-eqs simplify aig simplify default))\n"
     }
