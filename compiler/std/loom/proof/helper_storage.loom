@@ -18,6 +18,21 @@ fn immutable_storage_type(program Program, ty Int, depth Int) Bool {
         return false
     }
     let shape = get(program.types, ty)
+    if shape.kind == TypeKind.Enum {
+        var variant = 0
+        while variant < length(shape.variants) {
+            let fields = get(shape.variants, variant).fields
+            var field = 0
+            while field < length(fields) {
+                if !immutable_storage_type(program, get(fields, field), depth + 1) {
+                    return false
+                }
+                field = field + 1
+            }
+            variant = variant + 1
+        }
+        return true
+    }
     if shape.kind != TypeKind.Refined && shape.kind != TypeKind.Record && shape.kind != TypeKind.Tuple {
         return false
     }

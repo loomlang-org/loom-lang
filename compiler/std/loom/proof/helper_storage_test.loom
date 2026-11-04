@@ -23,6 +23,53 @@ test fn private_summary_fields_do_not_imply_distinct_allocations() {
     assert c.birth_floor == c.identity
 }
 
+test fn immutable_storage_enums_check_every_variant_and_nested_payload() {
+    let program = atomic_pair_program()
+    push(program.types, Type {
+            variants = [Variant {
+                    name = "Empty"
+                    fields = []
+                }, Variant {
+                    name = "Value"
+                    fields = [1, 2, 3]
+                }]
+            ..publication_shape(TypeKind.Enum, [])
+        })
+    push(program.types, Type {
+            fields = [Field {
+                    name = "signal"
+                    ty = 8
+                }]
+            ..publication_shape(TypeKind.Record, [])
+        })
+    push(program.types, Type {
+            variants = [Variant {
+                    name = "Immutable"
+                    fields = [9, 5]
+                }, Variant {
+                    name = "Shared"
+                    fields = [6]
+                }]
+            ..publication_shape(TypeKind.Enum, [])
+        })
+    push(program.types, Type {
+            variants = [Variant {
+                    name = "Recursive"
+                    fields = [11]
+                }]
+            ..publication_shape(TypeKind.Enum, [])
+        })
+    assert immutable_storage_type(program, 8, 0) && immutable_storage_type(program, 9, 0)
+    assert closed_storage_inputs(program, [8, 9])
+    assert !immutable_storage_type(program, 10, 0) && !closed_storage_inputs(program, [8, 10])
+    assert !immutable_storage_type(program, 11, 0) && !immutable_storage_type(program, 8, 16)
+    let values = expression(ExprKind.Local, 6, "", 0, [])
+    assert local_storage_operation(program, "list_set", [values, literal("0"),
+            expression(ExprKind.Local, 9, "", 1, [])])
+    assert !local_storage_operation(program, "list_set", [values, literal("0"),
+            expression(ExprKind.Local, 10, "", 1, [])])
+}
+
 test fn direct_stores_use_checked_storage_types_without_separating_shared_graphs() {
     let program = atomic_pair_program()
     push(program.types, publication_shape(TypeKind.List, [7]))
