@@ -214,6 +214,15 @@ fn lifted_operation(value Expr, children List[Expr], budget List[Int], depth Int
         }
         index = index + 1
     }
+    if value.kind == ExprKind.Intrinsic && value.ty == 1 && length(children) == 2 &&
+    (value.text == "proof_add" || value.text == "proof_sub") {
+        return Result.Ok(count_binary(value, if value.text == "proof_add" {
+                    "+"
+                } else {
+                    "-"
+                },
+                get(children, 0), get(children, 1)))
+    }
     Result.Ok(proof_expr(value, value.kind, value.ty, value.text, value.index, children))
 }
 

@@ -231,3 +231,18 @@ test fn enum_count_choices_keep_independent_current_and_mutable_child_reads_dist
     assert enum_count_selected(proof_choice(next_child, literal("10"), literal("20")),
         first_child, true).kind == ExprKind.If
 }
+
+test fn enum_count_lifting_reuses_mathematical_zero_cancellation() {
+    let guard = expression(ExprKind.Local, 2, "", 0, [])
+    let selected = proof_choice(guard, literal("7"), literal("0"))
+    let nested = scan_math(selected, "proof_add",
+        scan_math(selected, "proof_add", literal("0"), selected), literal("0"))
+    let lifted = match lifted_choices(nested, [2048], 0) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            assert false
+            return
+        }
+    }
+    assert exact_expression(lifted, selected)
+}
