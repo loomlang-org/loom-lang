@@ -1,0 +1,103 @@
+fn enum_histogram_column(contents Int, variant Int) BagColumn {
+    BagColumn {
+        contents = contents
+        fields = [BagField {
+                path = [0]
+                domain = ScalarDomain.Integer
+            }, BagField {
+                path = [1, -2, variant, 0]
+                domain = ScalarDomain.Text
+            }, BagField {
+                path = [1, -1]
+                domain = ScalarDomain.Integer
+            }]
+    }
+}
+
+test fn enum_histograms_share_canonical_keys_across_counts_arrays_and_stores() {
+    let column = enum_histogram_column(10, 2)
+    let keys = [PredicateKey.Integer(IntegerTerm.Linear(variable(4))),
+        PredicateKey.Integer(IntegerTerm.Linear(variable(1))),
+        PredicateKey.Text(TextValue.Literal("next")),
+        PredicateKey.Integer(IntegerTerm.Linear(constant(integer(2))))]
+    let count = IntegerTerm.Count(column, keys)
+    let query = encoding([Obligation {
+                facts = [Predicate.ArrayWrite(10, 11, [0], variable(3), ArrayScalar.Integer(IntegerTerm.Linear(variable(1)))),
+                    Predicate.ArrayWrite(10, 11, [1, -2, 2, 0], variable(3), ArrayScalar.Text(TextValue.Literal("next"))),
+                    Predicate.ArrayWrite(10, 11, [1, -1], variable(3), ArrayScalar.Integer(IntegerTerm.Linear(constant(integer(2)))))]
+                conclusion = Predicate.IntegerCompare("==", count,
+                    IntegerTerm.Count(BagColumn {
+                            contents = 11
+                            ..column
+                        }, keys))
+            }])
+    assert std.text.contains(query, "(define-fun loom_hcanon_iti_f1_t2_v2 ")
+    assert std.text.contains(query, "(ite (and (= loom_harg_2 2)) loom_harg_1 (as seq.empty (Seq (_ BitVec 8))))")
+    assert std.text.contains(query, "((_ map loom_hcanon_iti_f1_t2_v2) a10_f0 a10_f1_f-2_f2_f0_text a10_f1_f-1)")
+    assert std.text.contains(query, "(loom_hcanon_iti_f1_t2_v2 (+ 0 (* 1 n1))")
+    assert std.text.contains(query, "(store ((_ map loom_hcanon_iti_f1_t2_v2)")
+    assert std.text.contains(query, "(= a11_f1_f-2_f2_f0_text (store a10_f1_f-2_f2_f0_text")
+    assert length(std.text.split(query, "(define-fun loom_hcanon_iti_f1_t2_v2 ")) == 2
+}
+
+test fn nested_enum_histograms_require_all_ancestor_tags_and_keep_layout_identity() {
+    let column = BagColumn {
+        contents = 10
+        fields = [BagField {
+                path = [-1]
+                domain = ScalarDomain.Integer
+            }, BagField {
+                path = [-2, 1, 0, -1]
+                domain = ScalarDomain.Integer
+            }, BagField {
+                path = [-2, 1, 0, -2, 2, 0]
+                domain = ScalarDomain.Boolean
+            }]
+    }
+    let query = encoding([Obligation {
+                facts = []
+                conclusion = Predicate.BagEqual(column, variable(1), BagColumn {
+                        contents = 11
+                        ..column
+                    }, variable(1))
+            }])
+    assert std.text.contains(query, "loom_hcanon_iib_f1_t0_v1_f2_t0_v1_t1_v2")
+    assert std.text.contains(query, "(ite (and (= loom_harg_0 1)) loom_harg_1 0)")
+    assert std.text.contains(query, "(ite (and (= loom_harg_0 1) (= loom_harg_1 2)) loom_harg_2 false)")
+    let layouts = encoding([Obligation {
+                facts = []
+                conclusion = Predicate.BagEqual(enum_histogram_column(10, 1), variable(1),
+                    enum_histogram_column(11, 2), variable(1))
+            }])
+    assert std.text.contains(layouts, "(define-fun loom_hcanon_iti_f1_t2_v1 ")
+    assert std.text.contains(layouts, "(define-fun loom_hcanon_iti_f1_t2_v2 ")
+    let missing = BagColumn {
+        fields = [get(column.fields, 1), get(column.fields, 2)]
+        ..column
+    }
+    assert match smt_query([Obligation {
+                facts = []
+                conclusion = Predicate.BagEqual(missing, variable(1), missing, variable(1))
+            }]) {
+        Result.Err(_) => true
+        _ => false
+    }
+}
+
+test fn integer_payload_histograms_cannot_bypass_missing_tag_checks() {
+    let column = BagColumn {
+        contents = 10
+        fields = [BagField {
+                path = [-2, 1, 0]
+                domain = ScalarDomain.Integer
+            }]
+    }
+    assert !integer_bag_column(column)
+    assert match smt_query([Obligation {
+                facts = []
+                conclusion = Predicate.BagEqual(column, variable(1), column, variable(1))
+            }]) {
+        Result.Err(_) => true
+        _ => false
+    }
+}

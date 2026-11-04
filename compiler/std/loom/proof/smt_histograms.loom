@@ -16,7 +16,18 @@ fn integer_bag(array Text) SmtBag {
 }
 
 fn integer_bag_column(column BagColumn) Bool {
-    length(column.fields) == 1 && get(column.fields, 0).domain == ScalarDomain.Integer
+    if length(column.fields) != 1 || get(column.fields, 0).domain != ScalarDomain.Integer {
+        return false
+    }
+    let path = get(column.fields, 0).path
+    var index = 0
+    while index < length(path) {
+        if get(path, index) == -2 {
+            return false
+        }
+        index = index + 1
+    }
+    true
 }
 
 record SmtHistogramKey {
@@ -70,7 +81,7 @@ fn smt_histogram_key(writer SmtWriter, fields List[BagField]) Result[SmtHistogra
     }
     Result.Ok(SmtHistogramKey {
             sort = sort
-            constructor = constructor
+            constructor = smt_enum_key(writer, fields, signature, sort, constructor)?
             function = concat("loom_key_bag_", signature)
         })
 }
