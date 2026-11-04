@@ -677,6 +677,13 @@ fn applied_call_body(proof Verification, call Expr, function Function, arguments
     if !immutable_storage_type(proof.program, function.result, 0) {
         return source_or_summary_call(proof, call, function, arguments, bindings, boundary, depth)
     }
+    // Explicit storage writes outside the checked read-only fragment use body
+    // execution. Failure to classify a body as read-only does not imply a
+    // write: recursive scans still need their ordinary finite expansion.
+    // Already evaluated arguments/captures still enter the original call scope.
+    if direct_body_write(proof, function.body, [256]) && !graph_readonly_function(proof.program, call.index) {
+        return source_or_summary_call(proof, call, function, arguments, bindings, boundary, depth)
+    }
     match call_template_call(proof, call, function, state, boundary, depth)? {
         Option.Some(completed) => {
             return Result.Ok(completed)

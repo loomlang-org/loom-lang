@@ -181,6 +181,36 @@ fn loop_publications(entry State, head State, backedges List[Outcome]) List[Int]
 
 // Heap edges change even without rebinding a source local. Check retained
 // graph exclusions too, including ancestors widened by a descendant store.
+fn same_loop_graph_root(first ListExtent, second ListExtent) Bool {
+    first.identity == second.identity && first.frontier == second.frontier &&
+    same_projection(first.unreachable, second.unreachable) &&
+    same_projection(first.element_unreachable, second.element_unreachable) &&
+    ((length(first.size.terms) == 0 && length(first.size.constant.digits) == 0) ==
+        (length(second.size.terms) == 0 && length(second.size.constant.digits) == 0))
+}
+
+// Exact inputs to graph/element exclusion tests can be reused. Scalar contents
+// and nonempty extents do not affect those relations. Publication, allocation
+// bounds and every root exclusion still need their current backedge values.
+fn loop_graph_targets_unchanged(targets List[ListExtent], state State) Bool {
+    var index = 0
+    while index < length(targets) {
+        let before = get(targets, index)
+        match list_state(before.identity, state) {
+            Result.Ok(current) => {
+                if before.birth_floor != current.birth_floor || before.private_storage != current.private_storage {
+                    return false
+                }
+            }
+            Result.Err(_) => {
+                return false
+            }
+        }
+        index = index + 1
+    }
+    true
+}
+
 fn loop_graph_losses(proof Verification, entry State, head State, backedges List[Outcome]) Result[List[Int], Text] {
     let lost = new[Int]()
     let targets = new[ListExtent]()
@@ -195,6 +225,12 @@ fn loop_graph_losses(proof Verification, entry State, head State, backedges List
                     Result.Err(_) => false
                 })
         }
+        index = index + 1
+    }
+    let unchanged = new[Bool]()
+    index = 0
+    while index < length(backedges) {
+        push(unchanged, loop_graph_targets_unchanged(targets, get(backedges, index).state))
         index = index + 1
     }
     var root = 0
@@ -214,6 +250,10 @@ fn loop_graph_losses(proof Verification, entry State, head State, backedges List
             let state = get(backedges, edge).state
             if !loop_holds(Predicate.Constant(false), state) {
                 let current = list_state(before.identity, state)?
+                if get(unchanged, edge) && same_loop_graph_root(before, current) {
+                    edge = edge + 1
+                    continue
+                }
                 var target = 0
                 var charged = false
                 while target < length(targets) && !failed {

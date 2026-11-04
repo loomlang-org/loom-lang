@@ -339,3 +339,58 @@ ensures result == count_id(values, id) + count_label(values, label) {{
         &common::loom(&["check", package.path().to_str().unwrap()]),
     );
 }
+
+#[test]
+fn enum_row_permutation_keeps_selected_payloads_tags_and_field_pairings() {
+    let program = include_str!("../examples/enum_sort_contracts/main.loom");
+    let equivalent = program.replace(
+        "first.key == second.key && same_signal(first.signal, second.signal)",
+        "same_signal(second.signal, first.signal) && second.key == first.key",
+    );
+    permutation_trial(program, &[equivalent], &[], true, None);
+
+    let prefix = program.split("fn ascending(").next().unwrap();
+    let copy = "let changed = std.list.clone(values)\n    if length(changed) > 0 {\n        changed[0] = Row { signal = REPLACEMENT, ..changed[0] }\n    }\n    changed";
+    let swap = "let changed = std.list.clone(values)\n    if length(changed) > 1 {\n        let first = changed[0]\n        let second = changed[1]\n        changed[0] = Row { signal = second.signal, ..first }\n        changed[1] = Row { signal = first.signal, ..second }\n    }\n    changed";
+    let mut invalid = [
+        "Signal.Empty()",
+        "Signal.Number(99)",
+        "Signal.Label(\"changed\")",
+    ]
+    .map(|replacement| {
+        prefix.replace(
+            "    sorted(values, less)",
+            &copy.replace("REPLACEMENT", replacement),
+        )
+    })
+    .to_vec();
+    invalid.push(prefix.replace("    sorted(values, less)", swap));
+    invalid.push(prefix.replacen("value == other", "1 / value == 1 / other", 1));
+    let package = tempfile::tempdir().unwrap();
+    let source = package.path().join("main.loom");
+    let cache = package.path().join("cache");
+    for (index, changed) in invalid.iter().enumerate() {
+        assert_ne!(changed, prefix);
+        let changed = format!("import std.list.clone\n{changed}");
+        fs::write(&source, &changed).unwrap();
+        let check = || {
+            common::loom(&[
+                "check",
+                package.path().to_str().unwrap(),
+                "--frontend-cache",
+                cache.to_str().unwrap(),
+            ])
+        };
+        let output = check();
+        assert!(
+            !output.status.success(),
+            "invalid enum permutation variant {index} was proved"
+        );
+        let without_claim = changed.replace("ensures permutation(old(values), result)", "");
+        fs::write(&source, without_claim).unwrap();
+        trial_success(
+            &format!("enum variant {index} without false claim"),
+            &check(),
+        );
+    }
+}

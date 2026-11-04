@@ -3768,8 +3768,8 @@ They reuse the immutable-value encoding and the same finite histogram laws;
 integer keys retain their direct encoding. Component store equations stay
 premises, with matching indices and lexical scopes. The source-library sort
 proves full-row entry permutation through unknown effectful comparators.
-IEEE equality, enum alternatives, mutable descendants and arbitrary equality
-predicates remain outside that count fragment. No runtime histogram is added.
+IEEE equality, mutable descendants and arbitrary equality predicates remain
+outside that count fragment. No runtime histogram is added.
 This does not establish comparator laws, ordering or arbitrary-element permutation.
 The [composed predicate trial](examples/predicate_sort_contracts) proves filtered
 entry counts for unions and complements of those equality atoms. Finite indicator
@@ -3777,6 +3777,19 @@ algebra subtracts intersecting matches, preserves stable branch guards, and trea
 nonpositive scan ranges as empty. Boolean element reads and inequality reuse the
 same keys. Original source evaluation checks and expansion limits remain intact;
 exhaustion or unsupported atoms still leave a required proof unproved.
+The [enum row trial](examples/enum_sort_contracts) also composes ordinary matches
+over immutable nominal alternatives and their scalar payloads. Full-row counts
+keep tags, selected payloads and sibling fields together. Mathematical keys
+canonicalize inactive padding; source payload access still requires its selected
+tag. Both unknown effectful comparisons and a known ascending comparison retain
+entry permutation, and the known comparison additionally proves adjacent order.
+Independent reads correlate only at the same explicit entry List/index and
+inline projection; current reads and mutable descendants retain their ordinary
+observation identities. Enum storage is classified immutable only when every
+variant's payload is immutable. Exact loop graph-relation inputs can be reused,
+while changed publication, allocation bounds and exclusions are rechecked.
+Conservation guesses omit irrelevant guarded machine domains within the same
+query allowance and timeout; mandatory obligations retain the complete state.
 Count bounds instantiate at each actual symbolic needle, retaining any enclosing
 quantifier ranges and their dependencies. This avoids universal search over
 unrelated integers without sampling source values or changing source checks.

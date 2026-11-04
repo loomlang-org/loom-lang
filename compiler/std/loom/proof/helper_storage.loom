@@ -18,6 +18,21 @@ fn immutable_storage_type(program Program, ty Int, depth Int) Bool {
         return false
     }
     let shape = get(program.types, ty)
+    if shape.kind == TypeKind.Enum {
+        var variant = 0
+        while variant < length(shape.variants) {
+            let fields = get(shape.variants, variant).fields
+            var field = 0
+            while field < length(fields) {
+                if !immutable_storage_type(program, get(fields, field), depth + 1) {
+                    return false
+                }
+                field = field + 1
+            }
+            variant = variant + 1
+        }
+        return true
+    }
     if shape.kind != TypeKind.Refined && shape.kind != TypeKind.Record && shape.kind != TypeKind.Tuple {
         return false
     }
@@ -29,6 +44,41 @@ fn immutable_storage_type(program Program, ty Int, depth Int) Bool {
         index = index + 1
     }
     true
+}
+
+// This selects an execution path, never an effect guarantee. Unknown calls,
+// recursive scans and exhausted inspection retain the existing expansion.
+fn direct_body_write(proof Verification, value Expr, budget List[Int]) Bool {
+    if !conjunction_step(budget) || function_layout(value) {
+        return false
+    }
+    if value.kind == ExprKind.FrameStore || cell_store_expression(proof.program, value) {
+        return true
+    }
+    let operation = loop_storage_primitive(proof, value)
+    if list_stored_index(operation) >= 0 || operation == "list_take" || operation == "list_retain_range" {
+        return true
+    }
+    var index = 0
+    while index < length(value.children) {
+        if direct_body_write(proof, get(value.children, index), budget) {
+            return true
+        }
+        index = index + 1
+    }
+    index = 0
+    while index < length(value.arms) {
+        let body = get(value.arms, index).body
+        var item = 0
+        while item < length(body) {
+            if direct_body_write(proof, get(body, item), budget) {
+                return true
+            }
+            item = item + 1
+        }
+        index = index + 1
+    }
+    false
 }
 
 // Closed inputs cannot carry a mutable graph into a callee. This frames

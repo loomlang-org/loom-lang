@@ -1,0 +1,141 @@
+record HistogramGuard {
+    tag Int
+    variant Int
+}
+
+// An inline payload is observable only under every enclosing selected tag.
+// Missing tags fail closed: a payload projection alone cannot supply this key.
+fn histogram_guards(writer SmtWriter, fields List[BagField], selected Int) Result[List[HistogramGuard], Text] {
+    let guards = new[HistogramGuard]()
+    let path = get(fields, selected).path
+    let prefix = new[Int]()
+    var index = 0
+    while index < length(path) {
+        discard smt_step(writer, 0)?
+        let part = get(path, index)
+        if part == -2 {
+            if index + 2 >= length(path) || get(path, index + 1) < 0 || get(path, index + 2) < 0 {
+                return Result.Err("invalid enum histogram payload path")
+            }
+            let tag_path = clone(prefix)
+            push(tag_path, -1)
+            var tag = -1
+            var field = 0
+            while field < length(fields) && tag < 0 {
+                discard smt_step(writer, 0)?
+                let candidate = get(fields, field)
+                if candidate.domain == ScalarDomain.Integer && same_projection(candidate.path, tag_path) {
+                    tag = field
+                }
+                field = field + 1
+            }
+            if tag < 0 {
+                return Result.Err("enum histogram payload needs its enclosing tag key")
+            }
+            push(guards, HistogramGuard {
+                    tag = tag
+                    variant = get(path, index + 1)
+                })
+            push(prefix, part)
+            push(prefix, get(path, index + 1))
+            push(prefix, get(path, index + 2))
+            index = index + 3
+        } else {
+            if part < 0 && (part != -1 || index + 1 != length(path)) {
+                return Result.Err("invalid enum histogram path")
+            }
+            push(prefix, part)
+            index = index + 1
+        }
+    }
+    Result.Ok(guards)
+}
+
+fn histogram_sort(domain ScalarDomain) Result[Text, Text] {
+    match domain {
+        ScalarDomain.Integer => Result.Ok("Int")
+        ScalarDomain.Boolean => Result.Ok("Bool")
+        ScalarDomain.Text => Result.Ok("(Seq (_ BitVec 8))")
+        ScalarDomain.Float => Result.Err("IEEE equality cannot supply a histogram key")
+    }
+}
+
+fn histogram_default(domain ScalarDomain) Result[Text, Text] {
+    match domain {
+        ScalarDomain.Integer => Result.Ok("0")
+        ScalarDomain.Boolean => Result.Ok("false")
+        ScalarDomain.Text => Result.Ok("(as seq.empty (Seq (_ BitVec 8)))")
+        ScalarDomain.Float => Result.Err("IEEE equality cannot supply a histogram key")
+    }
+}
+
+// Canonicalize inactive padding in the mathematical key, never in source
+// storage. Array maps, count needles and store laws use this same pure function.
+// Its name records guard relationships, so projections share a key vocabulary
+// without conflating distinct enum layouts of the same scalar sorts.
+fn smt_enum_key(writer SmtWriter, fields List[BagField], signature Text, sort Text, constructor Text) Result[Text, Text] {
+    let guards = new[List[HistogramGuard]]()
+    var name = concat("loom_hcanon_", signature)
+    var guarded = false
+    var index = 0
+    while index < length(fields) {
+        let selected = histogram_guards(writer, fields, index)?
+        push(guards, selected)
+        if length(selected) != 0 {
+            guarded = true
+            name = concat(name, concat("_f", std.int.to_text(index)))
+            var guard = 0
+            while guard < length(selected) {
+                let condition = get(selected, guard)
+                name = concat(name, concat("_t", concat(std.int.to_text(condition.tag),
+                            concat("_v", std.int.to_text(condition.variant)))))
+                guard = guard + 1
+            }
+        }
+        index = index + 1
+    }
+    if !guarded {
+        return Result.Ok(constructor)
+    }
+    index = 0
+    while index < length(writer.names) {
+        if get(writer.names, index) == name {
+            return Result.Ok(name)
+        }
+        index = index + 1
+    }
+    let output = std.bytes.new()
+    smt_append(output, concat("(define-fun ", concat(name, " (")))
+    index = 0
+    while index < length(fields) {
+        smt_append(output, concat("(loom_harg_", concat(std.int.to_text(index),
+                    concat(" ", concat(histogram_sort(get(fields, index).domain)?, ")")))))
+        index = index + 1
+    }
+    smt_append(output, concat(") ", concat(sort, concat(" (", constructor))))
+    index = 0
+    while index < length(fields) {
+        let selected = get(guards, index)
+        let argument = concat("loom_harg_", std.int.to_text(index))
+        smt_append(output, " ")
+        if length(selected) == 0 {
+            smt_append(output, argument)
+        } else {
+            smt_append(output, "(ite (and")
+            var guard = 0
+            while guard < length(selected) {
+                let condition = get(selected, guard)
+                smt_append(output, concat(" (= loom_harg_", concat(std.int.to_text(condition.tag),
+                            concat(" ", concat(std.int.to_text(condition.variant), ")")))))
+                guard = guard + 1
+            }
+            smt_append(output, concat(") ", concat(argument,
+                        concat(" ", concat(histogram_default(get(fields, index).domain)?, ")")))))
+        }
+        index = index + 1
+    }
+    smt_append(output, "))\n")
+    push(writer.names, name)
+    smt_append(writer.declarations, std.bytes.to_text(output))
+    Result.Ok(name)
+}

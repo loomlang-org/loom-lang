@@ -3,8 +3,34 @@
 // array maps can crowd an otherwise finite histogram query. Removing a premise
 // asks for a stronger proof of the same conservation goal; it adds no fact and
 // uses the same single optional query. Required checks keep the complete state.
-fn loop_histogram_type_bound(value Predicate) Bool {
+fn histogram_enum_type_guard(value Predicate) Bool {
     match value {
+        Predicate.IntegerCompare(relation, first, second) => match first {
+            IntegerTerm.Select(_, path, _) => match second {
+                IntegerTerm.Linear(tag) => relation == "!=" && length(path) > 0 &&
+                get(path, length(path) - 1) == -1 && length(tag.terms) == 0 &&
+                compare(tag.constant, integer(0)) >= 0
+                _ => false
+            }
+            _ => false
+        }
+        _ => false
+    }
+}
+
+fn loop_histogram_type_bound(value Predicate) Bool {
+    loop_histogram_type_bound(value, 16)
+}
+
+fn loop_histogram_type_bound(value Predicate, depth Int) Bool {
+    if depth <= 0 {
+        return false
+    }
+    match value {
+        Predicate.Or(parts) => {
+            return length(parts) == 2 && histogram_enum_type_guard(get(parts, 0)) &&
+            loop_histogram_type_bound(get(parts, 1), depth - 1)
+        }
         Predicate.IntegerCompare(relation, term, right) => {
             match right {
                 IntegerTerm.Linear(limit) => {
