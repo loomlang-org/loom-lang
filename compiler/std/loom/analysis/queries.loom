@@ -853,6 +853,21 @@ fn checked_inspection(analysis AnalysisState, file Int, offset Int, tokens List[
 }
 
 fn checked_inspection(analysis AnalysisState, file Int, offset Int, tokens List[Token], references List[std.loom.checking.DeclarationReference]) Option[Inspection] {
+    let view = CheckedQuery {
+        bindings = analysis.bindings
+        types = analysis.program.types
+        interfaces = analysis.program.interfaces
+        functions = analysis.program.functions
+        headers = new[SignatureHeader]()
+        type_headers = new[TypeHeader]()
+        parameter_headers = new[ParameterHeader]()
+        declarations = references
+        stages = new[std.loom.checking.StagedQuery]()
+    }
+    checked_inspection(analysis, file, offset, tokens, view)
+}
+
+fn checked_inspection(analysis AnalysisState, file Int, offset Int, tokens List[Token], view CheckedQuery) Option[Inspection] {
     if file < 0 || file >= length(analysis.source.files) {
         return Option.None
     }
@@ -907,17 +922,6 @@ fn checked_inspection(analysis AnalysisState, file Int, offset Int, tokens List[
             Option.None => {
             }
         }
-    }
-    let view = CheckedQuery {
-        bindings = analysis.bindings
-        types = analysis.program.types
-        interfaces = analysis.program.interfaces
-        functions = analysis.program.functions
-        headers = new[SignatureHeader]()
-        type_headers = new[TypeHeader]()
-        parameter_headers = new[ParameterHeader]()
-        declarations = references
-        stages = new[std.loom.checking.StagedQuery]()
     }
     if source_header {
         // A complete check can retain source bindings even when an independent

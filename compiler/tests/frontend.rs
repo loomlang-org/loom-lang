@@ -39,6 +39,19 @@ fn source_compiler(compiler: &Path, args: &[&str]) -> Output {
 }
 
 #[test]
+fn complete_source_query_views_survive_collection_and_keep_proof_boundaries() {
+    success(&common::managed(
+        &[
+            "test",
+            "compiler/std/loom/analysis",
+            "--filter",
+            "complete_source_view",
+        ],
+        common::root(),
+    ));
+}
+
+#[test]
 fn analysis_only_exports_editable_copies_not_private_query_evidence() {
     let compiler = common::compiler();
     let temp = tempfile::tempdir().unwrap();

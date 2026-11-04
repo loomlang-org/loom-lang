@@ -1,4 +1,4 @@
-import std.loom.checking.source_declaration_references
+import std.loom.checking.source_declaration_query
 import std.map.get
 import std.map.insert
 
@@ -92,15 +92,15 @@ fn inspect_references(analysis AnalysisState, file Int, spelling Text) Result[Li
 // queue. This cache is independent of navigation/abstract declaration queries.
 fn inspect_source_references(analysis AnalysisState, file Int, offsets List[Int]) Result[List[ReferenceEvidence], Text] {
     if length(analysis.source_declarations) == 0 {
-        let references = match std.loom.checking.source_declaration_references(analysis.bindings, analysis_query_inputs(analysis)) {
+        let view = match source_declaration_query(analysis.bindings, analysis_query_inputs(analysis)) {
             Result.Ok(value) => value
             Result.Err(problem) => {
                 return Result.Err(problem.diagnostic.message)
             }
         }
-        push(analysis.source_declarations, references)
+        push(analysis.source_declarations, view)
     }
-    let references = get(analysis.source_declarations, 0)
+    let view = get(analysis.source_declarations, 0)
     let tokens = reference_tokens(analysis, file)?
     let output = new[ReferenceEvidence]()
     var index = 0
@@ -108,9 +108,42 @@ fn inspect_source_references(analysis AnalysisState, file Int, offsets List[Int]
         let offset = get(offsets, index)
         push(output, ReferenceEvidence {
                 offset = offset,
-                inspection = checked_inspection(analysis, file, offset, tokens, references)
+                inspection = if source_body_view(analysis, view, file, offset) {
+                    checked_inspection(analysis, file, offset, tokens, view)
+                } else {
+                    checked_inspection(analysis, file, offset, tokens, view.declarations)
+                }
             })
         index = index + 1
     }
     Result.Ok(output)
+}
+
+// Preserve ordinary navigation and abstract/header selection. Only an ordinary
+// source scope absent from executable IR uses this already-checked body view.
+fn source_body_view(analysis AnalysisState, view CheckedQuery, file Int, offset Int) Bool {
+    let scope = declaration_query_scope(analysis.bindings, file, offset)
+    if scope.file < 0 || source_header_at(analysis, file, offset) {
+        return false
+    }
+    var index = 0
+    while index < length(analysis.program.functions) {
+        let body = get(analysis.program.functions, index)
+        let item = get(analysis.bindings.symbols, body.symbol)
+        if item.file == file && inside(item.node.span, offset) {
+            return false
+        }
+        index = index + 1
+    }
+    var matches = 0
+    index = 0
+    while index < length(view.functions) {
+        let body = get(view.functions, index)
+        let item = get(view.bindings.symbols, body.symbol)
+        if item.file == file && same_span(item.node.span, scope.span) && !has(item.node, NodeKind.ExpansionId) {
+            matches = matches + 1
+        }
+        index = index + 1
+    }
+    matches == 1
 }

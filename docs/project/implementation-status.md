@@ -267,6 +267,13 @@ the same file and exact source text within one published analysis, including laz
 independent and contract views. Published answers contain separate result Lists.
 Editable metadata and a new analysis keep separate source bases; token reuse
 does not cache checked binding answers.
+Complete source-reference queries also retain their checked type/function view
+privately within one analysis. Ordinary non-entry bodies reuse that view when
+there is exactly one matching checked source scope. Runtime observations,
+generic or generated bodies and headers retain their existing selection paths.
+The complete source queue still checks every required caller and proof before
+publishing evidence; failures retry, and this cache cannot answer an explicit
+independent body check. Public answers remain editable copies.
 Compiler-owned reference obligations also expose unsupported source ranges;
 semantic merge uses them for bounded generics, cleanup and ordinary compile-time
 blocks instead of maintaining a second syntax whitelist. Static branch selection
