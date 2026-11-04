@@ -1,0 +1,18 @@
+test fn build_basis_keeps_semantic_constraints_separate_from_equal_native_input() {
+    let project = input("type Amount = Int where self >= 0\nfn main() { discard Amount(2) }")
+    let original = published(project)
+    let before = build_basis(original)
+    let encoded = native_input(original)
+    let declaration = get(get(project.files, 0).tree.children, 0)
+    let constraint = get(declaration.children, length(declaration.children) - 1)
+    let zero = get(constraint.children, 1)
+    set(constraint.children, 1, std.loom.ast.Node {
+            value = "1"
+            ..zero
+        })
+    let edited = published(project)
+    assert native_input(edited) == encoded
+    assert build_basis(edited) != before
+    assert build_basis(original) == before
+    assert !is_current(original, project, false)
+}

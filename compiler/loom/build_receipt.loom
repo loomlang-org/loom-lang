@@ -16,6 +16,7 @@ import std.int.to_text
 import std.list.get
 import std.list.length
 import std.loom.project.Project
+import std.loom.compilation.build_basis
 import std.loom.manifest.configuration_encoding
 import std.loom.project.join_path
 import std.result.Result
@@ -77,8 +78,8 @@ fn receipt_path(path Text) Result[Text, Text] {
     Result.Ok(join_path(parent, leaf))
 }
 
-fn receipt_text(artifact Text, artifact_hash Text, checked_hash Text, backend Text, project Project, inputs List[BuildInput], options List[BuildOption]) Result[Text, Text] {
-    var output = "loom-build-receipt 4\n"
+fn receipt_text(artifact Text, artifact_hash Text, checked_hash Text, backend Text, project Project, inputs List[BuildInput], options List[BuildOption], basis Text) Result[Text, Text] {
+    var output = "loom-build-receipt 5\n"
     output = concat(output, concat("checked-sha256 ", concat(checked_hash, "\n")))
     output = concat(output, concat("artifact-sha256 ", concat(artifact_hash, "\n")))
     output = concat(output, concat("backend-identity ", concat(backend, "\n")))
@@ -118,7 +119,7 @@ fn receipt_text(artifact Text, artifact_hash Text, checked_hash Text, backend Te
         output = concat(output, concat(hex(cache_bytes(option.value)), "\n"))
         index = index + 1
     }
-    Result.Ok(concat(output, "end\n"))
+    Result.Ok(concat(output, concat("basis-sha256 ", concat(basis, "\nend\n"))))
 }
 
 fn receipt_stage(path Text) Result[Text, Text] {
@@ -205,7 +206,7 @@ fn receipt_preflight(path Text, output Text, project Project, inputs List[BuildI
 // Publication replaces only the named receipt, after the build and artifact
 // read succeed. Failed writes leave an earlier receipt intact. The rename is
 // same-directory atomic replacement, not a crash-durability guarantee.
-fn publish_build_receipt(path Text, output Text, checked Text, backend Text, project Project, inputs List[BuildInput], options List[BuildOption]) Result[Bool, Text] {
+fn publish_build_receipt(path Text, output Text, checked Text, backend Text, project Project, inputs List[BuildInput], options List[BuildOption], targets List[BuildOption]) Result[Bool, Text] {
     let artifact = match entry_kind(output) {
         Result.Ok(kind) => {
             if kind != FileKind.File {
@@ -230,7 +231,8 @@ fn publish_build_receipt(path Text, output Text, checked Text, backend Text, pro
             return Result.Err("cannot read built artifact for receipt")
         }
     }
-    let content = receipt_text(artifact, hex(bytes), hex(cache_bytes(checked)), backend, project, inputs, options)?
+    let basis = std.loom.compilation.build_basis(project, false, inputs, options, targets)
+    let content = receipt_text(artifact, hex(bytes), hex(cache_bytes(checked)), backend, project, inputs, options, basis)?
     let stage = receipt_stage(destination)?
     let temporary = join_path(stage, "receipt")
     defer {

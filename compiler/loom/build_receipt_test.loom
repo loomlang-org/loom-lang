@@ -102,6 +102,9 @@ test fn build_receipt_binds_the_native_artifact_checked_input_and_loaded_sources
     }
     assert contains(actual_receipt, concat("source 1 ", concat(receipt_hex(source), concat(" ", concat(hex(cache_bytes(text)), "\n")))))
     assert contains(actual_receipt, "end\n")
+    let basis = std.loom.compilation.build_basis(snapshot.project, false, snapshot.inputs,
+        selected.build_options, snapshot.targets)
+    assert contains(actual_receipt, concat("basis-sha256 ", concat(basis, "\n")))
 
     let failed = driver_arguments("build")
     push(failed, "compiler/examples/scalar")

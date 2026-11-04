@@ -1,0 +1,218 @@
+import std.hash.sha256.Hasher
+import std.hash.sha256.new_hasher
+import std.hash.sha256.update
+import std.hash.sha256.hex
+import std.text.to_bytes
+import std.text.length
+import std.int.to_text
+import std.loom.ast.Node
+import std.loom.ast.NodeKind
+import std.loom.project.Project
+import std.loom.project.BuildInput
+import std.loom.project.BuildOption
+import std.list.get
+import std.list.length
+
+fn basis_field(output Hasher, value Text) {
+    update(output, to_bytes(std.int.to_text(std.text.length(value))))
+    update(output, to_bytes("\n"))
+    update(output, to_bytes(value))
+}
+
+fn basis_number(output Hasher, value Int) {
+    basis_field(output, std.int.to_text(value))
+}
+
+// Explicit source tags, independent of enum layout or runtime addresses.
+fn basis_kind(kind NodeKind) Int {
+    match kind {
+        NodeKind.File => 0
+        NodeKind.Import => 1
+        NodeKind.Record => 2
+        NodeKind.Enum => 3
+        NodeKind.Refined => 4
+        NodeKind.Function => 5
+        NodeKind.Public => 6
+        NodeKind.Test => 7
+        NodeKind.Intrinsic => 8
+        NodeKind.TypeParameters => 9
+        NodeKind.Parameters => 10
+        NodeKind.Parameter => 11
+        NodeKind.Type => 12
+        NodeKind.TypeArguments => 13
+        NodeKind.Arguments => 14
+        NodeKind.ReturnType => 15
+        NodeKind.Field => 16
+        NodeKind.Variant => 17
+        NodeKind.Requires => 18
+        NodeKind.Ensures => 19
+        NodeKind.Block => 20
+        NodeKind.Let => 21
+        NodeKind.Var => 22
+        NodeKind.Assign => 23
+        NodeKind.Return => 24
+        NodeKind.Assert => 25
+        NodeKind.Discard => 26
+        NodeKind.While => 27
+        NodeKind.Integer => 28
+        NodeKind.Text => 29
+        NodeKind.Bool => 30
+        NodeKind.Name => 31
+        NodeKind.Call => 32
+        NodeKind.Old => 33
+        NodeKind.Construct => 34
+        NodeKind.Unary => 35
+        NodeKind.Binary => 36
+        NodeKind.Select => 37
+        NodeKind.Try => 38
+        NodeKind.Match => 39
+        NodeKind.Arm => 40
+        NodeKind.Pattern => 41
+        NodeKind.Bindings => 42
+        NodeKind.Wildcard => 43
+        NodeKind.If => 44
+        NodeKind.Comptime => 45
+        NodeKind.ComptimeFor => 46
+        NodeKind.ComptimeMap => 47
+        NodeKind.TupleType => 48
+        NodeKind.Tuple => 49
+        NodeKind.Destructure => 50
+        NodeKind.Float => 51
+        NodeKind.Concept => 52
+        NodeKind.Impl => 53
+        NodeKind.Implements => 54
+        NodeKind.MethodCall => 55
+        NodeKind.DynType => 56
+        NodeKind.AssociatedType => 57
+        NodeKind.FunctionType => 58
+        NodeKind.Invoke => 59
+        NodeKind.Defer => 60
+        NodeKind.Bounds => 61
+        NodeKind.Break => 62
+        NodeKind.Continue => 63
+        NodeKind.List => 64
+        NodeKind.Apply => 65
+        NodeKind.Index => 66
+        NodeKind.IndexAssign => 67
+        NodeKind.Scoped => 68
+        NodeKind.Async => 69
+        NodeKind.Await => 70
+        NodeKind.RecordPattern => 71
+        NodeKind.RestPattern => 72
+        NodeKind.Spread => 73
+        NodeKind.TypePack => 74
+        NodeKind.ExpansionId => 75
+        NodeKind.PackError => 76
+        NodeKind.IterationKey => 77
+        NodeKind.MacroCall => 78
+        NodeKind.MacroInput => 79
+    }
+}
+
+fn basis_node(output Hasher, node Node) {
+    basis_number(output, basis_kind(node.kind))
+    basis_field(output, node.value)
+    basis_number(output, node.span.start)
+    basis_number(output, node.span.end)
+    basis_number(output, length(node.children))
+    var index = 0
+    while index < length(node.children) {
+        basis_node(output, get(node.children, index))
+        index = index + 1
+    }
+}
+
+fn basis_options(output Hasher, values List[BuildOption]) {
+    basis_number(output, length(values))
+    var index = 0
+    while index < length(values) {
+        let value = get(values, index)
+        basis_field(output, value.name)
+        basis_field(output, value.value)
+        index = index + 1
+    }
+}
+
+// Snapshot identity for an ordinarily checked selected project and its observed
+// compilation inputs. Include ASTs as well as text: public Projects admit edits
+// without rewriting SourceFile.text. Resolved package edges matter even when
+// modules, source bytes and emitted machine behavior are unchanged.
+// This is separate from backend input/artifact hashes and is not compatibility
+// evidence, a signature, or a check that these caller-supplied values are valid.
+pub fn build_basis(project Project, tests Bool, inputs List[BuildInput],
+    options List[BuildOption], targets List[BuildOption]) Text {
+    let output = new_hasher()
+    update(output, to_bytes("loom-checked-build-basis 1\n"))
+    basis_number(output, if tests {
+            1
+        } else {
+            0
+        })
+    basis_number(output, project.root)
+    basis_number(output, length(project.modules))
+    var index = 0
+    while index < length(project.modules) {
+        let module = get(project.modules, index)
+        basis_field(output, module.name)
+        basis_field(output, module.source)
+        basis_number(output, length(module.configuration))
+        var item = 0
+        while item < length(module.configuration) {
+            let value = get(module.configuration, item)
+            basis_field(output, value.name)
+            basis_field(output, value.value)
+            item = item + 1
+        }
+        index = index + 1
+    }
+    basis_number(output, length(project.packages))
+    index = 0
+    while index < length(project.packages) {
+        let package = get(project.packages, index)
+        basis_number(output, package.instance)
+        basis_field(output, package.relative)
+        basis_number(output, length(package.imports))
+        var edge = 0
+        while edge < length(package.imports) {
+            let imported = get(package.imports, edge)
+            basis_field(output, imported.spelling)
+            basis_number(output, imported.target)
+            edge = edge + 1
+        }
+        index = index + 1
+    }
+    basis_number(output, length(project.files))
+    index = 0
+    while index < length(project.files) {
+        let file = get(project.files, index)
+        basis_number(output, file.package)
+        basis_field(output, file.path)
+        basis_field(output, file.text)
+        basis_number(output, if file.test_only {
+                1
+            } else {
+                0
+            })
+        basis_number(output, if file.trusted_std {
+                1
+            } else {
+                0
+            })
+        basis_node(output, file.tree)
+        index = index + 1
+    }
+    basis_number(output, length(inputs))
+    index = 0
+    while index < length(inputs) {
+        let input = get(inputs, index)
+        basis_field(output, input.request.root)
+        basis_field(output, input.request.source)
+        basis_field(output, input.request.path)
+        basis_field(output, input.file.path)
+        basis_field(output, hex(input.file.bytes))
+        index = index + 1
+    }
+    basis_options(output, options)
+    basis_options(output, targets)
+    hex(output)
+}

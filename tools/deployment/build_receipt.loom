@@ -23,6 +23,8 @@ import std.text.starts_with
 // declared storage mapping matches the program's behavior.
 pub record BuildReceipt {
     checked Text
+    // Empty for legacy v3/v4 receipts, which did not bind the complete graph.
+    basis Text
     artifact Text
     backend Text
     artifact_path Text
@@ -148,7 +150,7 @@ fn input_line(line Text) Result[Bool, Text] {
     Result.Ok(true)
 }
 
-// Accept the compiler's v3 and configuration-bound v4 line protocols. Check
+// Accept legacy v3/v4 and graph/AST/input-bound v5 receipts. Check
 // against the artifact currently at its canonical path; source files need not
 // still exist because deployment may use an immutable earlier build.
 pub fn read_build_receipt(path Text) Result[BuildReceipt, Text] {
@@ -171,7 +173,8 @@ pub fn read_build_receipt(path Text) Result[BuildReceipt, Text] {
     if std.list.length(lines) < 13 {
         return Result.Err("invalid build receipt version")
     }
-    let configured = get(lines, 0) == "loom-build-receipt 4"
+    let complete = get(lines, 0) == "loom-build-receipt 5"
+    let configured = complete || get(lines, 0) == "loom-build-receipt 4"
     if !configured && get(lines, 0) != "loom-build-receipt 3" {
         return Result.Err("invalid build receipt version")
     }
@@ -257,6 +260,17 @@ pub fn read_build_receipt(path Text) Result[BuildReceipt, Text] {
         position = position + 1
         index = index + 1
     }
+    var basis = ""
+    if complete {
+        if position >= std.list.length(lines) {
+            return Result.Err("truncated build receipt basis")
+        }
+        basis = value(get(lines, position), "basis-sha256")?
+        if !digest_text(basis) {
+            return Result.Err("invalid build receipt basis")
+        }
+        position = position + 1
+    }
     if position + 2 != std.list.length(lines) || get(lines, position) != "end" ||
     get(lines, position + 1) != "" {
         return Result.Err("invalid build receipt terminator")
@@ -290,6 +304,7 @@ pub fn read_build_receipt(path Text) Result[BuildReceipt, Text] {
     }
     Result.Ok(BuildReceipt {
             checked = checked
+            basis = basis
             artifact = artifact
             backend = backend
             artifact_path = output

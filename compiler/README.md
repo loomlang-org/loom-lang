@@ -485,6 +485,15 @@ Scoped bodies reuse typed cleanup, while current transitive resource flow checks
 still run. Implicit Dispose dependencies invalidate reuse just like explicit calls.
 Build receipts use the freshly loaded project and actual artifact; requested IR,
 linking and test execution still run.
+V5 receipts additionally record `basis-sha256`, binding the source ASTs and bytes,
+resolved package/import graph, module configuration, production mode and observed
+file, option and target compilation inputs. Public
+`std.loom.analysis.build_basis` uses the same encoding on its retained snapshot.
+The checked-input and artifact digests remain separate. Identical native code
+can accompany different source constraints or unused dependency bindings.
+Legacy v3/v4 receipts lack this complete basis field; deployment receipt readers
+retain them as legacy evidence. No receipt hash proves that a declared storage
+mapping matches application behavior or authorizes deployment.
 Only successful checks are published. Each `checked-v3` entry contains metadata
 and checked bytes under one SHA-256 checksum; `definitions-v2` binds its source,
 private checked bodies and input metadata the same way. Damage causes a miss.
@@ -4371,7 +4380,7 @@ Environment-derived values must be passed explicitly by the calling shell/build
 step. Values can enter artifacts and are **not a secret channel**.
 
 `check`, `build`, `test`, `run`, and `emit-checked` accept the same options.
-Frontend-cache keys include the canonical option map. V4 build receipts include
+Frontend-cache keys include the canonical option map. Build receipts include
 names and value digests. Public checking/analysis can supply `BuildInputs.options`
 without filesystem access; analysis snapshots and freshness checks include it.
 Editor requests use workspace `loom.buildOptions`. Target metadata is separate,

@@ -1,0 +1,120 @@
+import std.loom.project.SourceFile
+import std.loom.project.ModuleInstance
+import std.loom.project.Package
+import std.loom.project.PackageImport
+import std.loom.project.InputRequest
+import std.loom.project.InputFile
+import std.loom.parser.parse
+import std.result.Result
+import std.list.set
+import std.bytes.set
+import std.bytes.length
+
+fn basis_project() Project {
+    let source = "type Amount = Int where self >= 0\nfn main() { discard Amount(2) }"
+    let tree = match parse(source) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            assert false
+            get(basis_project().files, 0).tree
+        }
+    }
+    Project {
+        root = 0
+        modules = [ModuleInstance {
+                name = "app"
+                source = "/app"
+                configuration = []
+            }]
+        packages = [
+            Package {
+                instance = 0
+                relative = ""
+                imports = [PackageImport {
+                        spelling = "chosen"
+                        target = 1
+                    }]
+            },
+            Package {
+                instance = 0
+                relative = "left"
+                imports = []
+            },
+            Package {
+                instance = 0
+                relative = "right"
+                imports = []
+            }
+        ]
+        files = [SourceFile {
+                package = 0
+                path = "/app/main.loom"
+                text = source
+                tree = tree
+                test_only = false
+                trusted_std = false
+            }]
+    }
+}
+
+test fn build_basis_distinguishes_resolved_edges_with_identical_module_and_source_bytes() {
+    let project = basis_project()
+    let before = build_basis(project, false, [], [], [])
+    let imports = get(project.packages, 0).imports
+    set(imports, 0, PackageImport {
+            spelling = "chosen"
+            target = 2
+        })
+    assert build_basis(project, false, [], [], []) != before
+    set(imports, 0, PackageImport {
+            spelling = "chosen"
+            target = 1
+        })
+    assert build_basis(project, false, [], [], []) == before
+}
+
+test fn build_basis_distinguishes_ast_constraints_without_rewriting_source_text() {
+    let project = basis_project()
+    let before = build_basis(project, false, [], [], [])
+    let declaration = get(get(project.files, 0).tree.children, 0)
+    let constraint = get(declaration.children, length(declaration.children) - 1)
+    assert constraint.kind == NodeKind.Binary
+    let zero = get(constraint.children, 1)
+    assert zero.kind == NodeKind.Integer && zero.value == "0"
+    set(constraint.children, 1, Node {
+            value = "1"
+            ..zero
+        })
+    assert get(project.files, 0).text == get(basis_project().files, 0).text
+    assert build_basis(project, false, [], [], []) != before
+}
+
+test fn build_basis_tracks_observed_bytes_configuration_and_execution_mode() {
+    let project = basis_project()
+    let before = build_basis(project, false, [], [], [])
+    assert build_basis(project, true, [], [], []) != before
+    assert build_basis(project, false, [], [BuildOption {
+                name = "mode"
+                value = "new"
+            }], []) != before
+    assert build_basis(project, false, [], [], [BuildOption {
+                name = "os"
+                value = "linux"
+            }]) != before
+    let inputs = [BuildInput {
+            request = InputRequest {
+                root = "/app"
+                source = "/app/main.loom"
+                path = "input"
+            }
+            file = InputFile {
+                path = "/app/input"
+                bytes = to_bytes("old")
+            }
+        }]
+    let prior_basis = build_basis(project, false, inputs, [], [])
+    let bytes = get(inputs, 0).file.bytes
+    assert std.bytes.length(bytes) > 0
+    std.bytes.set(bytes, 0, 110)
+    assert build_basis(project, false, inputs, [], []) != prior_basis
+}
