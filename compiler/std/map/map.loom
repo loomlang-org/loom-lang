@@ -36,7 +36,7 @@ fn empty_table[K, V](capacity Int) Table[K, V] {
 
 pub fn new[K Equal + Hash, V]() Map[K, V] {
     let cells = std.list.new[Table[K, V]]()
-    push(cells, empty_table[K, V](8))
+    push(cells, empty_table[K, V](0))
     Map { state = State { cells = cells } }
 }
 
@@ -46,8 +46,10 @@ pub fn length[K Equal + Hash, V](map Map[K, V]) Int {
 
 pub fn is_empty[K Equal + Hash, V](map Map[K, V]) Bool { length(map) == 0 }
 
-// At least one slot is empty. An absent key uses the first deleted slot, if any.
+// An unallocated table has no entries. Allocated tables retain at least one
+// empty slot. An absent key uses the first deleted slot, if any.
 fn locate[K Equal + Hash, V](table Table[K, V], hash Int, key K) (Int, Bool) {
+    if std.list.length(table.slots) == 0 { return (-1, false) }
     let mask = std.list.length(table.slots) - 1
     var index = hash & mask
     var deleted = -1
@@ -111,6 +113,7 @@ fn rehash[K, V](table Table[K, V], capacity Int) Table[K, V] {
 pub fn insert[K Equal + Hash, V](map Map[K, V], key K, value V) Option[V] {
     var table = std.list.get(map.state.cells, 0)
     let hash = key.hash()
+    if std.list.length(table.slots) == 0 { table = empty_table[K, V](8) }
     var found = locate(table, hash, key)
     if found.1 {
         match std.list.get(table.slots, found.0) {
@@ -154,7 +157,7 @@ pub fn remove[K Equal + Hash, V](map Map[K, V], key K) Option[V] {
 }
 
 pub fn clear[K Equal + Hash, V](map Map[K, V]) {
-    set(map.state.cells, 0, empty_table[K, V](8))
+    set(map.state.cells, 0, empty_table[K, V](0))
 }
 
 // The outer list is a snapshot; shared data inside keys and values remains shared.
