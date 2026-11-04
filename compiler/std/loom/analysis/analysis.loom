@@ -60,7 +60,7 @@ record AnalysisState {
     proof_backend ProofBackend
     // Lazy query evidence; never attached to executable IR or definition caches.
     declarations List[List[std.loom.checking.DeclarationReference]]
-    source_declarations List[List[std.loom.checking.DeclarationReference]]
+    source_declarations List[CheckedQuery]
     lexical_sources std.map.Map[Int, LexicalSource]
     declaration_scopes List[Location]
     contract_queries List[CheckedQuery]
@@ -128,7 +128,7 @@ fn analysis_result(source Project, bindings std.loom.binding.Program,
             targets = detached.targets
             proof_backend = detached.proof_backend
             declarations = new[List[std.loom.checking.DeclarationReference]]()
-            source_declarations = new[List[std.loom.checking.DeclarationReference]]()
+            source_declarations = new[CheckedQuery]()
             lexical_sources = std.map.new[Int, LexicalSource]()
             declaration_scopes = new[Location]()
             contract_queries = new[CheckedQuery]()

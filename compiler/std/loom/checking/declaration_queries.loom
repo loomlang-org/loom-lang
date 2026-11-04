@@ -242,6 +242,18 @@ pub fn source_declaration_references(source std.loom.binding.Program, inputs Bui
 }
 
 fn declaration_references(source std.loom.binding.Program, inputs BuildInputs, callers Bool) Result[List[DeclarationReference], Failure] {
+    let view = declaration_query_view(source, inputs, callers)?
+    Result.Ok(view.declarations)
+}
+
+// The complete source queue already checks these callers and callees. Keep
+// their query-local type/function universe for source inspection as well.
+// These roots remain query evidence and never enter an executable Program.
+pub fn source_declaration_query(source std.loom.binding.Program, inputs BuildInputs) Result[CheckedQuery, Failure] {
+    declaration_query_view(source, inputs, true)
+}
+
+fn declaration_query_view(source std.loom.binding.Program, inputs BuildInputs, callers Bool) Result[CheckedQuery, Failure] {
     discard expanded_source(source)?
     let detached = query_source(source)?
     let env = prepare_with_inputs(detached, inputs, true)?
@@ -265,6 +277,16 @@ fn declaration_references(source std.loom.binding.Program, inputs BuildInputs, c
             index = index + 1
         }
     }
-    discard checked_program(env, new[Bool](), new[Bool](), ints(0))?
-    Result.Ok(get(env.inputs, 0).declaration_references)
+    let program = checked_program(env, new[Bool](), new[Bool](), ints(0))?
+    Result.Ok(CheckedQuery {
+            bindings = env.source
+            types = env.types
+            interfaces = env.interfaces
+            functions = program.functions
+            headers = new[SignatureHeader]()
+            type_headers = new[TypeHeader]()
+            parameter_headers = new[ParameterHeader]()
+            declarations = get(env.inputs, 0).declaration_references
+            stages = get(env.inputs, 0).staged_queries
+        })
 }

@@ -1,0 +1,70 @@
+import std.text.replace
+
+test fn complete_source_views_keep_nonentry_locals_detached_and_snapshot_local() {
+    let source = """
+        record Box { value Int }
+        fn unused(item Box) Int { item.value }
+        fn other(token Int) Int { token }
+        fn main() {}
+        """
+    let analysis = published(input(source))
+    let field = query_offset(source, "value Int")
+    let position = query_offset(source, "item.value") + 5
+    let found = complete_method_evidence(analysis, position)
+    only_type(found, "Int")
+    only_definition(found, field, field + 5)
+    set(found.types, 0, "changed answer")
+    set(found.definitions, 0, Location {
+            file = -1
+            span = Span {
+                start = 0
+                end = 0
+            }
+        })
+    only_type(complete_method_evidence(analysis, query_offset(source, "token }")), "Int")
+    only_type(complete_method_evidence(analysis, position), "Int")
+    only_definition(complete_method_evidence(analysis, position), field, field + 5)
+    let changed_source = replace(replace(source, "value Int", "value Bool"), "fn unused(item Box) Int", "fn unused(item Box) Bool")
+    let changed = published(input(changed_source))
+    only_type(complete_method_evidence(changed, query_offset(changed_source, "item.value") + 5), "Bool")
+    only_type(complete_method_evidence(analysis, position), "Int")
+}
+
+test fn complete_source_view_failures_retry_and_never_supply_independent_body_proofs() {
+    let source = "fn square(value Int) Int ensures result >= 0 { value * value }\nfn main() {}"
+    let unavailable = new[Bool]()
+    push(unavailable, false)
+    let solve = fn(context Text, query Text) Result[Bool, Text] {
+        if get(unavailable, 0) {
+            Result.Err("source query backend unavailable")
+        }
+        else {
+            Result.Ok(true)
+        }
+    }
+    let inputs = with_proof_backend(build_inputs(no_input_reader), ProofBackend {
+            enabled = true
+            context = "complete source view proof fixture"
+            solve = solve
+        })
+    let analysis = match analyze_with_inputs(input(source), false, inputs) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            assert false
+            return
+        }
+    }
+    let position = query_offset(source, "value * value")
+    set(unavailable, 0, true)
+    assert match inspect_source_references(analysis, 0, [position]) {
+        Result.Err(_) => true
+        Result.Ok(_) => false
+    }
+    set(unavailable, 0, false)
+    only_type(complete_method_evidence(analysis, position), "Int")
+    set(unavailable, 0, true)
+    assert match inspect_independent(analysis, 0, position) {
+        Option.None => true
+        Option.Some(_) => false
+    }
+}
