@@ -1,0 +1,71 @@
+fn graph_reuse_losses(entry State, current State, budget Int) List[Int] {
+    let proof = Verification {
+        budget = [budget]
+        ..verification(fixture(literal("0"), [], literal("true")), empty_proof_program())
+    }
+    match loop_graph_losses(proof, entry, entry, [Outcome {
+                state = current
+                value = Value.Empty
+            }]) {
+        Result.Ok(values) => values
+        Result.Err(_) => {
+            assert false
+            []
+        }
+    }
+}
+
+test fn graph_frame_reuse_requires_exact_root_and_current_target_metadata() {
+    let entry = root_frame_state(true)
+    let root = get(entry.extents, 0)
+    let target = get(entry.extents, 1)
+    assert list_graph_frame(root, target)
+    let resized = with_contents(10, 99, with_extent(10, constant(integer(2)), true, entry))
+    assert length(graph_reuse_losses(entry, resized, 0)) == 0
+    assert loop_graph_targets_unchanged([target], resized)
+    let missing = State {
+        extents = [root]
+        ..entry
+    }
+    assert !loop_graph_targets_unchanged([target], missing)
+    let lost_frontier = State {
+        extents = [ListExtent { frontier = -1, ..root }, target]
+        ..entry
+    }
+    assert same_projection(graph_reuse_losses(entry, lost_frontier, 16), [10])
+    let published = State {
+        extents = [root, ListExtent { private_storage = false, ..target }]
+        ..entry
+    }
+    assert same_projection(graph_reuse_losses(entry, published, 16), [10])
+    let proof = verification(fixture(literal("0"), [], literal("true")), empty_proof_program())
+    assert match loop_graph_losses(proof, entry, entry, [
+            Outcome { state = resized, value = Value.Empty },
+            Outcome { state = published, value = Value.Empty }]) {
+        Result.Ok(values) => same_projection(values, [10])
+        _ => false
+    }
+    let earlier = State {
+        extents = [root, ListExtent { birth_floor = 0, ..target }]
+        ..entry
+    }
+    assert same_projection(graph_reuse_losses(entry, earlier, 16), [10])
+    let explicit = State {
+        extents = [ListExtent { frontier = -1, unreachable = [20], ..root }, target]
+        ..entry
+    }
+    assert length(graph_reuse_losses(explicit, explicit, 0)) == 0
+    assert same_projection(graph_reuse_losses(explicit, lost_frontier, 16), [10])
+    let elements = State {
+        extents = [ListExtent { frontier = -1, element_unreachable = [20], ..root }, target]
+        ..entry
+    }
+    assert length(graph_reuse_losses(elements, elements, 0)) == 0
+    assert same_projection(graph_reuse_losses(elements, lost_frontier, 16), [10])
+    let empty = State {
+        extents = [ListExtent { frontier = -1, size = constant(integer(0)), ..root }, target]
+        ..entry
+    }
+    assert length(graph_reuse_losses(empty, empty, 0)) == 0
+    assert same_projection(graph_reuse_losses(empty, lost_frontier, 16), [10])
+}
