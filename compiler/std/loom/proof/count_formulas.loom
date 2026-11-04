@@ -23,7 +23,28 @@ fn count_integer(source Expr, value Int) Expr {
     proof_expr(source, ExprKind.Integer, 1, std.int.to_text(value), -1, [])
 }
 
+fn count_zero(value Expr) Bool {
+    value.kind == ExprKind.Integer && compare(decimal(value.text), integer(0)) == 0
+}
+
 fn count_binary(source Expr, operator Text, first Expr, second Expr) Expr {
+    if count_zero(second) {
+        return first
+    }
+    if operator == "+" && count_zero(first) {
+        return second
+    }
+    if operator == "-" {
+        if exact_expression(first, second) {
+            return count_integer(source, 0)
+        }
+        if second.kind == ExprKind.Intrinsic && second.text == "proof_sub" && length(second.children) == 2 {
+            // Indicator arithmetic is mathematical and total. Reassociate
+            // a - (b - c) before duplicating a shared finite-count base.
+            return count_binary(source, "+",
+                count_binary(source, "-", first, get(second.children, 0)), get(second.children, 1))
+        }
+    }
     scan_math(source, if operator == "+" {
             "proof_add"
         } else {

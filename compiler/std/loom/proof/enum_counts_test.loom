@@ -148,3 +148,19 @@ test fn enum_count_unions_share_finite_algebra_and_keep_column_identity() {
         Result.Ok(_) => false
     }
 }
+
+test fn enum_count_complements_cancel_only_identical_mathematical_bases() {
+    let first = local(0)
+    let second = local(1)
+    let third = local(2)
+    let fourth = local(3)
+    let removed = count_binary(first, "-", count_binary(first, "-",
+            count_binary(first, "-", first, second), third), fourth)
+    let actual = count_binary(first, "-", first, removed)
+    let expected = count_binary(first, "+", count_binary(first, "+", second, third), fourth)
+    assert exact_expression(actual, expected)
+    assert count_zero(count_binary(first, "-", first, first))
+    assert !count_zero(count_binary(first, "-", first, second))
+    assert exact_expression(count_binary(first, "+", literal("0"), first), first)
+    assert exact_expression(count_binary(first, "-", first, literal("00")), first)
+}
