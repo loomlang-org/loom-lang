@@ -3,6 +3,59 @@ mod common;
 use common::success;
 
 #[test]
+fn text_identities_keep_native_aliases_live_across_collection() {
+    let temporary = tempfile::tempdir().unwrap();
+    fs::write(
+        temporary.path().join("main.loom"),
+        r#"
+import std.text.concat
+import std.text.slice
+import std.text.length
+import std.int.to_text
+import std.process.arguments
+import std.list.length
+import std.list.push
+fn main() {
+    let source = concat("界🙂", to_text(length(arguments())))
+    let whole = slice(source, 0, length(source))
+    let left = concat("", whole)
+    let right = concat(whole, "")
+    let retained = [source, whole, left, right]
+    var index = 0
+    while index < 64 {
+        push(retained, concat("noise-", to_text(index)))
+        assert retained[0] == "界🙂1" && retained[1] == source
+        assert retained[2] == source && retained[3] == source
+        index = index + 1
+    }
+    assert slice(left, 0, 3) == "界"
+    assert slice(right, 3, 7) == "🙂"
+    assert slice(whole, 7, 8) == "1"
+}
+"#,
+    )
+    .unwrap();
+    for level in ["0", "2"] {
+        let executable = common::executable(temporary.path(), "text-identities");
+        success(
+            &common::command(&["build"])
+                .arg(temporary.path())
+                .arg("--output")
+                .arg(&executable)
+                .env("LOOM_OPT_LEVEL", level)
+                .output()
+                .unwrap(),
+        );
+        success(
+            &Command::new(executable)
+                .env("LOOM_GC_STRESS", "1")
+                .output()
+                .unwrap(),
+        );
+    }
+}
+
+#[test]
 fn text_contracts_prove_without_runtime_postcondition_helpers() {
     let package = "compiler/examples/text_contracts";
     for command in ["check", "test", "run"] {
