@@ -149,14 +149,14 @@ fn smt_scalar(writer SmtWriter, value ArrayScalar, depth Int) Result[Text, Text]
 }
 
 fn smt_number(value Number) Text {
-    if length(value.digits) == 0 {
+    if number_size(value) == 0 {
         return "0"
     }
-    var index = length(value.digits) - 1
-    var text = std.int.to_text(get(value.digits, index))
+    var index = number_size(value) - 1
+    var text = std.int.to_text(digit(value, index))
     while index > 0 {
         index = index - 1
-        let part = std.int.to_text(get(value.digits, index))
+        let part = std.int.to_text(digit(value, index))
         var padding = 9 - std.text.length(part)
         while padding > 0 {
             text = concat(text, "0")

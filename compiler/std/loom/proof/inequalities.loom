@@ -62,7 +62,7 @@ fn inequality_eliminate(input List[Linear], budget List[Int]) Result[Bool, Text]
         while index < length(rows) {
             let row = get(rows, index)
             let factor = affine_coefficient(row, pivot)
-            if length(factor.digits) == 0 {
+            if number_size(factor) == 0 {
                 push(remaining, row)
             } else if factor.negative {
                 push(negative, row)
@@ -140,7 +140,7 @@ fn difference_shape(value Linear) Bool {
         let factor = get(value.terms, index).factor
         // Canonical magnitudes identify +/-1 without allocating two temporary
         // Numbers for every coefficient on this common rejected-query path.
-        if length(factor.digits) != 1 || get(factor.digits, 0) != 1 {
+        if number_size(factor) != 1 || digit(factor, 0) != 1 {
             return false
         }
         if !factor.negative && !positive {

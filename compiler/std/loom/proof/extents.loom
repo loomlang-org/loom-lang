@@ -43,7 +43,7 @@ pub fn known_extents(equations List[List[Int]], dimensions Int) Result[List[Int]
                 terms = terms
             }, basis, budget)?
         if length(row.terms) == 0 {
-            if length(row.constant.digits) != 0 {
+            if number_size(row.constant) != 0 {
                 return Result.Err("inconsistent shape equations")
             }
         } else {
@@ -106,7 +106,7 @@ pub fn known_extents(equations List[List[Int]], dimensions Int) Result[List[Int]
 }
 
 fn extent_ratio(total Number, factor Number) Result[Int, Text] {
-    if total.negative || factor.negative || length(factor.digits) == 0 {
+    if total.negative || factor.negative || number_size(factor) == 0 {
         return Result.Err("shape widths must be nonnegative integers")
     }
     let numerator = machine(total)

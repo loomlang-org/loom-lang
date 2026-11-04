@@ -45,7 +45,7 @@ fn add(a Linear, b Linear) Linear {
             factor = sum(factor, get(b.terms, right).factor)
             right = right + 1
         }
-        if length(factor.digits) != 0 {
+        if number_size(factor) != 0 {
             push(terms, Term {
                     id = id
                     factor = factor
@@ -59,7 +59,7 @@ fn add(a Linear, b Linear) Linear {
 }
 
 fn scale(value Linear, factor Number) Linear {
-    if length(factor.digits) == 0 {
+    if number_size(factor) == 0 {
         return constant(factor)
     }
     if !factor.negative && unit(factor) {
@@ -70,7 +70,7 @@ fn scale(value Linear, factor Number) Linear {
     while index < length(value.terms) {
         let term = get(value.terms, index)
         let coefficient = product(term.factor, factor)
-        if length(coefficient.digits) != 0 {
+        if number_size(coefficient) != 0 {
             push(terms, Term {
                     id = term.id
                     factor = coefficient

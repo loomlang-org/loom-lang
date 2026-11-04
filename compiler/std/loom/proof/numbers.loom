@@ -4,15 +4,18 @@ import std.list.push
 import std.list.set
 import std.list.length
 import std.result.Result
+import std.option.Option
 import std.text.byte
 import std.text.length
 
 // Proof arithmetic is mathematical, not machine arithmetic. Little-endian
 // base-1e9 digits keep every intermediate digit operation inside checked Int.
-// Canonical digits are read-only after construction, including shared results.
+// Canonical large digits are read-only after construction, including shared
+// results. Zero and one-digit magnitudes use the inline small field instead.
 record Number {
     negative Bool
-    digits List[Int]
+    small Int
+    digits Option[List[Int]]
 }
 
 fn number(negative Bool, digits List[Int]) Number {
@@ -20,10 +23,22 @@ fn number(negative Bool, digits List[Int]) Number {
     while size > 0 && get(digits, size - 1) == 0 {
         size = size - 1
     }
-    if size == length(digits) {
+    if size <= 1 {
         return Number {
             negative = negative && size != 0
-            digits = digits
+            small = if size == 0 {
+                0
+            } else {
+                get(digits, 0)
+            }
+            digits = Option.None
+        }
+    }
+    if size == length(digits) {
+        return Number {
+            negative = negative
+            small = 0
+            digits = Option.Some(digits)
         }
     }
     let trimmed = new[Int]()
@@ -33,12 +48,24 @@ fn number(negative Bool, digits List[Int]) Number {
         index = index + 1
     }
     Number {
-        negative = negative && size != 0
-        digits = trimmed
+        negative = negative
+        small = 0
+        digits = Option.Some(trimmed)
     }
 }
 
 fn integer(value Int) Number {
+    if value > -1000000000 && value < 1000000000 {
+        return Number {
+            negative = value < 0
+            small = if value < 0 {
+                -value
+            } else {
+                value
+            }
+            digits = Option.None
+        }
+    }
     var remaining = if value > 0 {
         -value
     } else {
@@ -49,33 +76,44 @@ fn integer(value Int) Number {
         push(digits, -(remaining % 1000000000))
         remaining = remaining / 1000000000
     }
-    Number {
-        negative = value < 0
-        digits = digits
+    number(value < 0, digits)
+}
+
+// Logical base-1e9 width, including the existing proof precision limits.
+// Zero and one-digit magnitudes are stored inline without a List allocation.
+fn number_size(value Number) Int {
+    match value.digits {
+        Option.None => if value.small == 0 {
+            0
+        } else {
+            1
+        }
+        Option.Some(digits) => length(digits)
     }
 }
 
 fn negate(value Number) Number {
     Number {
-        negative = !value.negative && length(value.digits) != 0
+        negative = !value.negative && number_size(value) != 0
+        small = value.small
         digits = value.digits
     }
 }
 
 fn magnitude(a Number, b Number) Int {
-    if length(a.digits) < length(b.digits) {
+    if number_size(a) < number_size(b) {
         return -1
     }
-    if length(a.digits) > length(b.digits) {
+    if number_size(a) > number_size(b) {
         return 1
     }
-    var index = length(a.digits)
+    var index = number_size(a)
     while index > 0 {
         index = index - 1
-        if get(a.digits, index) < get(b.digits, index) {
+        if digit(a, index) < digit(b, index) {
             return -1
         }
-        if get(a.digits, index) > get(b.digits, index) {
+        if digit(a, index) > digit(b, index) {
             return 1
         }
     }
@@ -99,23 +137,43 @@ fn compare(a Number, b Number) Int {
 }
 
 fn digit(value Number, index Int) Int {
-    if index < length(value.digits) {
-        get(value.digits, index)
-    } else {
-        0
+    match value.digits {
+        Option.None => if index == 0 {
+            value.small
+        } else {
+            0
+        }
+        Option.Some(digits) => if index < length(digits) {
+            get(digits, index)
+        } else {
+            0
+        }
     }
 }
 
 fn unit(value Number) Bool {
-    length(value.digits) == 1 && get(value.digits, 0) == 1
+    number_size(value) == 1 && value.small == 1
 }
 
 fn sum(a Number, b Number) Number {
-    if length(a.digits) == 0 {
+    if number_size(a) == 0 {
         return b
     }
-    if length(b.digits) == 0 {
+    if number_size(b) == 0 {
         return a
+    }
+    if number_size(a) == 1 && number_size(b) == 1 {
+        let left = if a.negative {
+            -a.small
+        } else {
+            a.small
+        }
+        let right = if b.negative {
+            -b.small
+        } else {
+            b.small
+        }
+        return integer(left + right)
     }
     if a.negative != b.negative {
         if magnitude(a, b) < 0 {
@@ -126,7 +184,7 @@ fn sum(a Number, b Number) Number {
     let digits = new[Int]()
     var carry = 0
     var index = 0
-    while index < length(a.digits) || index < length(b.digits) || carry != 0 {
+    while index < number_size(a) || index < number_size(b) || carry != 0 {
         let value = digit(a, index) + digit(b, index) + carry
         push(digits, value % 1000000000)
         carry = value / 1000000000
@@ -137,13 +195,20 @@ fn sum(a Number, b Number) Number {
 
 // Absolute subtraction, with |a| >= |b|; keep the sign of a.
 fn difference(a Number, b Number) Number {
-    if length(b.digits) == 0 {
+    if number_size(b) == 0 {
         return a
+    }
+    if number_size(a) <= 1 && number_size(b) <= 1 {
+        return integer(if a.negative {
+                b.small - a.small
+            } else {
+                a.small - b.small
+            })
     }
     let digits = new[Int]()
     var borrow = 0
     var index = 0
-    while index < length(a.digits) {
+    while index < number_size(a) {
         var value = digit(a, index) - digit(b, index) - borrow
         borrow = if value < 0 {
             1
@@ -164,10 +229,10 @@ fn subtract(a Number, b Number) Number {
 }
 
 fn product(a Number, b Number) Number {
-    if length(a.digits) == 0 {
+    if number_size(a) == 0 {
         return a
     }
-    if length(b.digits) == 0 {
+    if number_size(b) == 0 {
         return b
     }
     if unit(a) {
@@ -184,17 +249,26 @@ fn product(a Number, b Number) Number {
             a
         }
     }
+    if number_size(a) == 1 && number_size(b) == 1 {
+        // Both magnitudes are below 1e9, so the exact product fits Int.
+        let value = a.small * b.small
+        return integer(if a.negative != b.negative {
+                -value
+            } else {
+                value
+            })
+    }
     let digits = new[Int]()
     var index = 0
-    while index < length(a.digits) + length(b.digits) {
+    while index < number_size(a) + number_size(b) {
         push(digits, 0)
         index = index + 1
     }
     index = 0
-    while index < length(a.digits) {
+    while index < number_size(a) {
         var other = 0
         var carry = 0
-        while other < length(b.digits) {
+        while other < number_size(b) {
             let value = get(digits, index + other) + digit(a, index) * digit(b, other) + carry
             set(digits, index + other, value % 1000000000)
             carry = value / 1000000000
@@ -227,11 +301,18 @@ fn decimal(text Text) Number {
 }
 
 fn machine(value Number) Result[Int, Text] {
+    if number_size(value) <= 1 {
+        return Result.Ok(if value.negative {
+                -value.small
+            } else {
+                value.small
+            })
+    }
     if compare(value, integer(-9223372036854775808)) < 0 || compare(value, integer(9223372036854775807)) > 0 {
         return Result.Err("proof integer is outside Int")
     }
     var remaining = 0
-    var index = length(value.digits)
+    var index = number_size(value)
     while index > 0 {
         index = index - 1
         remaining = remaining * 1000000000 - digit(value, index)
