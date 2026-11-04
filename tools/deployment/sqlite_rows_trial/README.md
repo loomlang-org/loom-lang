@@ -21,6 +21,18 @@ stable-ID aliases, rejects a stored row whose two valid integer fields violate
 that relationship, then inserts and reads a checked boundary value. A source
 postcondition uses the decoded record's complete constraint.
 
+The source-check trial installs a `std.storage.sqlite_record_check[SourceBounds]`
+clause derived from `!self.active || self.lower <= self.upper`, using the same
+stable-ID mapping as its typed codec. The real database rejects invalid active
+rows, NULLs, wrong storage classes, non-Boolean integers and an UPDATE that would
+reactivate invalid bounds. Valid inactive rows, Int limits and a typed insertion
+still decode to the required source invariant. The fixture uses columns without
+affinity so wrong input classes cannot be coerced. This is enforcement of the
+supported scalar predicate, not general schema or application-writer proof.
+Fifty source-constructor versus real-database INSERT controls cover every admitted
+operator, both field-selection forms and both Int limits. They are regression
+examples, not a universal compatibility proof.
+
 The trusted CLI runs one read-only SELECT, with literal arguments and quoted
 identifiers; user startup commands are disabled. Cells use tagged hexadecimal
 payloads, including SQLite CLI's

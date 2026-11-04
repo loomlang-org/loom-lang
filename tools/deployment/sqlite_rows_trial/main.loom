@@ -192,4 +192,5 @@ fn main() {
     assert std.list.length(read(tool, database, codec)) == 0
     check_inserts(tool, database, codec)
     check_refined_record_rows(tool, database)
+    check_source_record_constraints(tool, database)
 }

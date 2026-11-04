@@ -93,7 +93,7 @@ pub fn record_codec[T](table Table) Result[PreparedRowCodec[T], CodecError] {
 // Visible records and refinements over visible records. Each field needs an
 // explicit ColumnValue; unsupported shapes and descriptors are errors.
 pub fn record_codec[T](table Table, aliases List[(Text, Text)]) Result[PreparedRowCodec[T], CodecError] {
-    comptime if describe[T]().types[0].kind == Kind.Refined {
+    comptime if std.reflect.describe[T]().types[0].kind == Kind.Refined {
         let Base = comptime {
             match refinement_base[T]() {
                 Option.Some(base) => base
@@ -105,7 +105,7 @@ pub fn record_codec[T](table Table, aliases List[(Text, Text)]) Result[PreparedR
         }
         return Result.Err(CodecError.InvalidSchema)
     }
-    comptime if describe[T]().types[0].kind == Kind.Record {
+    comptime if std.reflect.describe[T]().types[0].kind == Kind.Record {
         let frozen = snapshot(table)
         discard validate_table(frozen)?
         let names = new[Text]()

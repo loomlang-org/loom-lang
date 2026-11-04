@@ -1,0 +1,308 @@
+import std.int.parse
+import std.int.to_text
+import std.text.byte
+import std.text.length
+import std.loom.ast.Node
+import std.loom.ast.NodeKind
+import std.meta.refinement_base
+import std.reflect.predicates.describe
+import std.text.concat
+import std.text.contains
+import std.text.join
+import std.text.split
+
+pub enum SqliteCheckError {
+    InvalidMapping
+    UnsupportedType
+    UnsupportedPredicate
+}
+
+enum SqliteCheckKind {
+    Integer
+    Boolean
+    Unsupported
+}
+
+record SqliteCheckField {
+    name Text
+    column Text
+    kind SqliteCheckKind
+}
+
+record SqliteCheckTerm {
+    sql Text
+    kind SqliteCheckKind
+    guards List[Text]
+}
+
+fn sqlite_check_identifier(value Text) Result[Text, SqliteCheckError] {
+    if value == "" || contains(value, "\0") {
+        return Result.Err(SqliteCheckError.InvalidMapping)
+    }
+    Result.Ok(concat("\"", concat(join(split(value, "\""), "\"\""), "\"")))
+}
+
+fn sqlite_check_same_name(left Text, right Text) Bool {
+    if std.text.length(left) != std.text.length(right) {
+        return false
+    }
+    var index = 0
+    while index < std.text.length(left) {
+        let a = std.text.byte(left, index)
+        let b = std.text.byte(right, index)
+        if (if a >= 65 && a <= 90 {
+                a + 32
+            } else {
+                a
+            }) !=
+        (if b >= 65 && b <= 90 {
+                b + 32
+            } else {
+                b
+            }) {
+            return false
+        }
+        index = index + 1
+    }
+    true
+}
+
+fn sqlite_check_column(table Table, aliases List[(Text, Text)], name Text) Result[Text, SqliteCheckError] {
+    var id = name
+    var index = 0
+    while index < length(aliases) {
+        let alias = get(aliases, index)
+        if alias.0 == name {
+            id = alias.1
+        }
+        index = index + 1
+    }
+    index = 0
+    while index < length(table.columns) {
+        let column = get(table.columns, index)
+        if column.id == id {
+            return sqlite_check_identifier(column.physical_name)
+        }
+        index = index + 1
+    }
+    Result.Err(SqliteCheckError.InvalidMapping)
+}
+
+fn sqlite_check_scalar(sql Text, kind SqliteCheckKind) SqliteCheckTerm {
+    SqliteCheckTerm {
+        sql = sql
+        kind = kind
+        guards = []
+    }
+}
+
+fn sqlite_check_expression(node Node, fields List[SqliteCheckField], depth Int) Result[SqliteCheckTerm, SqliteCheckError] {
+    if depth >= 64 {
+        return Result.Err(SqliteCheckError.UnsupportedPredicate)
+    }
+    let count = length(node.children)
+    if node.kind == NodeKind.Bool && count == 0 {
+        if node.value == "true" || node.value == "false" {
+            return Result.Ok(sqlite_check_scalar(if node.value == "true" {
+                        "1"
+                    } else {
+                        "0"
+                    }, SqliteCheckKind.Boolean))
+        }
+    }
+    if node.kind == NodeKind.Integer && count == 0 {
+        match std.int.parse(node.value) {
+            Result.Ok(value) => {
+                return Result.Ok(sqlite_check_scalar(std.int.to_text(value), SqliteCheckKind.Integer))
+            }
+            _ => {
+            }
+        }
+    }
+    var selected = ""
+    if node.kind == NodeKind.Name && count == 0 {
+        var index = 0
+        while index < length(fields) {
+            let field = get(fields, index)
+            if node.value == concat("self.", field.name) {
+                selected = field.name
+            }
+            index = index + 1
+        }
+    }
+    if node.kind == NodeKind.Select && count == 1 {
+        let base = get(node.children, 0)
+        if base.kind == NodeKind.Name && base.value == "self" && length(base.children) == 0 {
+            selected = node.value
+        }
+    }
+    if selected != "" {
+        var index = 0
+        while index < length(fields) {
+            let field = get(fields, index)
+            if field.name == selected {
+                if field.kind == SqliteCheckKind.Unsupported {
+                    return Result.Err(SqliteCheckError.UnsupportedPredicate)
+                }
+                let guards = [concat("typeof(", concat(field.column, ") = 'integer'"))]
+                if field.kind == SqliteCheckKind.Boolean {
+                    push(guards, concat(field.column, " IN (0, 1)"))
+                }
+                return Result.Ok(SqliteCheckTerm {
+                        sql = field.column
+                        kind = field.kind
+                        guards = guards
+                    })
+            }
+            index = index + 1
+        }
+    }
+    if node.kind == NodeKind.Unary && count == 1 {
+        let child = get(node.children, 0)
+        // Negating arbitrary Int expressions is partial at the minimum value.
+        // Emit only a checked signed literal, including the minimum Int itself.
+        if node.value == "-" && child.kind == NodeKind.Integer && length(child.children) == 0 {
+            match std.int.parse(concat("-", child.value)) {
+                Result.Ok(value) => {
+                    return Result.Ok(sqlite_check_scalar(std.int.to_text(value), SqliteCheckKind.Integer))
+                }
+                _ => {
+                }
+            }
+        }
+        if node.value == "!" {
+            let value = sqlite_check_expression(child, fields, depth + 1)?
+            if value.kind == SqliteCheckKind.Boolean {
+                return Result.Ok(SqliteCheckTerm {
+                        sql = concat("(NOT ", concat(value.sql, ")"))
+                        kind = SqliteCheckKind.Boolean
+                        guards = value.guards
+                    })
+            }
+        }
+    }
+    if node.kind == NodeKind.Binary && count == 2 {
+        let left = sqlite_check_expression(get(node.children, 0), fields, depth + 1)?
+        let right = sqlite_check_expression(get(node.children, 1), fields, depth + 1)?
+        var operation = ""
+        if left.kind == SqliteCheckKind.Boolean && right.kind == SqliteCheckKind.Boolean {
+            if node.value == "&&" {
+                operation = "AND"
+            }
+            if node.value == "||" {
+                operation = "OR"
+            }
+        }
+        if left.kind == right.kind && left.kind != SqliteCheckKind.Unsupported {
+            if node.value == "==" {
+                operation = "="
+            }
+            if node.value == "!=" {
+                operation = "<>"
+            }
+            if left.kind == SqliteCheckKind.Integer {
+                if node.value == "<" || node.value == "<=" || node.value == ">" || node.value == ">=" {
+                    operation = node.value
+                }
+            }
+        }
+        if operation != "" {
+            let guards = std.list.clone(left.guards)
+            var index = 0
+            while index < length(right.guards) {
+                push(guards, get(right.guards, index))
+                index = index + 1
+            }
+            return Result.Ok(SqliteCheckTerm {
+                    sql = concat("(", concat(left.sql, concat(" ", concat(operation, concat(" ", concat(right.sql, ")"))))))
+                    kind = SqliteCheckKind.Boolean
+                    guards = guards
+                })
+        }
+    }
+    Result.Err(SqliteCheckError.UnsupportedPredicate)
+}
+
+fn sqlite_record_check_base[T, Base](table Table, aliases List[(Text, Text)]) Result[Text, SqliteCheckError] {
+    comptime if std.reflect.describe[Base]().types[0].kind == Kind.Record && refined_codec_base[T, Base]() {
+        let frozen_aliases = std.list.clone(aliases)
+        let codec = match record_codec[T](table, frozen_aliases) {
+            Result.Ok(value) => value
+            Result.Err(_) => {
+                return Result.Err(SqliteCheckError.InvalidMapping)
+            }
+        }
+        let frozen = codec_table(codec)
+        discard sqlite_check_identifier(frozen.physical_name)?
+        var column = 0
+        while column < length(frozen.columns) {
+            let current = get(frozen.columns, column)
+            discard sqlite_check_identifier(current.physical_name)?
+            var previous = 0
+            while previous < column {
+                if sqlite_check_same_name(current.physical_name, get(frozen.columns, previous).physical_name) {
+                    return Result.Err(SqliteCheckError.InvalidMapping)
+                }
+                previous = previous + 1
+            }
+            column = column + 1
+        }
+        let fields = new[SqliteCheckField]()
+        comptime for name, Field in Base {
+            let kind = comptime if Field == Int {
+                SqliteCheckKind.Integer
+            } else {
+                comptime if Field == Bool {
+                    SqliteCheckKind.Boolean
+                } else {
+                    SqliteCheckKind.Unsupported
+                }
+            }
+            push(fields, SqliteCheckField {
+                    name = name
+                    column = sqlite_check_column(frozen, frozen_aliases, name)?
+                    kind = kind
+                })
+        }
+        let predicate = match std.reflect.predicates.describe[T]() {
+            Option.Some(value) => value.expression
+            Option.None => {
+                return Result.Err(SqliteCheckError.UnsupportedType)
+            }
+        }
+        let term = sqlite_check_expression(predicate, fields, 0)?
+        if term.kind != SqliteCheckKind.Boolean {
+            return Result.Err(SqliteCheckError.UnsupportedPredicate)
+        }
+        let guards = std.list.clone(term.guards)
+        push(guards, term.sql)
+        return Result.Ok(concat("CHECK (((", concat(join(guards, ") AND ("), ")) IS 1)")))
+    } else {
+        Result.Err(SqliteCheckError.UnsupportedType)
+    }
+}
+
+pub fn sqlite_record_check[T](table Table) Result[Text, SqliteCheckError] {
+    sqlite_record_check[T](table, [])
+}
+
+// A source-derived CHECK clause for visible whole-record scalar predicates.
+// Exact built-in Int/Bool fields, constants, comparisons and Boolean operations
+// are total and have matching SQL semantics. Other syntax rejects. Referenced
+// cells also need the exact storage class and Bool representation; NULL cannot
+// make a CHECK pass. This does not certify other fields, database configuration,
+// custom codecs, existing schema, application writers or deployment compatibility.
+pub fn sqlite_record_check[T](table Table, aliases List[(Text, Text)]) Result[Text, SqliteCheckError] {
+    comptime if std.reflect.describe[T]().types[0].kind == Kind.Refined {
+        let Base = comptime {
+            match refinement_base[T]() {
+                Option.Some(value) => value
+                Option.None => T
+            }
+        }
+        comptime if Base != T {
+            return sqlite_record_check_base[T, Base](table, aliases)
+        }
+    }
+    Result.Err(SqliteCheckError.UnsupportedType)
+}

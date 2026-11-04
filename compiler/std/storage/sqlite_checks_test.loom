@@ -1,0 +1,105 @@
+record SqliteBoundsFields {
+    lower Int
+    upper Int
+    active Bool
+}
+
+type SqliteBounds = SqliteBoundsFields where !self.active || self.lower <= self.upper
+
+type SqliteIntLimits = SqliteBoundsFields where self.lower >= -9223372036854775808 &&
+self.upper <= 9223372036854775807
+
+fn sqlite_bounds_helper(value SqliteBoundsFields) Bool {
+    value.lower <= value.upper
+}
+
+type SqliteHelperBounds = SqliteBoundsFields where sqlite_bounds_helper(self)
+
+type SqliteArithmeticBounds = SqliteBoundsFields where self.lower + 1 <= self.upper
+
+fn sqlite_bounds_table() Table {
+    Table {
+        id = "bounds"
+        physical_name = "bounded rows"
+        columns = [column("hi-id", "maximum\"value", ValueKind.Int, false),
+            column("enabled", "enabled", ValueKind.Int, false),
+            column("lo-id", "minimum value", ValueKind.Int, false)]
+    }
+}
+
+fn sqlite_bounds_aliases() List[(Text, Text)] {
+    [("lower", "lo-id"), ("upper", "hi-id"), ("active", "enabled")]
+}
+
+test fn sqlite_record_check_maps_source_fields_and_guards_physical_values() {
+    let sql = match sqlite_record_check[SqliteBounds](sqlite_bounds_table(), sqlite_bounds_aliases()) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            assert false
+            return
+        }
+    }
+    assert contains(sql, "\"minimum value\" <= \"maximum\"\"value\"")
+    assert contains(sql, "typeof(\"minimum value\") = 'integer'")
+    assert contains(sql, "typeof(\"maximum\"\"value\") = 'integer'")
+    assert contains(sql, "\"enabled\" IN (0, 1)")
+    assert contains(sql, ") IS 1)")
+    let limits = match sqlite_record_check[SqliteIntLimits](sqlite_bounds_table(), sqlite_bounds_aliases()) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            assert false
+            return
+        }
+    }
+    assert contains(limits, "-9223372036854775808")
+    assert contains(limits, "9223372036854775807")
+}
+
+test fn sqlite_record_check_does_not_treat_helpers_or_partial_arithmetic_as_sql() {
+    assert match sqlite_record_check[SqliteHelperBounds](sqlite_bounds_table(), sqlite_bounds_aliases()) {
+        Result.Err(SqliteCheckError.UnsupportedPredicate) => true
+        _ => false
+    }
+    assert match sqlite_record_check[SqliteArithmeticBounds](sqlite_bounds_table(), sqlite_bounds_aliases()) {
+        Result.Err(SqliteCheckError.UnsupportedPredicate) => true
+        _ => false
+    }
+    assert match sqlite_record_check[SqliteBoundsFields](sqlite_bounds_table(), sqlite_bounds_aliases()) {
+        Result.Err(SqliteCheckError.UnsupportedType) => true
+        _ => false
+    }
+}
+
+test fn sqlite_record_check_rejects_ambiguous_sql_names_and_changed_mapping() {
+    let duplicate = sqlite_bounds_table()
+    set(duplicate.columns, 0, column("hi-id", "ENABLED", ValueKind.Int, false))
+    assert match sqlite_record_check[SqliteBounds](duplicate, sqlite_bounds_aliases()) {
+        Result.Err(SqliteCheckError.InvalidMapping) => true
+        _ => false
+    }
+    let nul = sqlite_bounds_table()
+    set(nul.columns, 0, column("hi-id", "hi\0value", ValueKind.Int, false))
+    assert match sqlite_record_check[SqliteBounds](nul, sqlite_bounds_aliases()) {
+        Result.Err(SqliteCheckError.InvalidMapping) => true
+        _ => false
+    }
+    assert match sqlite_record_check[SqliteBounds](sqlite_bounds_table(), [("lower", "missing")]) {
+        Result.Err(SqliteCheckError.InvalidMapping) => true
+        _ => false
+    }
+    assert match sqlite_record_check[SqliteBounds](sqlite_bounds_table(), [("lower", "hi-id"), ("upper", "hi-id"), ("active", "enabled")]) {
+        Result.Err(SqliteCheckError.InvalidMapping) => true
+        _ => false
+    }
+}
+
+test fn sqlite_record_check_works_during_ordinary_compile_time_execution() {
+    let sql = comptime {
+        match sqlite_record_check[SqliteBounds](sqlite_bounds_table(), sqlite_bounds_aliases()) {
+            Result.Ok(value) => value
+            Result.Err(_) => ""
+        }
+    }
+    assert contains(sql, "CHECK ((")
+    assert contains(sql, "(NOT \"enabled\")")
+}

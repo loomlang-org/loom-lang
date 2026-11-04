@@ -3,8 +3,8 @@ import std.reflect.Kind
 import std.reflect.predicates.implies
 
 fn refined_codec_base[T, Base]() Bool {
-    let target = describe[T]().types[0].kind
-    let base = describe[Base]().types[0].kind
+    let target = std.reflect.describe[T]().types[0].kind
+    let base = std.reflect.describe[Base]().types[0].kind
     target == Kind.Refined && base != Kind.Opaque && base != Kind.Refined &&
     implies[T, Base]()
 }

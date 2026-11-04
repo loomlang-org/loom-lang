@@ -6,7 +6,7 @@ import std.reflect.Kind
 // a predicate relating several fields. No implicit copy or alias protection is
 // added; construction follows the language's continuing constraint rules.
 fn refined_record_codec[T, Base](table Table, aliases List[(Text, Text)]) Result[PreparedRowCodec[T], CodecError] {
-    comptime if describe[Base]().types[0].kind == Kind.Record && refined_codec_base[T, Base]() {
+    comptime if std.reflect.describe[Base]().types[0].kind == Kind.Record && refined_codec_base[T, Base]() {
         let underlying = record_codec[Base](table, aliases)?
         let encoder = fn(value T) Result[List[Value], CodecError] {
             let base Base = value
