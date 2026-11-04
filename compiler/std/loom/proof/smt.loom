@@ -889,9 +889,10 @@ fn smt_encoding(obligations List[Obligation], extended Bool, guarded_order Bool,
     }
     let command = if scalar_normalization {
         // Open existential counterexample witnesses before arithmetic
-        // substitution, so their interval bounds participate in rewriting.
+        // substitution, then propagate the new intervals exposed by aliases.
+        // Both passes keep signed division and prefix boundaries compact.
         // This is the same obligation and the same host time limit.
-        "(check-sat-using (then simplify snf simplify propagate-ineqs solve-eqs simplify smt))\n"
+        "(check-sat-using (then simplify snf simplify propagate-ineqs solve-eqs simplify propagate-ineqs simplify smt))\n"
     } else if select_obligation {
         // Split the explicit counterexample choice before normalization can
         // introduce unrelated alternatives. Then open quantified witnesses in
