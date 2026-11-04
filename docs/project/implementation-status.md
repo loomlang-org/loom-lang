@@ -418,6 +418,14 @@ nor retain callbacks; mutable capture state stays live. Eligibility supplies no
 result, domain, termination or input-isolation fact. Ordinary typing/contracts
 and cyclic inspection still reject; unknown dispatch remains unsupported.
 
+Known callbacks can also query `std.reflect.functions.read_only_callable` through
+the existing bounded closed graph and operation checks, including entry
+conditions. The query inspects capture types without executing the callback or
+copying its live state. Generic wrappers and constrained row conversions work
+through the native commands. Shared writes, I/O, tasks, cleanup and erased
+dispatch remain unproved; true supplies neither frozen inputs nor invocation,
+result or termination guarantees. Required contracts still reject when unproved.
+
 ## Constraints and required proofs
 
 The [contract reference](../../compiler/README.md#contract-boundary) describes the

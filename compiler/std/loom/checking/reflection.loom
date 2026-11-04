@@ -16,7 +16,7 @@ fn reflection_intrinsic(env Environment, owner Int) Bool {
     let item = symbol(env, owner)
     if !has(item.node, NodeKind.Intrinsic) || (item.name != "describe" &&
         item.name != "from_fields" && item.name != "implies" &&
-        item.name != "refinement_base" && item.name != "comptime_callable") {
+        item.name != "refinement_base" && item.name != "comptime_callable" && item.name != "read_only_callable") {
         return false
     }
     let file = get(env.source.files, item.file)
@@ -27,7 +27,7 @@ fn reflection_intrinsic(env Environment, owner Int) Bool {
     if item.name == "refinement_base" {
         return owner_package == "std.meta"
     }
-    if item.name == "comptime_callable" {
+    if item.name == "comptime_callable" || item.name == "read_only_callable" {
         return owner_package == "std.reflect.functions"
     }
     (item.name == "describe" || item.name == "from_fields") && owner_package == "std.reflect" ||

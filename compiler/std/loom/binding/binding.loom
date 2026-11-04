@@ -361,7 +361,7 @@ fn bind_mode(project Project, tests Bool, strict Bool) Result[Program, Failure] 
                         std.loom.project.package_label(project.modules, project.packages, source.package) == "std.reflect") ||
                         ((node.value == "describe" || node.value == "implies") &&
                             std.loom.project.package_label(project.modules, project.packages, source.package) == "std.reflect.predicates") ||
-                        (node.value == "comptime_callable" &&
+                        ((node.value == "comptime_callable" || node.value == "read_only_callable") &&
                             std.loom.project.package_label(project.modules, project.packages, source.package) == "std.reflect.functions") ||
                         (node.value == "refinement_base" &&
                             std.loom.project.package_label(project.modules, project.packages, source.package) == "std.meta")

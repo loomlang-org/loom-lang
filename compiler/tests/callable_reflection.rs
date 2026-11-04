@@ -25,6 +25,17 @@ fn callable_inspection_rechecks_source_and_keeps_runtime_effects_out() {
     assert!(String::from_utf8_lossy(&rejected.stderr).contains("postcondition"));
     fs::write(&source, SOURCE).unwrap();
     success(&check());
+    let changed_reader = SOURCE.replace(
+        "fn observe(values List[Int]) Int {\n    values[0]\n}",
+        "fn observe(values List[Int]) Int {\n    values[0] = 0\n    values[0]\n}",
+    );
+    assert_ne!(changed_reader, SOURCE);
+    fs::write(&source, changed_reader).unwrap();
+    let rejected = check();
+    assert!(!rejected.status.success());
+    assert!(String::from_utf8_lossy(&rejected.stderr).contains("postcondition"));
+    fs::write(&source, SOURCE).unwrap();
+    success(&check());
     for extra in [
         // Admitted operations do not establish an invocation's domain.
         r#"
@@ -50,6 +61,37 @@ ensures result > value {
 fn bad() Bool
 ensures result {
     comptime_callable(noisy)
+}
+"#,
+        r#"
+fn divide(value Int) Int { 1 / value }
+fn bad(value Int) Bool
+requires read_only_callable(divide)
+ensures divide(value) == divide(value) {
+    true
+}
+"#,
+        r#"
+fn bad(value Int) Int
+requires read_only_callable(increment)
+ensures result > value {
+    value
+}
+"#,
+        r#"
+fn bad() Bool
+ensures result {
+    read_only_callable(extend)
+}
+"#,
+        r#"
+fn confused[T](value T, comptime action fn(T) T) Bool
+requires comptime_callable(action)
+ensures result {
+    read_only_callable(action)
+}
+fn bad() Bool ensures result {
+    confused([7], overwrite)
 }
 "#,
     ] {

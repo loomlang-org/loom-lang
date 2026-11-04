@@ -32,3 +32,28 @@ not purity axioms. Concrete instances recheck their actual target.
 
 Queries create no runtime registry and retain no native callback root or capture
 copy. See the [executable example](../../../examples/callable_reflection).
+
+`read_only_callable(callback)` further checks the compiler's existing bounded
+read-only graph rules. A true result admits reads of inputs and captured state
+through a closed checked call graph, including entry conditions, while excluding
+shared writes, I/O, tasks and implicit cleanup. Required contracts are checked
+before classification. False includes unsupported effects, erased dispatch and
+exhausted reasoning; it is not evidence that a function necessarily writes.
+
+```loom
+import std.reflect.functions.read_only_callable
+
+pub fn read_only_apply[Ts..., R](comptime action fn(Ts...) R, values Ts...) R
+requires read_only_callable(action) {
+    action(values...)
+}
+```
+
+The argument follows ordinary compile-time identity rules. A known callback's
+live environment is inspected by type, without reading or copying its values.
+Its result may share mutable data with an input or capture; later alias writes
+remain visible. The query grants no frozen snapshot, invocation domain, result
+property or termination guarantee. The example exercises a constrained row
+conversion, a shared captured List, an excluded mutating callback, generic packs
+and explicit invocations after inspection. These facts do not establish a
+database mapping or authorize a migration.
