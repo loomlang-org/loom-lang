@@ -127,7 +127,7 @@ joint `Int`/`Bool`/`Text` keys to prove full-row entry permutation, retaining
 field associations through unknown effectful comparisons. Equalities must observe
 one indexed element; conjunction and operand order normalize. Generic finite
 histogram laws reuse the existing immutable-value encoding and preserve source
-store premises, indices and scopes. Float, enum and mutable-graph equality remain
+store premises, indices and scopes. Float and mutable-graph equality remain
 open, as do general comparator laws.
 Known ascending and descending comparisons on the nested key now compose order
 with full-row permutation in the same contract, including callbacks that change
@@ -144,6 +144,19 @@ also preserves counts of unions, complements and guarded alternatives. It uses
 finite indicator algebra over the same equality keys, including overlap and empty
 ranges, within the existing expansion limits. Source evaluation checks remain
 required; this supplies no arbitrary predicate induction.
+The [enum row trial](../../compiler/examples/enum_sort_contracts) extends those
+keys to immutable nominal alternatives, preserving each selected payload's tag
+and sibling field associations. Source matches compare payloadless, Int and Text
+variants, including duplicates, zero and empty Text. Mathematical keys ignore
+inactive padding; selected-payload definedness is still checked independently.
+The same effectful ascending wrapper proves order and full-row entry permutation.
+All variants must be immutable before callback analysis can retain private
+buffers on that basis. Equal entry observations share tag choices only at the
+same explicit snapshot/index and inline projection; mutable children stay shared.
+Reusing exact graph-relation inputs avoids repeated checks without restoring
+changed publication or reachability. Optional conservation queries omit guarded
+machine domains, retaining the existing work/query/time limits and all mandatory
+source evaluation checks.
 Finite relation proofs also accept a loop-defined partial predicate under
 explicit comparability and transitivity requirements. Relation-specific solver
 scheduling retains both value and successful-evaluation obligations within the

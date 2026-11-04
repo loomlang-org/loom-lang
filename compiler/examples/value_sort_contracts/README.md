@@ -22,8 +22,9 @@ move between different rows. Conjunction and equality-operand order normalize
 without changing the source's evaluation checks. Finite histogram laws are shared
 by direct integer keys and structural keys, with no runtime histogram or tag.
 
-The supported count fragment is a conjunction of `Int`, `Bool` and `Text`
-equalities over one element's inline fields and stable needles. Float equality,
-enum alternatives, mutable descendants and arbitrary equality predicates remain
-separate work. Unknown comparators still cannot establish an ordering contract;
-permutation supplies no comparator laws.
+This example uses conjunctions of `Int`, `Bool` and `Text` equalities over one
+element's inline fields and stable needles. The [enum row example](../enum_sort_contracts)
+adds immutable nominal alternatives and their selected payloads. Float equality,
+mutable descendants and arbitrary equality predicates remain separate work.
+Unknown comparators still cannot establish an ordering contract; permutation
+supplies no comparator laws.
