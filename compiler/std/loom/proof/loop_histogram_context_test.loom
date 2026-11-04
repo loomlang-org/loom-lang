@@ -108,3 +108,29 @@ test fn histogram_context_omits_only_quantified_full_scalar_domains() {
     assert same(get(context.facts, 0), constrained) && same(get(context.facts, 1), labeled)
     assert same(get(context.facts, 2), guarded) && same(get(context.facts, 3), negated)
 }
+
+test fn histogram_context_omits_guarded_enum_machine_domains_but_retains_payload_properties() {
+    let tag = Predicate.IntegerCompare("!=", IntegerTerm.Select(10, [1, -1], variable(-7)),
+        IntegerTerm.Linear(constant(integer(1))))
+    let payload = IntegerTerm.Select(10, [1, -2, 1, 0], variable(-7))
+    let bound = Predicate.IntegerCompare(">=", payload,
+        IntegerTerm.Linear(constant(integer(-9223372036854775808))))
+    let property = Predicate.IntegerCompare(">=", payload, IntegerTerm.Linear(constant(integer(0))))
+    let guarded_bound = Predicate.Forall(-7, constant(integer(0)), variable(1), [Predicate.Or([tag, bound])])
+    let guarded_property = Predicate.Forall(-7, constant(integer(0)), variable(1), [Predicate.Or([tag, property])])
+    let arbitrary_guard = Predicate.Forall(-7, constant(integer(0)), variable(1),
+        [Predicate.Or([Predicate.Variable(8), bound])])
+    let goal = Predicate.BagEqual(joint_test_column(10), variable(1), joint_test_column(11), variable(1))
+    let output = new[Predicate]()
+    loop_histogram_fact(Predicate.And([guarded_bound, guarded_property, arbitrary_guard]), goal, output, [256])
+    assert length(output) == 2 && same(get(output, 0), guarded_property) && same(get(output, 1), arbitrary_guard)
+    assert loop_histogram_type_bound(Predicate.Or([tag, Predicate.Or([tag, bound])]))
+    assert !loop_histogram_type_bound(Predicate.Or([tag, property]))
+    var nested = bound
+    var index = 0
+    while index < 17 {
+        nested = Predicate.Or([tag, nested])
+        index = index + 1
+    }
+    assert !loop_histogram_type_bound(nested)
+}
