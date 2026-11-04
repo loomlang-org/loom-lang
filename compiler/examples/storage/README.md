@@ -19,5 +19,10 @@ so a negative stored amount is rejected. No handwritten record encoder/decoder
 or runtime type discovery is needed. The descriptor and mapping are frozen during preparation;
 record values and Bytes retain ordinary sharing.
 
+`record_codec[IndexedNote]` additionally checks the whole record's
+`id > 0 && id <= amount` constraint after decoding its fields. An otherwise valid
+integer cell cannot bypass that relationship. The example also checks that a
+private refinement stays opaque to the imported derivation library.
+
 This example does not access a database or prove a schema upgrade safe. Deployment
 planning still needs an explicit migration and recovery policy.

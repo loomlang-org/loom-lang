@@ -1,0 +1,69 @@
+import deployment.insert_sqlite_rows
+import std.storage.record_codec
+
+pub record BoundsRow {
+    lower Int
+    upper Int
+}
+
+pub type OrderedBounds = BoundsRow where self.lower <= self.upper
+
+fn bounds_valid(value OrderedBounds) Bool
+ensures result {
+    value.lower <= value.upper
+}
+
+fn check_refined_record_rows(tool Text, database Text) {
+    sql(tool, database, "CREATE TABLE \"bounded rows\" (lo INTEGER, hi INTEGER); INSERT INTO \"bounded rows\" VALUES (2,5);")
+    let codec = match record_codec[OrderedBounds](Table {
+            id = "bounds"
+            physical_name = "bounded rows"
+            columns = [column("upper-id", "hi", ValueKind.Int, false),
+                column("lower-id", "lo", ValueKind.Int, false)]
+        }, [("lower", "lower-id"), ("upper", "upper-id")]) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            assert false
+            return
+        }
+    }
+    let before = match read_sqlite_rows(tool, database, codec) {
+        Result.Ok(values) => values
+        Result.Err(_) => {
+            assert false
+            return
+        }
+    }
+    assert std.list.length(before) == 1
+    assert bounds_valid(std.list.get(before, 0))
+    assert std.list.get(before, 0).lower == 2 && std.list.get(before, 0).upper == 5
+
+    // Each cell is a valid Int. Only the whole-record constructor rejects it.
+    sql(tool, database, "INSERT INTO \"bounded rows\" VALUES (9,1);")
+    assert match read_sqlite_rows(tool, database, codec) {
+        Result.Err(SqliteRowError.Decode(_, CodecError.Rejected)) => true
+        _ => false
+    }
+    sql(tool, database, "DELETE FROM \"bounded rows\" WHERE lo>hi;")
+    let value = OrderedBounds(BoundsRow {
+            lower = 3
+            upper = 3
+        })
+    assert match insert_sqlite_rows(tool, database, codec, [value]) {
+        Result.Ok(_) => true
+        _ => false
+    }
+    let after = match read_sqlite_rows(tool, database, codec) {
+        Result.Ok(values) => values
+        Result.Err(_) => {
+            assert false
+            return
+        }
+    }
+    assert std.list.length(after) == 2
+    var index = 0
+    while index < std.list.length(after) {
+        assert bounds_valid(std.list.get(after, index))
+        index = index + 1
+    }
+}

@@ -1,0 +1,121 @@
+record IntervalFields {
+    lower Int
+    upper Int
+}
+
+type OrderedInterval = IntervalFields where self.lower <= self.upper
+
+type AnyInterval = IntervalFields where self.lower == self.lower
+
+fn interval_table() Table {
+    Table {
+        id = "intervals"
+        physical_name = "bounded rows"
+        columns = [column("upper-id", "hi", ValueKind.Int, false),
+            column("lower-id", "lo", ValueKind.Int, false)]
+    }
+}
+
+fn interval_aliases() List[(Text, Text)] {
+    [("lower", "lower-id"), ("upper", "upper-id")]
+}
+
+test fn refined_record_codec_checks_the_complete_predicate_after_field_decoding() {
+    let codec = match record_codec[OrderedInterval](interval_table(), interval_aliases()) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            assert false
+            return
+        }
+    }
+    assert match decode_prepared_row(codec, [Value.Int(7), Value.Int(3)]) {
+        Result.Ok(value) => value.lower == 3 && value.upper == 7
+        _ => false
+    }
+    assert match decode_prepared_row(codec, [Value.Int(3), Value.Int(7)]) {
+        Result.Err(CodecError.Rejected) => true
+        _ => false
+    }
+    assert match decode_prepared_row(codec, [Value.Int(3), Value.Int(3)]) {
+        Result.Ok(value) => value.lower == value.upper
+        _ => false
+    }
+    let row = match encode_prepared_row(codec, OrderedInterval(IntervalFields {
+                lower = 2
+                upper = 5
+            })) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            assert false
+            return
+        }
+    }
+    assert match (get(row, 0), get(row, 1)) {
+        (Value.Int(5), Value.Int(2)) => true
+        _ => false
+    }
+    assert match decode_prepared_row(codec, [Value.Int(7)]) {
+        Result.Err(CodecError.WrongWidth(2, 1)) => true
+        _ => false
+    }
+    assert match decode_prepared_row(codec, [Value.Null, Value.Int(3)]) {
+        Result.Err(CodecError.NullNotAllowed(0)) => true
+        _ => false
+    }
+    assert match decode_prepared_row(codec, [Value.Text("7"), Value.Int(3)]) {
+        Result.Err(CodecError.WrongKind(0)) => true
+        _ => false
+    }
+}
+
+test fn refined_record_codec_keeps_frozen_mapping_and_rejects_nonrecord_bases() {
+    let table = interval_table()
+    let aliases = interval_aliases()
+    let codec = match record_codec[OrderedInterval](table, aliases) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            assert false
+            return
+        }
+    }
+    set(table.columns, 0, column("changed", "missing", ValueKind.Text, true))
+    set(aliases, 0, ("lower", "upper-id"))
+    let description = codec_table(codec)
+    set(description.columns, 0, column("changed", "missing", ValueKind.Text, true))
+    assert match decode_prepared_row(codec, [Value.Int(5), Value.Int(2)]) {
+        Result.Ok(value) => value.lower == 2 && value.upper == 5
+        _ => false
+    }
+    assert get(codec_table(codec).columns, 0).id == "upper-id"
+    assert match record_codec[PositiveColumn](interval_table()) {
+        Result.Err(CodecError.InvalidSchema) => true
+        _ => false
+    }
+    assert match record_codec[OrderedInterval](interval_table(), [("lower", "missing")]) {
+        Result.Err(CodecError.InvalidSchema) => true
+        _ => false
+    }
+}
+
+test fn refined_record_codec_can_prove_a_redundant_refinement_at_compile_time() {
+    let decoded = comptime {
+        match record_codec[AnyInterval](interval_table(), interval_aliases()) {
+            Result.Ok(codec) => decode_prepared_row(codec, [Value.Int(1), Value.Int(9)])
+            Result.Err(error) => Result.Err(error)
+        }
+    }
+    assert match decoded {
+        Result.Ok(value) => value.lower == 9 && value.upper == 1
+        _ => false
+    }
+    let rejected = comptime {
+        match record_codec[OrderedInterval](interval_table(), interval_aliases()) {
+            Result.Ok(codec) => decode_prepared_row(codec, [Value.Int(1), Value.Int(9)])
+            Result.Err(error) => Result.Err(error)
+        }
+    }
+    assert match rejected {
+        Result.Err(CodecError.Rejected) => true
+        _ => false
+    }
+}

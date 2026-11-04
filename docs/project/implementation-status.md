@@ -694,6 +694,9 @@ predicates return `DecodeError.Rejected`; inaccessible/unsupported bases still
 reject rather than exposing hidden fields or guessing a representation.
 Storage record codecs use ordinary compile-time fields and explicit `ColumnValue`
 implementations, with frozen stable-ID mappings and checked refined constructors;
+base-record derivation also checks whole-record refinements after field
+decoding, including cross-field predicates and CTFE. Ordinary constructor and
+continuing alias rules apply, and inaccessible or unrelated bases reject;
 they do not infer database migrations or discover erased runtime types.
 [Iterators](../../compiler/std/iter/README.md),
 [file lines](../../compiler/std/file/lines/README.md) and
