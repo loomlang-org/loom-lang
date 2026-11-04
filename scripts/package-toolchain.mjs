@@ -154,7 +154,9 @@ try {
 
   const temporaryArchive = join(temporary, "loom-toolchain.tar.gz");
   // Relative tar paths work with both Windows GNU tar and macOS/BSD tar.
-  run("tar", ["-czf", "loom-toolchain.tar.gz", "loom-toolchain"], temporary);
+  // BSD tar otherwise adds AppleDouble files for copied macOS attributes.
+  run("tar", ["-czf", "loom-toolchain.tar.gz", "loom-toolchain"], temporary,
+    { ...process.env, COPYFILE_DISABLE: "1" });
 
   // Verify the actual archive, rather than the stage directory used to make it.
   const unpacked = join(temporary, "unpacked 雪 with spaces");
