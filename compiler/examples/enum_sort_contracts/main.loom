@@ -1,0 +1,133 @@
+import std.list.length
+import std.list.sorted
+import std.list.push
+
+enum Signal {
+    Empty
+    Number(Int)
+    Label(Text)
+}
+
+record Row {
+    key Int
+    signal Signal
+}
+
+fn same_signal(first Signal, second Signal) Bool {
+    match first {
+        Signal.Empty => match second {
+            Signal.Empty => true,
+            _ => false
+        }
+        Signal.Number(value) => match second {
+            Signal.Number(other) => value == other,
+            _ => false
+        }
+        Signal.Label(value) => match second {
+            Signal.Label(other) => value == other,
+            _ => false
+        }
+    }
+}
+
+fn same_row(first Row, second Row) Bool {
+    first.key == second.key && same_signal(first.signal, second.signal)
+}
+
+fn count(values List[Row], needle Row) Int {
+    var index = 0
+    var found = 0
+    while index < length(values) {
+        if same_row(values[index], needle) {
+            found = found + 1
+        }
+        index = index + 1
+    }
+    found
+}
+
+fn same_counts(first List[Row], second List[Row]) Bool {
+    var index = 0
+    while index < length(first) {
+        if count(first, first[index]) != count(second, first[index]) {
+            return false
+        }
+        index = index + 1
+    }
+    true
+}
+
+fn permutation(first List[Row], second List[Row]) Bool {
+    length(first) == length(second) && same_counts(first, second)
+}
+
+pub fn arranged(values List[Row], less fn(Row, Row) Bool) List[Row]
+ensures permutation(old(values), result) {
+    sorted(values, less)
+}
+
+fn ascending(values List[Row]) Bool {
+    var index = 1
+    while index < length(values) {
+        if values[index - 1].key > values[index].key {
+            return false
+        }
+        index = index + 1
+    }
+    true
+}
+
+pub fn arranged_ascending(values List[Row]) List[Row]
+ensures ascending(result)
+ensures permutation(old(values), result) {
+    sorted(values, fn(a Row, b Row) Bool {
+            if length(values) > 0 {
+                values[0] = Row {
+                    key = 99,
+                    signal = Signal.Number(99)
+                }
+            }
+            push(values, a)
+            a.key < b.key
+        })
+}
+
+fn row(key Int, signal Signal) Row {
+    Row {
+        key = key,
+        signal = signal
+    }
+}
+
+fn exercise() {
+    let empty = row(2, Signal.Empty())
+    let zero = row(1, Signal.Number(0))
+    let blank = row(1, Signal.Label(""))
+    let label = row(2, Signal.Label("two"))
+    let number = row(0, Signal.Number(7))
+    let values = [empty, zero, blank, label, number, empty, blank]
+    let output = arranged(values, fn(a Row, b Row) Bool {
+            values[0] = row(99, Signal.Number(99))
+            push(values, a)
+            a.key < b.key
+        })
+    assert length(output) == 7
+    assert count(output, empty) == 2 && count(output, blank) == 2
+    assert count(output, zero) == 1 && count(output, label) == 1 && count(output, number) == 1
+    assert ascending(output) && length(values) > 7
+    assert same_row(output[0], number) && same_row(output[1], zero) && same_row(output[6], empty)
+    let ordered_input = [empty, label, blank, zero, number]
+    let ordered = arranged_ascending(ordered_input)
+    assert length(ordered) == 5 && ascending(ordered)
+    assert count(ordered, empty) == 1 && count(ordered, zero) == 1 && count(ordered, blank) == 1
+    assert count(ordered, label) == 1 && count(ordered, number) == 1
+    assert length(ordered_input) > 5
+}
+
+fn main() {
+    exercise()
+}
+
+test fn enum_rows_keep_tags_payloads_pairings_and_duplicates() {
+    exercise()
+}

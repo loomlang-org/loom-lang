@@ -677,6 +677,14 @@ fn applied_call_body(proof Verification, call Expr, function Function, arguments
     if !immutable_storage_type(proof.program, function.result, 0) {
         return source_or_summary_call(proof, call, function, arguments, bindings, boundary, depth)
     }
+    // Known effectful callbacks need ordinary body execution. Repeatedly
+    // attempting pure substitution first only spends the same finite proof
+    // budget before reaching that executor; it cannot establish their writes.
+    // Already evaluated arguments/captures still enter the original call scope.
+    if function.runtime_name == "" && function_identity(proof.program, call.index) < 0 &&
+    !graph_readonly_function(proof.program, call.index) {
+        return source_or_summary_call(proof, call, function, arguments, bindings, boundary, depth)
+    }
     match call_template_call(proof, call, function, state, boundary, depth)? {
         Option.Some(completed) => {
             return Result.Ok(completed)
