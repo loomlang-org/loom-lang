@@ -22,6 +22,50 @@ test fn call_template_binding_keeps_formal_locals_separate_from_lexical_cursors(
     assert !call_template_expression(value, 2, 2, [0])
 }
 
+test fn effectful_source_calls_keep_stores_and_results_within_the_existing_work_budget() {
+    let values = expression(ExprKind.Local, 6, "", 0, [])
+    let store = expression(ExprKind.Intrinsic, 0, "list_set", -1, [values, literal("0"), local(1)])
+    let comparison = operation("<", local(1), local(2))
+    let body = expression(ExprKind.Block, 2, "", -1, [
+            expression(ExprKind.Discard, 0, "", -1, [store]), comparison])
+    let helper = contract_fixture([6, 1, 1], 2, body, [], [])
+    let call = helper_call(0, 2, [values, literal("2"), literal("3")])
+    let caller = contract_fixture([6], 2, call, [], [])
+    let program = Program {
+        functions = [helper]
+        function_identities = [123]
+        ..atomic_pair_program()
+    }
+    let proof = Verification {
+        budget = [8]
+        ..verification(caller, program)
+    }
+    let entry = with_extent(10, constant(integer(1)), true, State {
+            heap = -1
+            locals = [Value.List(10)]
+            facts = []
+            extents = []
+            observations = []
+        })
+    let paths = match execute(proof, call, entry, 64) {
+        Result.Ok(values) => values
+        Result.Err(_) => {
+            assert false
+            return
+        }
+    }
+    assert length(paths) == 1
+    let completed = get(paths, 0)
+    assert match completed.value {
+        Value.Boolean(value) => holds(value, completed.state.facts)
+        _ => false
+    }
+    assert match known_element(10, constant(integer(0)), completed.state) {
+        Result.Ok(Value.Number(value)) => length(value.terms) == 0 && compare(value.constant, integer(2)) == 0
+        _ => false
+    }
+}
+
 test fn shared_primitive_call_templates_recompute_from_each_saved_argument_tuple() {
     let comparison = operation("<", local(0), local(1))
     let helper = contract_fixture([1, 1], 2, comparison, [], [])

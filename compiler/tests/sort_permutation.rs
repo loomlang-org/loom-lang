@@ -365,7 +365,7 @@ fn enum_row_permutation_keeps_selected_payloads_tags_and_field_pairings() {
     })
     .to_vec();
     invalid.push(prefix.replace("    sorted(values, less)", swap));
-    invalid.push(prefix.replace("value == other", "1 / value == 1 / other"));
+    invalid.push(prefix.replacen("value == other", "1 / value == 1 / other", 1));
     let package = tempfile::tempdir().unwrap();
     let source = package.path().join("main.loom");
     let cache = package.path().join("cache");
