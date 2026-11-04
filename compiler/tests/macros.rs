@@ -4,6 +4,172 @@ mod common;
 use common::{loom, success};
 
 #[test]
+fn static_macro_parameters_compose_with_proofs_callbacks_and_input_sequencing() {
+    let package = "compiler/examples/static_macros";
+    success(&loom(&["check", package]));
+    let temporary = tempfile::tempdir().unwrap();
+    for level in ["0", "2"] {
+        let executable = common::executable(temporary.path(), "static-macros");
+        success(
+            &common::command(&["build", package])
+                .arg("--output")
+                .arg(&executable)
+                .env("LOOM_OPT_LEVEL", level)
+                .output()
+                .unwrap(),
+        );
+        success(
+            &Command::new(&executable)
+                .env("LOOM_GC_STRESS", "1")
+                .output()
+                .unwrap(),
+        );
+        success(
+            &common::command(&["test", package])
+                .args(["--no-run", "--output"])
+                .arg(&executable)
+                .env("LOOM_OPT_LEVEL", level)
+                .output()
+                .unwrap(),
+        );
+        success(
+            &Command::new(&executable)
+                .env("LOOM_GC_STRESS", "1")
+                .output()
+                .unwrap(),
+        );
+    }
+    let directory = common::root().join(package);
+    let source = directory.join("main.loom");
+    let text = fs::read_to_string(&source).unwrap();
+    let query = loom(&[
+        "editor-query",
+        directory.to_str().unwrap(),
+        "--at",
+        source.to_str().unwrap(),
+        &text.find("field!(\"upper\", value)").unwrap().to_string(),
+    ]);
+    success(&query);
+    let report = String::from_utf8(query.stdout).unwrap();
+    assert!(report.contains("\"types\":[\"Int\"]"), "{report}");
+    assert!(
+        report
+            .replace("\\\\", "/")
+            .contains("generators/generate.loom")
+    );
+}
+
+#[test]
+fn static_macro_cache_rechecks_configured_projection_contracts_and_privacy() {
+    let temporary = tempfile::tempdir().unwrap();
+    let directory = temporary.path().canonicalize().unwrap();
+    for name in ["main.loom", "loom.toml", "generators/generate.loom"] {
+        let destination = directory.join(name);
+        fs::create_dir_all(destination.parent().unwrap()).unwrap();
+        fs::copy(
+            common::root()
+                .join("compiler/examples/static_macros")
+                .join(name),
+            destination,
+        )
+        .unwrap();
+    }
+    let cache = directory.join("cache");
+    let source = directory.join("main.loom");
+    let original = fs::read_to_string(&source).unwrap();
+    let checked = || {
+        common::command(&["check"])
+            .arg(&directory)
+            .arg("--frontend-cache")
+            .arg(&cache)
+            .output()
+            .unwrap()
+    };
+    success(&checked());
+    let changed = original.replace(
+        "left = field!(\"lower\", value)",
+        "left = field!(\"upper\", value)",
+    );
+    assert_ne!(changed, original);
+    fs::write(&source, changed).unwrap();
+    let rejected = checked();
+    assert!(
+        !rejected.status.success(),
+        "stale configured projection proved"
+    );
+    assert!(String::from_utf8_lossy(&rejected.stderr).contains("postcondition"));
+    fs::write(&source, &original).unwrap();
+    success(&checked());
+    fs::write(
+        &source,
+        original
+            .replace("pub record BeforeFields", "record BeforeFields")
+            .replace("pub type Before =", "type Before ="),
+    )
+    .unwrap();
+    let rejected = checked();
+    assert!(
+        !rejected.status.success(),
+        "private configured projection accepted"
+    );
+    assert!(String::from_utf8_lossy(&rejected.stderr).contains("private"));
+    fs::write(&source, original).unwrap();
+    success(&checked());
+}
+
+#[test]
+fn static_macro_callbacks_cannot_execute_io_or_read_runtime_captures() {
+    let temporary = tempfile::tempdir().unwrap();
+    let source = temporary.path().join("main.loom");
+    let header = r#"
+import std.reflect.Schema
+import std.io.write_error
+fn noisy(value Int) Int {
+    discard write_error("must not run")
+    value
+}
+fn generate(comptime action fn(Int) Int, types List[Schema]) Text {
+    discard types
+    discard action
+    "$0"
+}
+fn main() { assert generate!(noisy, 42) == 42 }
+"#;
+    fs::write(&source, header).unwrap();
+    let checked = || {
+        common::command(&["check"])
+            .arg(temporary.path())
+            .output()
+            .unwrap()
+    };
+    // Passing a target identity does not execute the target.
+    let accepted = checked();
+    success(&accepted);
+    assert!(!String::from_utf8_lossy(&accepted.stderr).contains("must not run"));
+    fs::write(
+        &source,
+        header.replace("discard action\n", "discard action(1)\n"),
+    )
+    .unwrap();
+    let rejected = checked();
+    assert!(
+        !rejected.status.success(),
+        "effectful generator callback executed"
+    );
+    assert!(!String::from_utf8_lossy(&rejected.stderr).contains("must not run"));
+    fs::write(
+        &source,
+        header.replace(
+            "fn main() { assert generate!(noisy, 42) == 42 }",
+            "fn dynamic(offset Int) Int { generate!(fn(value Int) Int { value + offset }, 42) }\nfn main() { discard dynamic(1) }",
+        ),
+    )
+    .unwrap();
+    let rejected = checked();
+    assert!(!rejected.status.success(), "runtime capture was frozen");
+}
+
+#[test]
 fn typed_macros_execute_without_a_runtime_generator() {
     let package = "compiler/examples/typed_macros";
     success(&loom(&["check", package]));
