@@ -92,3 +92,59 @@ test fn enum_count_columns_validate_nominal_paths_without_admitting_mutable_or_f
                 domain = ScalarDomain.Boolean
             }])
 }
+
+test fn enum_count_unions_share_finite_algebra_and_keep_column_identity() {
+    let program = atomic_pair_program()
+    let context = Expansion {
+        program = program
+        list_lengths = true
+        budget = [4096]
+        active = []
+        checks = []
+        observations = []
+        origins = []
+        binders = []
+    }
+    let values = expression(ExprKind.Local, 6, "", 0, [])
+    let bound = expression(ExprKind.Intrinsic, 1, "proof_bound", -3, [])
+    let read = expression(ExprKind.Intrinsic, 1, "list_get", -1, [values, bound])
+    let size = expression(ExprKind.Intrinsic, 1, "list_len", -1, [values])
+    let first = operation("==", read, literal("0"))
+    let second = operation("==", read, literal("1"))
+    let ordinary = match count_formula(context, first, [operation("||", first, second)], size, -3, 0) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            assert false
+            return
+        }
+    }
+    let guarded = match count_formula(context, first,
+        [proof_not(proof_and(proof_not(first), proof_not(second)))], size, -3, 0) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            assert false
+            return
+        }
+    }
+    assert exact_expression(ordinary, guarded)
+    assert match count_formula(context, first, [first, second], size, -3, 0) {
+        Result.Ok(value) => value.kind == ExprKind.Integer && value.text == "0"
+        Result.Err(_) => false
+    }
+    let column = BagField {
+        path = [-1]
+        domain = ScalarDomain.Integer
+    }
+    assert conflicting_count_fields([column, column], [literal("0"), literal("1")])
+    assert !conflicting_count_fields([column, column], [literal("0"), literal("00")])
+    assert !conflicting_count_fields([column, BagField {
+                path = [0, -1]
+                domain = ScalarDomain.Integer
+            }], [literal("0"), literal("1")])
+    let other = expression(ExprKind.Intrinsic, 1, "list_get", -1,
+        [expression(ExprKind.Local, 6, "", 1, []), bound])
+    assert match count_formula(context, first, [first, operation("==", other, literal("1"))], size, -3, 0) {
+        Result.Err(_) => true
+        Result.Ok(_) => false
+    }
+}

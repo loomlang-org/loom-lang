@@ -31,6 +31,36 @@ fn count_binary(source Expr, operator Text, first Expr, second Expr) Expr {
         }, first, second)
 }
 
+// These are mathematical indicators after source evaluation checks were kept.
+// Equal constant alternatives need no duplicated guard in the count formula.
+fn count_choice(condition Expr, yes Expr, no Expr) Expr {
+    if yes.kind == ExprKind.Integer && no.kind == ExprKind.Integer &&
+    compare(decimal(yes.text), decimal(no.text)) == 0 {
+        return yes
+    }
+    proof_choice(condition, yes, no)
+}
+
+fn conflicting_count_fields(fields List[BagField], needles List[Expr]) Bool {
+    var index = 0
+    while index < length(fields) {
+        let field = get(fields, index)
+        let needle = get(needles, index)
+        var other = index + 1
+        while field.domain == ScalarDomain.Integer && needle.kind == ExprKind.Integer &&
+        other < length(fields) && same_projection(field.path, get(fields, other).path) &&
+        field.domain == get(fields, other).domain {
+            let next = get(needles, other)
+            if next.kind == ExprKind.Integer && compare(decimal(needle.text), decimal(next.text)) != 0 {
+                return true
+            }
+            other = other + 1
+        }
+        index = index + 1
+    }
+    false
+}
+
 fn count_formula(context Expansion, source Expr, conditions List[Expr], end Expr,
     identity Int, depth Int) Result[Expr, Text] {
     discard expansion_step(context, depth)?
@@ -45,7 +75,7 @@ fn count_formula(context Expansion, source Expr, conditions List[Expr], end Expr
             return count_formula(context, source, rest, end, identity, depth + 1)
         }
         if !has_bound(condition, identity) {
-            return Result.Ok(proof_choice(condition,
+            return Result.Ok(count_choice(condition,
                     count_formula(context, source, rest, end, identity, depth + 1)?, count_integer(source, 0)))
         }
         if condition.kind == ExprKind.Binary && condition.text == "&&" {
@@ -61,6 +91,16 @@ fn count_formula(context Expansion, source Expr, conditions List[Expr], end Expr
             return Result.Ok(count_binary(source, "-", count_binary(source, "+", left, right), joint))
         }
         if condition.kind == ExprKind.Unary && condition.text == "!" {
+            let inner = get(condition.children, 0)
+            if inner.kind == ExprKind.Binary && inner.text == "&&" &&
+            get(inner.children, 0).kind == ExprKind.Unary && get(inner.children, 0).text == "!" &&
+            get(inner.children, 1).kind == ExprKind.Unary && get(inner.children, 1).text == "!" {
+                // Pure-helper paths encode union as !(!left && !right).
+                // Use the same finite union law as ordinary source ||.
+                let union = proof_expr(condition, ExprKind.Binary, 2, "||", -1,
+                    [get(get(inner.children, 0).children, 0), get(get(inner.children, 1).children, 0)])
+                return count_formula(context, source, count_inputs(conditions, index, [union]), end, identity, depth + 1)
+            }
             let all = count_formula(context, source, rest, end, identity, depth + 1)?
             let selected = count_formula(context, source,
                 count_inputs(conditions, index, condition.children), end, identity, depth + 1)?
@@ -74,7 +114,7 @@ fn count_formula(context Expansion, source Expr, conditions List[Expr], end Expr
         if condition.kind == ExprKind.If && length(condition.children) == 3 {
             let guard = get(condition.children, 0)
             if !has_bound(guard, identity) {
-                return Result.Ok(proof_choice(guard,
+                return Result.Ok(count_choice(guard,
                         count_formula(context, source, count_inputs(conditions, index,
                                 [get(condition.children, 1)]), end, identity, depth + 1)?,
                         count_formula(context, source, count_inputs(conditions, index,
@@ -105,5 +145,8 @@ fn count_formula(context Expansion, source Expr, conditions List[Expr], end Expr
         index = index + 1
     }
     normalize_count_fields(fields, needles)
+    if conflicting_count_fields(fields, needles) {
+        return Result.Ok(count_integer(source, 0))
+    }
     Result.Ok(count_value(source, get(receivers, 0), needles, end, fields))
 }

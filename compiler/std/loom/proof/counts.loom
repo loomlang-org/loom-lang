@@ -223,6 +223,9 @@ fn counted_scan(context Expansion, source Expr, condition Expr, end Expr, identi
         }
     }
     normalize_count_fields(fields, needles)
+    if conflicting_count_fields(fields, needles) {
+        return Result.Ok(count_integer(source, 0))
+    }
     Result.Ok(count_value(source, get(receivers, 0), needles, end, fields))
 }
 
