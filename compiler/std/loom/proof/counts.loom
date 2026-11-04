@@ -1,3 +1,5 @@
+import std.int.parse
+
 fn count_expression(value Expr) Bool {
     value.kind == ExprKind.Intrinsic && value.text == "proof_count" && length(value.children) >= 3
 }
@@ -68,20 +70,70 @@ fn count_value(source Expr, receiver Expr, needles List[Expr], end Expr, fields 
     proof_expr(source, ExprKind.Intrinsic, 1, "proof_count", -1, children)
 }
 
+// Match expansion uses the same nominal tag/payload columns as array facts.
+// Only constant selectors can become a count key; their source tag guards and
+// payload definedness checks remain in Expansion.
+fn count_enum_projection(value Expr) Option[List[Int]] {
+    if value.kind != ExprKind.Intrinsic {
+        return Option.None
+    }
+    if value.text == "proof_enum_tag" && value.ty == 1 && length(value.children) == 1 {
+        return Option.Some([-1])
+    }
+    if value.text != "proof_enum_payload" || length(value.children) != 3 ||
+    get(value.children, 1).kind != ExprKind.Integer || get(value.children, 2).kind != ExprKind.Integer {
+        return Option.None
+    }
+    let variant = match std.int.parse(get(value.children, 1).text) {
+        Result.Ok(index) => index
+        Result.Err(_) => {
+            return Option.None
+        }
+    }
+    let field = match std.int.parse(get(value.children, 2).text) {
+        Result.Ok(index) => index
+        Result.Err(_) => {
+            return Option.None
+        }
+    }
+    if variant < 0 || field < 0 {
+        return Option.None
+    }
+    Option.Some([-2, variant, field])
+}
+
 fn count_read(value Expr) Expr {
     if value.kind == ExprKind.Field && length(value.children) == 1 {
         return count_read(get(value.children, 0))
+    }
+    match count_enum_projection(value) {
+        Option.Some(_) => {
+            return count_read(get(value.children, 0))
+        }
+        Option.None => {
+        }
     }
     value
 }
 
 fn count_read_path(value Expr) List[Int] {
-    if value.kind != ExprKind.Field || length(value.children) != 1 {
-        return []
+    if value.kind == ExprKind.Field && length(value.children) == 1 {
+        let path = count_read_path(get(value.children, 0))
+        push(path, value.index)
+        return path
     }
-    let path = count_read_path(get(value.children, 0))
-    push(path, value.index)
-    path
+    match count_enum_projection(value) {
+        Option.Some(fields) => {
+            let path = count_read_path(get(value.children, 0))
+            var index = 0
+            while index < length(fields) {
+                push(path, get(fields, index))
+                index = index + 1
+            }
+            path
+        }
+        Option.None => []
+    }
 }
 
 fn scan_tail(value Expr) Expr {

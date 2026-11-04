@@ -109,6 +109,23 @@ fn histogram_column(program Program, ty Int, path List[Int], domain ScalarDomain
     if field == length(path) {
         return (ty == 1 || ty == 2 || ty == 3) && bag_domain(ty) == domain
     }
+    if shape.kind == TypeKind.Enum {
+        let selected = get(path, field)
+        if selected == -1 {
+            return field + 1 == length(path) && domain == ScalarDomain.Integer
+        }
+        if selected != -2 || field + 2 >= length(path) {
+            return false
+        }
+        let variant = get(path, field + 1)
+        let payload = get(path, field + 2)
+        if variant < 0 || variant >= length(shape.variants) {
+            return false
+        }
+        let fields = get(shape.variants, variant).fields
+        return payload >= 0 && payload < length(fields) &&
+        histogram_column(program, get(fields, payload), path, domain, field + 3, depth + 1)
+    }
     if shape.kind != TypeKind.Record && shape.kind != TypeKind.Tuple {
         return false
     }

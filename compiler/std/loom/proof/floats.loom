@@ -10,7 +10,7 @@ import std.result.Result
 // Canonical round-tripping spelling preserves signed zero. Symbolic identity
 // means the same computation, not IEEE equality: even x == x may be false.
 fn float_literal(text Text) Result[FloatValue, Text] {
-    match parse(text) {
+    match std.float.parse(text) {
         Result.Ok(value) => Result.Ok(FloatValue.Literal(to_text(value)))
         Result.Err(_) => Result.Err("invalid Float proof literal")
     }
@@ -60,7 +60,7 @@ fn same_float(left FloatValue, right FloatValue, budget List[Int]) Bool {
 
 fn float_constant(value FloatValue) Result[Float, Text] {
     match value {
-        FloatValue.Literal(text) => match parse(text) {
+        FloatValue.Literal(text) => match std.float.parse(text) {
             Result.Ok(number) => Result.Ok(number)
             Result.Err(_) => Result.Err("invalid Float proof constant")
         }
