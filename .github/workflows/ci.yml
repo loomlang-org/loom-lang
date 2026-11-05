@@ -14,10 +14,47 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  native-macos:
+    name: macOS native test partitions
+    strategy:
+      fail-fast: false
+      matrix:
+        partition: [1, 2]
+    uses: ./.github/workflows/native-tests.yml
+    with:
+      platform: macOS
+      runner: macos-15
+      partition: ${{ matrix.partition }}
+
+  native-linux:
+    name: Linux native test partitions
+    strategy:
+      fail-fast: false
+      matrix:
+        partition: [1, 2]
+    uses: ./.github/workflows/native-tests.yml
+    with:
+      platform: Linux
+      runner: ubuntu-24.04
+      partition: ${{ matrix.partition }}
+
+  native-windows:
+    name: Windows native test partitions
+    strategy:
+      fail-fast: false
+      matrix:
+        partition: [1, 2]
+    uses: ./.github/workflows/native-tests.yml
+    with:
+      platform: Windows
+      runner: windows-2022
+      partition: ${{ matrix.partition }}
+
   macos-llvm22:
     name: macOS native compiler (LLVM 22)
+    needs: native-macos
     runs-on: macos-15
-    # The cold native gate and source/toolchain trials share this job.
+    # Native partitions must pass before the remaining complete toolchain gates.
     timeout-minutes: 120
     env:
       CARGO_TERM_COLOR: always
@@ -51,18 +88,12 @@ jobs:
 
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
-      - name: Install the native test runner
-        uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2.88.0
-        with:
-          tool: cargo-nextest@0.9.150
-
       - name: Format, lint, and test
         run: |
           cargo fmt --all -- --check
           cargo clippy --locked --workspace --all-targets -- -D warnings
           bash scripts/bootstrap.sh
           target/loom fmt --check --recursive compiler/examples
-          cargo nextest run --locked --workspace --test-threads 2 --no-fail-fast
           cargo test --locked --workspace --doc
 
       - name: Reachable edited-source benchmark smoke
@@ -116,8 +147,9 @@ jobs:
 
   linux-llvm22:
     name: Linux native compiler (LLVM 22)
+    needs: native-linux
     runs-on: ubuntu-24.04
-    # Cold native/proof, companion and relocated archive gates share this job.
+    # Native partitions must pass before the remaining complete toolchain gates.
     timeout-minutes: 120
     env:
       CARGO_TERM_COLOR: always
@@ -152,11 +184,6 @@ jobs:
 
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
-      - name: Install the native test runner
-        uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2.88.0
-        with:
-          tool: cargo-nextest@0.9.150
-
       - name: Bootstrap and full native gate
         run: |
           cargo fmt --all -- --check
@@ -164,7 +191,6 @@ jobs:
           bash scripts/bootstrap.sh
           LOOM_OPT_LEVEL=0 target/loom test tools/semantic_change
           LOOM_OPT_LEVEL=0 target/loom test tools/change
-          cargo nextest run --locked --workspace --test-threads 2 --no-fail-fast
           cargo test --locked --workspace --doc
 
       - name: Relocated toolchain and generic CPU gate
@@ -185,8 +211,9 @@ jobs:
 
   windows-llvm22:
     name: Windows native compiler (LLVM 22)
+    needs: native-windows
     runs-on: windows-2022
-    # Cold LLVM setup and the full suite need time for final archive verification.
+    # Native partitions must pass before the remaining complete toolchain gates.
     timeout-minutes: 120
     defaults:
       run:
@@ -255,11 +282,6 @@ jobs:
 
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
-      - name: Install the native test runner
-        uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2.88.0
-        with:
-          tool: cargo-nextest@0.9.150
-
       - name: Native bootstrap and full gate
         run: |
           source scripts/windows-env.sh
@@ -270,7 +292,6 @@ jobs:
           target/loom.exe test compiler/std/json
           LOOM_OPT_LEVEL=0 target/loom.exe test tools/semantic_change
           LOOM_OPT_LEVEL=0 target/loom.exe test tools/change
-          cargo nextest run --locked --workspace --test-threads 2 --no-fail-fast
           cargo test --locked --workspace --doc
 
       - name: Relocated toolchain and generic CPU gate
