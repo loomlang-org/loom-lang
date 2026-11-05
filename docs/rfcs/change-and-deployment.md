@@ -20,6 +20,11 @@ also rebuilds with caller-selected compiler/native images and checks the real
 artifact, checked input, complete v5 build basis and backend identity. This
 observes reproducibility for the selected toolchain; it does not establish the
 application writer or storage-mapping obligations above.
+An [artifact-associated Analysis API](../../tools/deployment/artifact_analysis_trial/README.md)
+relates a retained checked snapshot to that reproduction using both the complete
+basis and native input. Its bounded source queries retain the old snapshot across
+later source edits while checking the original artifact/receipt identity. This
+association does not establish emitted-root coverage or writer/mapping compatibility.
 
 ## Story 1: Evolve a library without hiding dependency changes
 
