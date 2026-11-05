@@ -59,14 +59,28 @@ fn macro_tree(context Context, call Node, value Value, depth Int, budget List[In
 
 // A generator is an ordinary source function. Only its invocation is staged;
 // neither descriptor construction nor generator calls become runtime roots.
-fn macro_signature(env Environment, current Signature) Bool {
-    if current.parameters != 0 || has_static(current) || length(current.params) != 1 ||
+fn macro_schema_parameter(env Environment, current Signature) Int {
+    if current.parameters != 0 || length(current.params) != length(current.compile_time) + 1 ||
     (current.result != 3 && !macro_tree_type(env, current.result)) ||
     has(symbol(env, current.symbol).node, NodeKind.Async) {
-        return false
+        return -1
     }
-    let element = reflection_element(env, get(current.params, 0))
-    element >= 0 && reflection_nominal(env, element, "Schema", TypeKind.Record, 2)
+    var index = 0
+    while index < length(current.params) {
+        if !is_static(current, index) {
+            let element = reflection_element(env, get(current.params, index))
+            if element >= 0 && reflection_nominal(env, element, "Schema", TypeKind.Record, 2) {
+                return index
+            }
+            return -1
+        }
+        index = index + 1
+    }
+    -1
+}
+
+fn macro_signature(env Environment, current Signature) Bool {
+    macro_schema_parameter(env, current) >= 0
 }
 
 fn macro_generator(context Context, node Node) Result[Int, Failure] {
@@ -93,7 +107,7 @@ fn macro_generator(context Context, node Node) Result[Int, Failure] {
         index = index + 1
     }
     if selected < 0 {
-        return Result.Err(error(context, node, "a macro generator requires fn(List[std.reflect.Schema]) with a Text or std.loom.ast.Node result"))
+        return Result.Err(error(context, node, "a macro generator requires one List[std.reflect.Schema] parameter, optional comptime parameters, and a Text or std.loom.ast.Node result"))
     }
     Result.Ok(selected)
 }
@@ -194,7 +208,12 @@ fn macro_call(context Context, node Node, expected Int) Result[Expr, Failure] {
     let values = new[Expr]()
     let descriptors = new[Expr]()
     let inputs = call_inputs(context, child(node, 0).children)?
-    let schema = reflection_element(context.env, get(current.params, 0))
+    let schema_parameter = macro_schema_parameter(context.env, current)
+    let schema = reflection_element(context.env, get(current.params, schema_parameter))
+    let static_count = length(current.compile_time)
+    if length(inputs.nodes) < static_count {
+        return Result.Err(error(context, node, "macro invocation is missing comptime arguments"))
+    }
     var known = true
     let marker = part(node, NodeKind.ExpansionId)
     var identity = concat("macro/", concat(to_text(context.signature.symbol), concat("/",
@@ -203,7 +222,7 @@ fn macro_call(context Context, node Node, expected Int) Result[Expr, Failure] {
                 } else {
                     child(node, marker).value
                 })))
-    var index = 0
+    var index = static_count
     while index < length(inputs.nodes) {
         let value = input_value(context, inputs, index, -1, false)?
         push(values, value)
@@ -219,11 +238,53 @@ fn macro_call(context Context, node Node, expected Int) Result[Expr, Failure] {
         push(descriptors, reflection_call(definition, node, get(values, index).ty, schema)?)
         index = index + 1
     }
-    let argument = expression(ExprKind.List, get(current.params, 0), node, "", -1, descriptors, true)
-    let target = schedule(stage.env, id, new[Int](), new[StaticValue](), node)?
-    let invocation = expression(ExprKind.Call, current.result, node, "", target, expressions(argument), true)
+    let argument = expression(ExprKind.List, get(current.params, schema_parameter), node, "", -1, descriptors, true)
+    let constants = new[StaticValue]()
+    index = 0
+    while index < static_count {
+        let input = get(inputs.nodes, index)
+        let ty = get(current.params, get(current.compile_time, index))
+        let probe = static_probe_context(context, input)?
+        let checked = typed(probe, input, input_value(context, inputs, index, ty, true)?, ty)?
+        let identity_only = get(context.env.types, ty).kind == TypeKind.Function &&
+        (static_identity_input(context, input) || match saved_input(inputs, index) {
+                Option.Some(_) => true
+                Option.None => false
+            })
+        let value = static_argument(context, input, checked, ty, identity_only)?
+        if !value.known {
+            return deferred(context, node, expected)
+        }
+        push(constants, value)
+        index = index + 1
+    }
+    // Reuse ordinary static-call validation and environment transport. Only
+    // the descriptor list and available captured environments enter CTFE.
+    let runtime_values = new[Expr]()
+    var constant = 0
+    index = 0
+    while index < length(current.params) {
+        if is_static(current, index) {
+            let value = get(constants, constant)
+            if value.storage >= 0 {
+                push(runtime_values, static_environment_argument(stage, get(inputs.nodes, constant), value)?)
+            }
+            constant = constant + 1
+        } else {
+            push(runtime_values, argument)
+        }
+        index = index + 1
+    }
+    let invocation = invoke_ready(stage, node, Instance {
+            signature = id
+            arguments = []
+            constants = constants
+        }, current, constants, runtime_values)?
+    discard isolated(context, node, invocation, length(context.locals))?
     let program = prepared(stage)?
-    let generated_value = match evaluate_in(stage, program, invocation, 0) {
+    // Captured environments can materialize stage-local slots. The isolation
+    // check above still excludes every slot belonging to the runtime caller.
+    let generated_value = match evaluate_in(stage, program, invocation, length(stage.locals)) {
         Result.Ok(value) => value
         Result.Err(failed) => {
             return Result.Err(error(context, node, concat("macro generator: ", failed)))
@@ -292,6 +353,19 @@ fn macro_call(context Context, node Node, expected Int) Result[Expr, Failure] {
         }
     }
     push(body, expanded)
-    Result.Ok(empty_inputs(context, inputs, node,
-            expression(ExprKind.Block, expanded.ty, node, "macro", current.symbol, body, all_fall(body))))
+    let value = expression(ExprKind.Block, expanded.ty, node, "macro", current.symbol, body, all_fall(body))
+    // Static erasure must retain tuple preparation before the first expression
+    // input, including a trailing empty spread when there are no such inputs.
+    let sequenced = if static_count > 0 {
+        input_range_effects(context, inputs, 0,
+            if length(values) == 0 {
+                length(inputs.nodes)
+            } else {
+                static_count - 1
+            },
+            true, node, value)
+    } else {
+        value
+    }
+    Result.Ok(empty_inputs(context, inputs, node, sequenced))
 }

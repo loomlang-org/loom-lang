@@ -1,0 +1,206 @@
+test fn static_macros_stage_aggregate_and_function_parameters_without_native_roots() {
+    let program = match reflected("""
+        fn choose() Int { 41 }
+        fn increment(value Int) Int { value + 1 }
+        fn generate(types List[Schema], comptime configuration (Int, Bool),
+            comptime action fn(Int) Int) Text {
+            if configuration.0 == 41 && configuration.1 && action(1) == 2 &&
+            types[0].types[0].kind == Kind.Int {
+                "$0 + 1"
+            } else {
+                "$0"
+            }
+        }
+        fn keep(value Int) Int
+        ensures result == value + 1 {
+            generate!((choose(), true), increment, value)
+        }
+        fn main() { assert keep(41) == 42 }
+        """) {
+        Result.Ok(value) => value
+        Result.Err(failed) => {
+            discard write_error(failed.diagnostic.message)
+            assert false
+            accepted("")
+        }
+    }
+    // The generator, static helper and callback exist only in the staged queue.
+    assert length(program.functions) == 2
+}
+
+test fn static_macros_keep_whole_record_constraints_across_named_projections() {
+    assert match reflected("""
+        fn project(comptime upper Bool, types List[Schema]) Text {
+            discard types
+            if upper { "$0.upper" } else { "$0.lower" }
+        }
+        pub record BeforeFields {
+            lower Int
+            upper Int
+        }
+        pub type Before = BeforeFields where self.lower <= self.upper
+        pub record AfterFields {
+            right Int
+            left Int
+        }
+        pub type After = AfterFields where self.left <= self.right
+        fn adapt(value Before) After
+        ensures result.left == value.lower && result.right == value.upper {
+            After(AfterFields {
+                right = project!(true, value)
+                left = project!(false, value)
+            })
+        }
+        fn main() {
+            let converted = adapt(Before(BeforeFields { lower = 2, upper = 3 }))
+            assert converted.left == 2 && converted.right == 3
+        }
+        """) {
+        Result.Ok(_) => true
+        Result.Err(failed) => {
+            discard write_error(failed.diagnostic.message)
+            false
+        }
+    }
+}
+
+test fn static_macros_materialize_available_callback_environments_in_the_stage_frame() {
+    assert match reflected("""
+        fn callback(offset Int) fn(Int) Int {
+            fn(value Int) Int { value + offset }
+        }
+        fn generate(comptime action fn(Int) Int, types List[Schema]) Text {
+            discard types
+            if action(1) == 42 { "$0 + 1" } else { "$0" }
+        }
+        fn forward[T](comptime action fn(Int) Int, value T) T {
+            generate!(action, value)
+        }
+        fn increment(value Int) Int { value + 1 }
+        fn main() {
+            let prior = 7
+            assert generate!(callback(41), prior) == 8
+            assert forward(increment, 41) == 41
+        }
+        """) {
+        Result.Ok(_) => true
+        Result.Err(failed) => {
+            discard write_error(failed.diagnostic.message)
+            false
+        }
+    }
+}
+
+test fn static_macros_discovery_requires_the_trusted_descriptor_parameter() {
+    let files = source_files("""
+        import std.reflect.Schema
+        pub fn configured(comptime name Text, types List[Schema]) Text {
+            discard name
+            discard types
+            "42"
+        }
+        pub fn wrong(comptime name Text, values List[Int]) Text {
+            discard name
+            discard values
+            "42"
+        }
+        """)
+    push(files, source_file("std.reflect", input_file("../../reflect/reflect.loom"), true))
+    let names = generator_names(files)
+    assert length(names) == 1 && get(names, 0) == "configured"
+}
+
+test fn static_macros_keep_empty_spread_preparation_when_static_inputs_are_erased() {
+    assert match reflected("""
+        fn gap[Ts...](trace List[Int], digit Int, values Ts...) (Ts...) {
+            trace[0] = trace[0] * 10 + digit
+            values
+        }
+        fn identity(comptime flag Bool, types List[Schema]) Text {
+            discard flag
+            discard types
+            "$0"
+        }
+        fn constant(comptime flag Bool, types List[Schema]) Text {
+            discard flag
+            discard types
+            "42"
+        }
+        fn main() {
+            assert comptime {
+                let trace = [0]
+                let selected = identity!(gap(trace, 1)..., true,
+                    gap(trace, 2)..., 42, gap(trace, 3)...)
+                selected == 42 && trace[0] == 123
+            }
+            assert comptime {
+                let trace = [0]
+                let selected = constant!(gap(trace, 1)..., true, gap(trace, 2)...)
+                selected == 42 && trace[0] == 12
+            }
+        }
+        """) {
+        Result.Ok(_) => true
+        Result.Err(failed) => {
+            discard write_error(failed.diagnostic.message)
+            false
+        }
+    }
+}
+
+test fn static_macros_reject_unavailable_arguments_and_generator_preconditions() {
+    let invalid = ["""
+        fn generate(comptime flag Bool, types List[Schema]) Text {
+            discard flag
+            discard types
+            "$0"
+        }
+        fn dynamic(flag Bool) Int { generate!(flag, 2) }
+        fn main() { discard dynamic(false) }
+        """, """
+        fn generate(comptime flag Bool, types List[Schema]) Text {
+            discard flag
+            discard types
+            "$0"
+        }
+        fn main() { discard generate!(1, 2) }
+        """, """
+        fn generate(comptime flag Bool, types List[Schema]) Text {
+            discard flag
+            discard types
+            "42"
+        }
+        fn main() { discard generate!() }
+        """, """
+        fn generate(comptime minimum Int, types List[Schema]) Text
+        requires minimum > 0 {
+            discard types
+            "$0"
+        }
+        fn main() { discard generate!(0, 2) }
+        """, """
+        fn generate(comptime flag Bool, types List[Schema]) Text {
+            discard flag
+            discard types
+            "$0"
+        }
+        fn main() { discard generate!(true) }
+        """, """
+        fn generate(comptime action fn(Int) Int, types List[Schema]) Text {
+            discard types
+            if action(1) == 42 { "$0 + 1" } else { "$0" }
+        }
+        fn dynamic(offset Int) Int {
+            generate!(fn(value Int) Int { value + offset }, 41)
+        }
+        fn main() { discard dynamic(41) }
+        """]
+    var index = 0
+    while index < length(invalid) {
+        assert match reflected(get(invalid, index)) {
+            Result.Err(_) => true
+            Result.Ok(_) => false
+        }
+        index = index + 1
+    }
+}
