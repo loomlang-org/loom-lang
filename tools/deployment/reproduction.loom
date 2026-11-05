@@ -1,0 +1,165 @@
+import std.file.read_bytes
+import std.fs.canonicalize
+import std.fs.create_dir
+import std.fs.entry_kind
+import std.fs.FileKind
+import std.hash.sha256.hex
+import std.list.get
+import std.list.length
+import std.list.new
+import std.list.push
+import std.loom.project.BuildOption
+import std.process.capture
+import std.process.ExitStatus
+import std.process.Options
+import std.result.Result
+import std.text.concat
+
+// This is an explicit build operation. The caller chooses the compiler/native
+// images and their expected hashes, source, std, options and child environment.
+// The output directory must not exist and is retained for later inspection.
+pub record ReproductionRequest {
+    compiler Text
+    compiler_sha256 Text
+    native_tool Text
+    native_sha256 Text
+    source Text
+    standard Text
+    receipt_path Text
+    output_directory Text
+    build_options List[BuildOption]
+    process Options
+}
+
+// An observation of a completed reproduction, not a signature, permission,
+// storage mapping certificate or proof about application writers.
+pub record ReproducedArtifact {
+    claimed BuildReceipt
+    reproduced BuildReceipt
+    compiler_sha256 Text
+    native_sha256 Text
+}
+
+fn reproduction_image(path Text, expected Text) Result[Text, Text] {
+    if !digest_text(expected) {
+        return Result.Err("reproduction needs a complete compiler or native image hash")
+    }
+    let resolved = match canonicalize(path) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            return Result.Err("cannot resolve reproduction image")
+        }
+    }
+    if match entry_kind(resolved) {
+        Result.Ok(kind) => kind != FileKind.File
+        Result.Err(_) => true
+    } {
+        return Result.Err("reproduction image must be a regular file")
+    }
+    let bytes = match read_bytes(resolved) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            return Result.Err("cannot read reproduction image")
+        }
+    }
+    if hex(bytes) != expected {
+        return Result.Err("reproduction image hash changed")
+    }
+    Result.Ok(resolved)
+}
+
+fn reproduction_directory(path Text) Result[Text, Text] {
+    match create_dir(path) {
+        Result.Err(_) => {
+            return Result.Err("reproduction output directory must be new")
+        }
+        Result.Ok(_) => {
+        }
+    }
+    match canonicalize(path) {
+        Result.Ok(value) => Result.Ok(value)
+        Result.Err(_) => Result.Err("cannot resolve reproduction output directory")
+    }
+}
+
+// A v5 build basis binds the graph, checked snapshot and tracked compilation
+// inputs. Rebuilding also checks their relationship to real artifact bytes.
+// Byte equality is required; a nonreproducible build remains unverified.
+pub fn reproduce_artifact(request ReproductionRequest) Result[ReproducedArtifact, Text] {
+    let claimed = read_build_receipt(request.receipt_path)?
+    if claimed.basis == "" {
+        return Result.Err("artifact reproduction requires a v5 build basis")
+    }
+    let compiler = reproduction_image(request.compiler, request.compiler_sha256)?
+    let native = reproduction_image(request.native_tool, request.native_sha256)?
+    let source = match canonicalize(request.source) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            return Result.Err("cannot resolve reproduction source")
+        }
+    }
+    let standard = match canonicalize(request.standard) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            return Result.Err("cannot resolve reproduction standard library")
+        }
+    }
+    let directory = reproduction_directory(request.output_directory)?
+    let artifact = concat(directory, "/artifact")
+    let receipt = concat(directory, "/build.receipt")
+    let arguments = new[Text]()
+    push(arguments, compiler)
+    push(arguments, "build")
+    push(arguments, source)
+    push(arguments, "--std")
+    push(arguments, standard)
+    push(arguments, "--native-tool")
+    push(arguments, native)
+    push(arguments, "--output")
+    push(arguments, artifact)
+    push(arguments, "--receipt")
+    push(arguments, receipt)
+    var index = 0
+    while index < length(request.build_options) {
+        let option = get(request.build_options, index)
+        push(arguments, "--build-option")
+        push(arguments, concat(option.name, concat("=", option.value)))
+        index = index + 1
+    }
+    let output = match capture(arguments, request.process) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            return Result.Err("cannot start artifact reproduction compiler")
+        }
+    }
+    if match output.status {
+        ExitStatus.Exited(code) => code != 0
+        ExitStatus.Terminated => true
+    } {
+        return Result.Err("artifact reproduction compiler did not complete successfully")
+    }
+    discard reproduction_image(compiler, request.compiler_sha256)?
+    discard reproduction_image(native, request.native_sha256)?
+    let reproduced = read_build_receipt(receipt)?
+    let resolved_artifact = match canonicalize(artifact) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            return Result.Err("reproduction artifact is missing")
+        }
+    }
+    if reproduced.artifact_path != resolved_artifact || reproduced.checked != claimed.checked ||
+    reproduced.basis != claimed.basis || reproduced.artifact != claimed.artifact ||
+    reproduced.backend != claimed.backend {
+        return Result.Err("rebuilt artifact or compilation identities differ from the claimed receipt")
+    }
+    let current = read_build_receipt(request.receipt_path)?
+    if current.receipt != claimed.receipt {
+        return Result.Err("claimed build receipt changed during artifact reproduction")
+    }
+    Result.Ok(ReproducedArtifact {
+            claimed = claimed
+            reproduced = reproduced
+            compiler_sha256 = request.compiler_sha256
+            native_sha256 = request.native_sha256
+        })
+}
