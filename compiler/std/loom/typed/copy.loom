@@ -63,3 +63,82 @@ pub fn snapshot(value Function) Function {
         span = value.span
     }
 }
+
+fn snapshot_type(value Type) Type {
+    let variants = new[Variant](length(value.variants))
+    var index = 0
+    while index < length(value.variants) {
+        let variant = get(value.variants, index)
+        push(variants, Variant {
+                name = variant.name
+                fields = clone(variant.fields)
+            })
+        index = index + 1
+    }
+    Type {
+        arguments = clone(value.arguments)
+        pack_widths = clone(value.pack_widths)
+        fields = clone(value.fields)
+        variants = variants
+        constraint = snapshot(value.constraint)
+        ..value
+    }
+}
+
+// A whole editable program, including nested type/dispatch tables. Merely
+// copying the outer Lists would still expose a published analysis to lowering.
+pub fn snapshot(value Program) Program {
+    let types = new[Type](length(value.types))
+    var index = 0
+    while index < length(value.types) {
+        push(types, snapshot_type(get(value.types, index)))
+        index = index + 1
+    }
+    let functions = new[Function](length(value.functions))
+    index = 0
+    while index < length(value.functions) {
+        push(functions, snapshot(get(value.functions, index)))
+        index = index + 1
+    }
+    let interfaces = new[Interface](length(value.interfaces))
+    index = 0
+    while index < length(value.interfaces) {
+        let interface = get(value.interfaces, index)
+        let methods = new[Method](length(interface.methods))
+        var slot = 0
+        while slot < length(interface.methods) {
+            let method = get(interface.methods, slot)
+            push(methods, Method {
+                    params = clone(method.params)
+                    ..method
+                })
+            slot = slot + 1
+        }
+        push(interfaces, Interface {
+                methods = methods
+                ..interface
+            })
+        index = index + 1
+    }
+    let witnesses = new[Witness](length(value.witnesses))
+    index = 0
+    while index < length(value.witnesses) {
+        let witness = get(value.witnesses, index)
+        push(witnesses, Witness {
+                methods = clone(witness.methods)
+                ..witness
+            })
+        index = index + 1
+    }
+    Program {
+        types = types
+        functions = functions
+        interfaces = interfaces
+        witnesses = witnesses
+        function_identities = clone(value.function_identities)
+        tests = clone(value.tests)
+        test_names = clone(value.test_names)
+        exports = clone(value.exports)
+        ..value
+    }
+}

@@ -1,0 +1,105 @@
+import std.list.new
+import std.list.push
+import std.list.get
+import std.list.length
+
+// Published sequences are immutable. Only machine-sized coefficients are
+// inline: mathematical integers of every size retain the exact list fallback.
+enum LinearTerms {
+    Empty
+    Single(Int, Int)
+    Pair(Int, Int, Int, Int)
+    Many(List[Term])
+}
+
+fn empty_terms() LinearTerms {
+    LinearTerms.Empty
+}
+
+fn term_count(values LinearTerms) Int {
+    match values {
+        LinearTerms.Empty => 0
+        LinearTerms.Single(_, _) => 1
+        LinearTerms.Pair(_, _, _, _) => 2
+        LinearTerms.Many(items) => length(items)
+    }
+}
+
+fn term_at(values LinearTerms, index Int) Term {
+    match values {
+        LinearTerms.Single(identity, factor) => if index == 0 {
+            Term {
+                id = identity,
+                factor = integer(factor)
+            }
+        } else {
+            get(new[Term](), index)
+        }
+        LinearTerms.Pair(first_id, first_factor, second_id, second_factor) => if index == 0 {
+            Term {
+                id = first_id,
+                factor = integer(first_factor)
+            }
+        } else if index == 1 {
+            Term {
+                id = second_id,
+                factor = integer(second_factor)
+            }
+        } else {
+            get(new[Term](), index)
+        }
+        LinearTerms.Many(items) => get(items, index)
+        LinearTerms.Empty => get(new[Term](), index)
+    }
+}
+
+// Construction only: every caller starts at Empty and keeps sole ownership of
+// the builder until publication. Never append to a published input sequence.
+fn append_built_term(values LinearTerms, value Term) LinearTerms {
+    match values {
+        LinearTerms.Empty => match machine(value.factor) {
+            Result.Ok(factor) => LinearTerms.Single(value.id, factor)
+            Result.Err(_) => LinearTerms.Many([value])
+        }
+        LinearTerms.Single(identity, first) => match machine(value.factor) {
+            Result.Ok(second) => LinearTerms.Pair(identity, first, value.id, second)
+            Result.Err(_) => LinearTerms.Many([term_at(values, 0), value])
+        }
+        LinearTerms.Pair(_, _, _, _) => {
+            let items = new[Term](4)
+            push(items, term_at(values, 0))
+            push(items, term_at(values, 1))
+            push(items, value)
+            LinearTerms.Many(items)
+        }
+        LinearTerms.Many(items) => {
+            push(items, value)
+            values
+        }
+    }
+}
+
+// Preserve fixture inputs and arbitrary lengths, including explicit zeros and
+// repeated IDs; normalization still belongs to the existing arithmetic.
+fn terms_from_list(items List[Term]) LinearTerms {
+    if length(items) == 0 {
+        return LinearTerms.Empty
+    }
+    if length(items) > 2 {
+        return LinearTerms.Many(items)
+    }
+    let first = get(items, 0)
+    match machine(first.factor) {
+        Result.Ok(factor) => {
+            if length(items) == 1 {
+                return LinearTerms.Single(first.id, factor)
+            }
+            let second = get(items, 1)
+            match machine(second.factor) {
+                Result.Ok(other) => LinearTerms.Pair(first.id, factor, second.id, other)
+                Result.Err(_) => LinearTerms.Many(items)
+            }
+        }
+        Result.Err(_) => LinearTerms.Many(items)
+    }
+}

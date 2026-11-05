@@ -26,12 +26,12 @@ pub fn known_extents(equations List[List[Int]], dimensions Int) Result[List[Int]
         if length(equation) != dimensions + 1 {
             return Result.Err("invalid shape equation")
         }
-        let terms = new[Term]()
+        var terms = empty_terms()
         var dimension = 0
         while dimension < dimensions {
             let factor = get(equation, dimension)
             if factor != 0 {
-                push(terms, Term {
+                terms = append_built_term(terms, Term {
                         id = dimension
                         factor = integer(factor)
                     })
@@ -42,12 +42,12 @@ pub fn known_extents(equations List[List[Int]], dimensions Int) Result[List[Int]
                 constant = negate(integer(get(equation, dimensions)))
                 terms = terms
             }, basis, budget)?
-        if length(row.terms) == 0 {
-            if length(row.constant.digits) != 0 {
+        if term_count(row.terms) == 0 {
+            if number_size(row.constant) != 0 {
                 return Result.Err("inconsistent shape equations")
             }
         } else {
-            if get(row.terms, 0).factor.negative {
+            if term_at(row.terms, 0).factor.negative {
                 row = scale(row, integer(-1))
             }
             insert_affine_row(basis, row)
@@ -84,12 +84,12 @@ pub fn known_extents(equations List[List[Int]], dimensions Int) Result[List[Int]
     while index > 0 {
         index = index - 1
         let row = get(basis, index)
-        let pivot = get(row.terms, 0)
+        let pivot = term_at(row.terms, 0)
         var total = row.constant
         var known = true
         var term = 1
-        while term < length(row.terms) {
-            let current = get(row.terms, term)
+        while term < term_count(row.terms) {
+            let current = term_at(row.terms, term)
             known = known && get(widths, current.id) >= 0
             total = sum(total, product(current.factor, integer(get(widths, current.id))))
             term = term + 1
@@ -106,7 +106,7 @@ pub fn known_extents(equations List[List[Int]], dimensions Int) Result[List[Int]
 }
 
 fn extent_ratio(total Number, factor Number) Result[Int, Text] {
-    if total.negative || factor.negative || length(factor.digits) == 0 {
+    if total.negative || factor.negative || number_size(factor) == 0 {
         return Result.Err("shape widths must be nonnegative integers")
     }
     let numerator = machine(total)

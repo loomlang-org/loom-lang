@@ -6,7 +6,7 @@ fn inequality_row(rows List[Linear], value Linear) Result[Bool, Text] {
     if !affine_size(value) {
         return Result.Err("inequality proof size budget exhausted")
     }
-    if length(value.terms) == 0 {
+    if term_count(value.terms) == 0 {
         return Result.Ok(compare(value.constant, integer(0)) > 0)
     }
     var index = 0
@@ -54,7 +54,7 @@ fn inequality_eliminate(input List[Linear], budget List[Int]) Result[Bool, Text]
     var rows = input
     var round = 0
     while length(rows) > 0 && round < 32 {
-        let pivot = get(get(rows, 0).terms, 0).id
+        let pivot = term_at(get(rows, 0).terms, 0).id
         let positive = new[Linear]()
         let negative = new[Linear]()
         let remaining = new[Linear]()
@@ -62,7 +62,7 @@ fn inequality_eliminate(input List[Linear], budget List[Int]) Result[Bool, Text]
         while index < length(rows) {
             let row = get(rows, index)
             let factor = affine_coefficient(row, pivot)
-            if length(factor.digits) == 0 {
+            if number_size(factor) == 0 {
                 push(remaining, row)
             } else if factor.negative {
                 push(negative, row)
@@ -84,7 +84,7 @@ fn inequality_eliminate(input List[Linear], budget List[Int]) Result[Bool, Text]
                 let b = negate(affine_coefficient(lower, pivot))
                 // b > 0 and a > 0, so this row is a consequence and its
                 // pivot cancels exactly. An impossible constant is a proof.
-                if inequality_row(remaining, add(scale(upper, b), scale(lower, a)))? {
+                if inequality_row(remaining, add_scaled_pair(upper, b, lower, a))? {
                     return Result.Ok(true)
                 }
                 other = other + 1
@@ -130,17 +130,17 @@ fn inequality_query(relation Text, value Linear, facts List[Predicate]) Result[B
 }
 
 fn difference_shape(value Linear) Bool {
-    if length(value.terms) > 2 {
+    if term_count(value.terms) > 2 {
         return false
     }
     var positive = false
     var negative = false
     var index = 0
-    while index < length(value.terms) {
-        let factor = get(value.terms, index).factor
+    while index < term_count(value.terms) {
+        let factor = term_at(value.terms, index).factor
         // Canonical magnitudes identify +/-1 without allocating two temporary
         // Numbers for every coefficient on this common rejected-query path.
-        if length(factor.digits) != 1 || get(factor.digits, 0) != 1 {
+        if number_size(factor) != 1 || digit(factor, 0) != 1 {
             return false
         }
         if !factor.negative && !positive {

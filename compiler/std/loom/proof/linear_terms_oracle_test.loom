@@ -1,0 +1,1193 @@
+test fn inline_terms_match_independent_python_integer_oracle() {
+    let a0 = Linear {
+        constant = decimal("0"),
+        terms = empty_terms()
+    }
+    let b0 = Linear {
+        constant = decimal("0"),
+        terms = empty_terms()
+    }
+    let combined0 = add_scaled(a0, b0, decimal("1000000000000000000000000000000000000000000000000000000000001"))
+    let expected0 = Linear {
+        constant = decimal("0"),
+        terms = empty_terms()
+    }
+    assert same_terms(combined0.terms, expected0.terms)
+    assert compare(combined0.constant, expected0.constant) == 0
+    let a1 = Linear {
+        constant = decimal("11"),
+        terms = terms_from_list([Term {
+                    id = -7,
+                    factor = decimal("2")
+                }])
+    }
+    let b1 = Linear {
+        constant = decimal("0"),
+        terms = terms_from_list([Term {
+                    id = -5,
+                    factor = decimal("1")
+                }, Term {
+                    id = 3,
+                    factor = decimal("-1")
+                }, Term {
+                    id = 9,
+                    factor = decimal("2")
+                }])
+    }
+    let combined1 = add_scaled(a1, b1, decimal("1"))
+    let expected1 = Linear {
+        constant = decimal("11"),
+        terms = terms_from_list([Term {
+                    id = -7,
+                    factor = decimal("2")
+                }, Term {
+                    id = -5,
+                    factor = decimal("1")
+                }, Term {
+                    id = 3,
+                    factor = decimal("-1")
+                }, Term {
+                    id = 9,
+                    factor = decimal("2")
+                }])
+    }
+    assert same_terms(combined1.terms, expected1.terms)
+    assert compare(combined1.constant, expected1.constant) == 0
+    let a2 = Linear {
+        constant = decimal("100000000000000000000000000000000000000000000000000000000000000000000000000000000"),
+        terms = terms_from_list([Term {
+                    id = -10,
+                    factor = decimal("1")
+                }, Term {
+                    id = -1,
+                    factor = decimal("1")
+                }])
+    }
+    let b2 = Linear {
+        constant = decimal("-29"),
+        terms = terms_from_list([Term {
+                    id = -9,
+                    factor = decimal("-1")
+                }, Term {
+                    id = -8,
+                    factor = decimal("10000000000000000000000000000000000000000000000000000000000000000000007")
+                }, Term {
+                    id = -5,
+                    factor = decimal("2")
+                }, Term {
+                    id = 5,
+                    factor = decimal("-3")
+                }, Term {
+                    id = 7,
+                    factor = decimal("2")
+                }, Term {
+                    id = 9,
+                    factor = decimal("1")
+                }])
+    }
+    let combined2 = add_scaled(a2, b2, decimal("1000000000000000000000000000000000000000000000000000000000001"))
+    let expected2 = Linear {
+        constant = decimal("99999999999999999970999999999999999999999999999999999999999999999999999999999971"),
+        terms = terms_from_list([Term {
+                    id = -10,
+                    factor = decimal("1")
+                }, Term {
+                    id = -9,
+                    factor = decimal("-1000000000000000000000000000000000000000000000000000000000001")
+                }, Term {
+                    id = -8,
+                    factor = decimal("10000000000000000000000000000000000000000000000000000000000010000000007000000000000000000000000000000000000000000000000000000000007")
+                }, Term {
+                    id = -5,
+                    factor = decimal("2000000000000000000000000000000000000000000000000000000000002")
+                }, Term {
+                    id = -1,
+                    factor = decimal("1")
+                }, Term {
+                    id = 5,
+                    factor = decimal("-3000000000000000000000000000000000000000000000000000000000003")
+                }, Term {
+                    id = 7,
+                    factor = decimal("2000000000000000000000000000000000000000000000000000000000002")
+                }, Term {
+                    id = 9,
+                    factor = decimal("1000000000000000000000000000000000000000000000000000000000001")
+                }])
+    }
+    assert same_terms(combined2.terms, expected2.terms)
+    assert compare(combined2.constant, expected2.constant) == 0
+    let a3 = Linear {
+        constant = decimal("0"),
+        terms = terms_from_list([Term {
+                    id = -9,
+                    factor = decimal("2")
+                }, Term {
+                    id = 5,
+                    factor = decimal("2")
+                }, Term {
+                    id = 8,
+                    factor = decimal("2")
+                }])
+    }
+    let b3 = Linear {
+        constant = decimal("0"),
+        terms = terms_from_list([Term {
+                    id = 9,
+                    factor = decimal("1")
+                }])
+    }
+    let combined3 = add_scaled(a3, b3, decimal("0"))
+    let expected3 = Linear {
+        constant = decimal("0"),
+        terms = terms_from_list([Term {
+                    id = -9,
+                    factor = decimal("2")
+                }, Term {
+                    id = 5,
+                    factor = decimal("2")
+                }, Term {
+                    id = 8,
+                    factor = decimal("2")
+                }])
+    }
+    assert same_terms(combined3.terms, expected3.terms)
+    assert compare(combined3.constant, expected3.constant) == 0
+    let a4 = Linear {
+        constant = decimal("11"),
+        terms = terms_from_list([Term {
+                    id = -10,
+                    factor = decimal("-1")
+                }, Term {
+                    id = -9,
+                    factor = decimal("10000000000000000000000000000000000000000000000000000000000000000000007")
+                }, Term {
+                    id = -3,
+                    factor = decimal("-3")
+                }, Term {
+                    id = 6,
+                    factor = decimal("2")
+                }])
+    }
+    let b4 = Linear {
+        constant = decimal("13"),
+        terms = terms_from_list([Term {
+                    id = -9,
+                    factor = decimal("2")
+                }, Term {
+                    id = -6,
+                    factor = decimal("10000000000000000000000000000000000000000000000000000000000000000000007")
+                }, Term {
+                    id = -1,
+                    factor = decimal("1")
+                }, Term {
+                    id = 2,
+                    factor = decimal("10000000000000000000000000000000000000000000000000000000000000000000007")
+                }])
+    }
+    let combined4 = add_scaled(a4, b4, decimal("1000000000000000000000000000000000000000000000000000000000001"))
+    let expected4 = Linear {
+        constant = decimal("13000000000000000000000000000000000000000000000000000000000024"),
+        terms = terms_from_list([Term {
+                    id = -10,
+                    factor = decimal("-1")
+                }, Term {
+                    id = -9,
+                    factor = decimal("10000000002000000000000000000000000000000000000000000000000000000000009")
+                }, Term {
+                    id = -6,
+                    factor = decimal("10000000000000000000000000000000000000000000000000000000000010000000007000000000000000000000000000000000000000000000000000000000007")
+                }, Term {
+                    id = -3,
+                    factor = decimal("-3")
+                }, Term {
+                    id = -1,
+                    factor = decimal("1000000000000000000000000000000000000000000000000000000000001")
+                }, Term {
+                    id = 2,
+                    factor = decimal("10000000000000000000000000000000000000000000000000000000000010000000007000000000000000000000000000000000000000000000000000000000007")
+                }, Term {
+                    id = 6,
+                    factor = decimal("2")
+                }])
+    }
+    assert same_terms(combined4.terms, expected4.terms)
+    assert compare(combined4.constant, expected4.constant) == 0
+    let a5 = Linear {
+        constant = decimal("-17"),
+        terms = terms_from_list([Term {
+                    id = -8,
+                    factor = decimal("-3")
+                }, Term {
+                    id = -4,
+                    factor = decimal("-3")
+                }, Term {
+                    id = -2,
+                    factor = decimal("2")
+                }, Term {
+                    id = 2,
+                    factor = decimal("-3")
+                }, Term {
+                    id = 10,
+                    factor = decimal("-1")
+                }])
+    }
+    let b5 = Linear {
+        constant = decimal("1000000000000000000000000000000000000000000000000000000000000000000000000000"),
+        terms = terms_from_list([Term {
+                    id = -8,
+                    factor = decimal("2")
+                }, Term {
+                    id = -6,
+                    factor = decimal("1")
+                }, Term {
+                    id = -2,
+                    factor = decimal("-3")
+                }, Term {
+                    id = 0,
+                    factor = decimal("-3")
+                }, Term {
+                    id = 4,
+                    factor = decimal("-1")
+                }, Term {
+                    id = 8,
+                    factor = decimal("1")
+                }, Term {
+                    id = 9,
+                    factor = decimal("-3")
+                }])
+    }
+    let combined5 = add_scaled(a5, b5, decimal("0"))
+    let expected5 = Linear {
+        constant = decimal("-17"),
+        terms = terms_from_list([Term {
+                    id = -8,
+                    factor = decimal("-3")
+                }, Term {
+                    id = -4,
+                    factor = decimal("-3")
+                }, Term {
+                    id = -2,
+                    factor = decimal("2")
+                }, Term {
+                    id = 2,
+                    factor = decimal("-3")
+                }, Term {
+                    id = 10,
+                    factor = decimal("-1")
+                }])
+    }
+    assert same_terms(combined5.terms, expected5.terms)
+    assert compare(combined5.constant, expected5.constant) == 0
+    let a6 = Linear {
+        constant = decimal("100000000000000000000000000000000000000000000000000000000000000000000000000000000"),
+        terms = terms_from_list([Term {
+                    id = -7,
+                    factor = decimal("2")
+                }, Term {
+                    id = -3,
+                    factor = decimal("2")
+                }, Term {
+                    id = 1,
+                    factor = decimal("10000000000000000000000000000000000000000000000000000000000000000000007")
+                }, Term {
+                    id = 3,
+                    factor = decimal("-3")
+                }, Term {
+                    id = 5,
+                    factor = decimal("-3")
+                }, Term {
+                    id = 10,
+                    factor = decimal("-1")
+                }])
+    }
+    let b6 = Linear {
+        constant = decimal("13"),
+        terms = terms_from_list([Term {
+                    id = 8,
+                    factor = decimal("1")
+                }, Term {
+                    id = 9,
+                    factor = decimal("-1")
+                }])
+    }
+    let combined6 = add_scaled(a6, b6, decimal("1000000000000000000000000000000000000000000000000000000000001"))
+    let expected6 = Linear {
+        constant = decimal("100000000000000000013000000000000000000000000000000000000000000000000000000000013"),
+        terms = terms_from_list([Term {
+                    id = -7,
+                    factor = decimal("2")
+                }, Term {
+                    id = -3,
+                    factor = decimal("2")
+                }, Term {
+                    id = 1,
+                    factor = decimal("10000000000000000000000000000000000000000000000000000000000000000000007")
+                }, Term {
+                    id = 3,
+                    factor = decimal("-3")
+                }, Term {
+                    id = 5,
+                    factor = decimal("-3")
+                }, Term {
+                    id = 8,
+                    factor = decimal("1000000000000000000000000000000000000000000000000000000000001")
+                }, Term {
+                    id = 9,
+                    factor = decimal("-1000000000000000000000000000000000000000000000000000000000001")
+                }, Term {
+                    id = 10,
+                    factor = decimal("-1")
+                }])
+    }
+    assert same_terms(combined6.terms, expected6.terms)
+    assert compare(combined6.constant, expected6.constant) == 0
+    let a7 = Linear {
+        constant = decimal("-17"),
+        terms = empty_terms()
+    }
+    let b7 = Linear {
+        constant = decimal("-29"),
+        terms = terms_from_list([Term {
+                    id = -2,
+                    factor = decimal("2")
+                }, Term {
+                    id = 1,
+                    factor = decimal("2")
+                }, Term {
+                    id = 3,
+                    factor = decimal("-1")
+                }, Term {
+                    id = 4,
+                    factor = decimal("1")
+                }, Term {
+                    id = 10,
+                    factor = decimal("1")
+                }])
+    }
+    let combined7 = add_scaled(a7, b7, decimal("0"))
+    let expected7 = Linear {
+        constant = decimal("-17"),
+        terms = empty_terms()
+    }
+    assert same_terms(combined7.terms, expected7.terms)
+    assert compare(combined7.constant, expected7.constant) == 0
+    let a8 = Linear {
+        constant = decimal("100000000000000000000000000000000000000000000000000000000000000000000000000000000"),
+        terms = terms_from_list([Term {
+                    id = 6,
+                    factor = decimal("-1")
+                }])
+    }
+    let b8 = Linear {
+        constant = decimal("13"),
+        terms = empty_terms()
+    }
+    let combined8 = add_scaled(a8, b8, decimal("1000000000000000000000000000000000000000000000000000000000001"))
+    let expected8 = Linear {
+        constant = decimal("100000000000000000013000000000000000000000000000000000000000000000000000000000013"),
+        terms = terms_from_list([Term {
+                    id = 6,
+                    factor = decimal("-1")
+                }])
+    }
+    assert same_terms(combined8.terms, expected8.terms)
+    assert compare(combined8.constant, expected8.constant) == 0
+    let a9 = Linear {
+        constant = decimal("11"),
+        terms = terms_from_list([Term {
+                    id = 4,
+                    factor = decimal("10000000000000000000000000000000000000000000000000000000000000000000007")
+                }, Term {
+                    id = 10,
+                    factor = decimal("10000000000000000000000000000000000000000000000000000000000000000000007")
+                }])
+    }
+    let b9 = Linear {
+        constant = decimal("13"),
+        terms = terms_from_list([Term {
+                    id = -10,
+                    factor = decimal("-1")
+                }, Term {
+                    id = 0,
+                    factor = decimal("10000000000000000000000000000000000000000000000000000000000000000000007")
+                }, Term {
+                    id = 4,
+                    factor = decimal("10000000000000000000000000000000000000000000000000000000000000000000007")
+                }])
+    }
+    let combined9 = add_scaled(a9, b9, decimal("-1"))
+    let expected9 = Linear {
+        constant = decimal("-2"),
+        terms = terms_from_list([Term {
+                    id = -10,
+                    factor = decimal("1")
+                }, Term {
+                    id = 0,
+                    factor = decimal("-10000000000000000000000000000000000000000000000000000000000000000000007")
+                }, Term {
+                    id = 10,
+                    factor = decimal("10000000000000000000000000000000000000000000000000000000000000000000007")
+                }])
+    }
+    assert same_terms(combined9.terms, expected9.terms)
+    assert compare(combined9.constant, expected9.constant) == 0
+    let a10 = Linear {
+        constant = decimal("100000000000000000000000000000000000000000000000000000000000000000000000000000000"),
+        terms = terms_from_list([Term {
+                    id = -9,
+                    factor = decimal("10000000000000000000000000000000000000000000000000000000000000000000007")
+                }, Term {
+                    id = -6,
+                    factor = decimal("-1")
+                }, Term {
+                    id = -2,
+                    factor = decimal("1")
+                }])
+    }
+    let b10 = Linear {
+        constant = decimal("0"),
+        terms = terms_from_list([Term {
+                    id = -10,
+                    factor = decimal("-1")
+                }, Term {
+                    id = -7,
+                    factor = decimal("1")
+                }, Term {
+                    id = -4,
+                    factor = decimal("-3")
+                }, Term {
+                    id = 3,
+                    factor = decimal("2")
+                }, Term {
+                    id = 8,
+                    factor = decimal("-3")
+                }, Term {
+                    id = 9,
+                    factor = decimal("10000000000000000000000000000000000000000000000000000000000000000000007")
+                }])
+    }
+    let combined10 = add_scaled(a10, b10, decimal("1"))
+    let expected10 = Linear {
+        constant = decimal("100000000000000000000000000000000000000000000000000000000000000000000000000000000"),
+        terms = terms_from_list([Term {
+                    id = -10,
+                    factor = decimal("-1")
+                }, Term {
+                    id = -9,
+                    factor = decimal("10000000000000000000000000000000000000000000000000000000000000000000007")
+                }, Term {
+                    id = -7,
+                    factor = decimal("1")
+                }, Term {
+                    id = -6,
+                    factor = decimal("-1")
+                }, Term {
+                    id = -4,
+                    factor = decimal("-3")
+                }, Term {
+                    id = -2,
+                    factor = decimal("1")
+                }, Term {
+                    id = 3,
+                    factor = decimal("2")
+                }, Term {
+                    id = 8,
+                    factor = decimal("-3")
+                }, Term {
+                    id = 9,
+                    factor = decimal("10000000000000000000000000000000000000000000000000000000000000000000007")
+                }])
+    }
+    assert same_terms(combined10.terms, expected10.terms)
+    assert compare(combined10.constant, expected10.constant) == 0
+    let a11 = Linear {
+        constant = decimal("-17"),
+        terms = terms_from_list([Term {
+                    id = -2,
+                    factor = decimal("1")
+                }, Term {
+                    id = 0,
+                    factor = decimal("2")
+                }, Term {
+                    id = 1,
+                    factor = decimal("1")
+                }, Term {
+                    id = 10,
+                    factor = decimal("1")
+                }])
+    }
+    let b11 = Linear {
+        constant = decimal("13"),
+        terms = terms_from_list([Term {
+                    id = 3,
+                    factor = decimal("2")
+                }])
+    }
+    let combined11 = add_scaled(a11, b11, decimal("1"))
+    let expected11 = Linear {
+        constant = decimal("-4"),
+        terms = terms_from_list([Term {
+                    id = -2,
+                    factor = decimal("1")
+                }, Term {
+                    id = 0,
+                    factor = decimal("2")
+                }, Term {
+                    id = 1,
+                    factor = decimal("1")
+                }, Term {
+                    id = 3,
+                    factor = decimal("2")
+                }, Term {
+                    id = 10,
+                    factor = decimal("1")
+                }])
+    }
+    assert same_terms(combined11.terms, expected11.terms)
+    assert compare(combined11.constant, expected11.constant) == 0
+    let a12 = Linear {
+        constant = decimal("100000000000000000000000000000000000000000000000000000000000000000000000000000000"),
+        terms = terms_from_list([Term {
+                    id = -1,
+                    factor = decimal("-1")
+                }, Term {
+                    id = 4,
+                    factor = decimal("2")
+                }, Term {
+                    id = 7,
+                    factor = decimal("10000000000000000000000000000000000000000000000000000000000000000000007")
+                }, Term {
+                    id = 8,
+                    factor = decimal("-3")
+                }, Term {
+                    id = 10,
+                    factor = decimal("10000000000000000000000000000000000000000000000000000000000000000000007")
+                }])
+    }
+    let b12 = Linear {
+        constant = decimal("1000000000000000000000000000000000000000000000000000000000000000000000000000"),
+        terms = terms_from_list([Term {
+                    id = -5,
+                    factor = decimal("-1")
+                }, Term {
+                    id = 1,
+                    factor = decimal("10000000000000000000000000000000000000000000000000000000000000000000007")
+                }, Term {
+                    id = 3,
+                    factor = decimal("1")
+                }, Term {
+                    id = 6,
+                    factor = decimal("2")
+                }])
+    }
+    let combined12 = add_scaled(a12, b12, decimal("-1"))
+    let expected12 = Linear {
+        constant = decimal("99999000000000000000000000000000000000000000000000000000000000000000000000000000"),
+        terms = terms_from_list([Term {
+                    id = -5,
+                    factor = decimal("1")
+                }, Term {
+                    id = -1,
+                    factor = decimal("-1")
+                }, Term {
+                    id = 1,
+                    factor = decimal("-10000000000000000000000000000000000000000000000000000000000000000000007")
+                }, Term {
+                    id = 3,
+                    factor = decimal("-1")
+                }, Term {
+                    id = 4,
+                    factor = decimal("2")
+                }, Term {
+                    id = 6,
+                    factor = decimal("-2")
+                }, Term {
+                    id = 7,
+                    factor = decimal("10000000000000000000000000000000000000000000000000000000000000000000007")
+                }, Term {
+                    id = 8,
+                    factor = decimal("-3")
+                }, Term {
+                    id = 10,
+                    factor = decimal("10000000000000000000000000000000000000000000000000000000000000000000007")
+                }])
+    }
+    assert same_terms(combined12.terms, expected12.terms)
+    assert compare(combined12.constant, expected12.constant) == 0
+    let a13 = Linear {
+        constant = decimal("0"),
+        terms = terms_from_list([Term {
+                    id = -6,
+                    factor = decimal("-1")
+                }, Term {
+                    id = -2,
+                    factor = decimal("1")
+                }, Term {
+                    id = -1,
+                    factor = decimal("-1")
+                }, Term {
+                    id = 2,
+                    factor = decimal("10000000000000000000000000000000000000000000000000000000000000000000007")
+                }, Term {
+                    id = 3,
+                    factor = decimal("-1")
+                }, Term {
+                    id = 7,
+                    factor = decimal("-1")
+                }])
+    }
+    let b13 = Linear {
+        constant = decimal("1000000000000000000000000000000000000000000000000000000000000000000000000000"),
+        terms = terms_from_list([Term {
+                    id = -6,
+                    factor = decimal("-3")
+                }, Term {
+                    id = -4,
+                    factor = decimal("-1")
+                }, Term {
+                    id = -3,
+                    factor = decimal("1")
+                }, Term {
+                    id = 2,
+                    factor = decimal("-3")
+                }, Term {
+                    id = 5,
+                    factor = decimal("-1")
+                }, Term {
+                    id = 6,
+                    factor = decimal("1")
+                }, Term {
+                    id = 8,
+                    factor = decimal("10000000000000000000000000000000000000000000000000000000000000000000007")
+                }])
+    }
+    let combined13 = add_scaled(a13, b13, decimal("-1"))
+    let expected13 = Linear {
+        constant = decimal("-1000000000000000000000000000000000000000000000000000000000000000000000000000"),
+        terms = terms_from_list([Term {
+                    id = -6,
+                    factor = decimal("2")
+                }, Term {
+                    id = -4,
+                    factor = decimal("1")
+                }, Term {
+                    id = -3,
+                    factor = decimal("-1")
+                }, Term {
+                    id = -2,
+                    factor = decimal("1")
+                }, Term {
+                    id = -1,
+                    factor = decimal("-1")
+                }, Term {
+                    id = 2,
+                    factor = decimal("10000000000000000000000000000000000000000000000000000000000000000000010")
+                }, Term {
+                    id = 3,
+                    factor = decimal("-1")
+                }, Term {
+                    id = 5,
+                    factor = decimal("1")
+                }, Term {
+                    id = 6,
+                    factor = decimal("-1")
+                }, Term {
+                    id = 7,
+                    factor = decimal("-1")
+                }, Term {
+                    id = 8,
+                    factor = decimal("-10000000000000000000000000000000000000000000000000000000000000000000007")
+                }])
+    }
+    assert same_terms(combined13.terms, expected13.terms)
+    assert compare(combined13.constant, expected13.constant) == 0
+    let a14 = Linear {
+        constant = decimal("0"),
+        terms = empty_terms()
+    }
+    let b14 = Linear {
+        constant = decimal("-29"),
+        terms = terms_from_list([Term {
+                    id = -7,
+                    factor = decimal("-3")
+                }, Term {
+                    id = 6,
+                    factor = decimal("-1")
+                }])
+    }
+    let combined14 = add_scaled(a14, b14, decimal("1000000000000000000000000000000000000000000000000000000000001"))
+    let expected14 = Linear {
+        constant = decimal("-29000000000000000000000000000000000000000000000000000000000029"),
+        terms = terms_from_list([Term {
+                    id = -7,
+                    factor = decimal("-3000000000000000000000000000000000000000000000000000000000003")
+                }, Term {
+                    id = 6,
+                    factor = decimal("-1000000000000000000000000000000000000000000000000000000000001")
+                }])
+    }
+    assert same_terms(combined14.terms, expected14.terms)
+    assert compare(combined14.constant, expected14.constant) == 0
+    let a15 = Linear {
+        constant = decimal("0"),
+        terms = terms_from_list([Term {
+                    id = -9,
+                    factor = decimal("-3")
+                }])
+    }
+    let b15 = Linear {
+        constant = decimal("0"),
+        terms = terms_from_list([Term {
+                    id = -10,
+                    factor = decimal("-3")
+                }, Term {
+                    id = -8,
+                    factor = decimal("2")
+                }, Term {
+                    id = -1,
+                    factor = decimal("1")
+                }, Term {
+                    id = 5,
+                    factor = decimal("10000000000000000000000000000000000000000000000000000000000000000000007")
+                }, Term {
+                    id = 8,
+                    factor = decimal("10000000000000000000000000000000000000000000000000000000000000000000007")
+                }])
+    }
+    let combined15 = add_scaled(a15, b15, decimal("1000000000000000000000000000000000000000000000000000000000001"))
+    let expected15 = Linear {
+        constant = decimal("0"),
+        terms = terms_from_list([Term {
+                    id = -10,
+                    factor = decimal("-3000000000000000000000000000000000000000000000000000000000003")
+                }, Term {
+                    id = -9,
+                    factor = decimal("-3")
+                }, Term {
+                    id = -8,
+                    factor = decimal("2000000000000000000000000000000000000000000000000000000000002")
+                }, Term {
+                    id = -1,
+                    factor = decimal("1000000000000000000000000000000000000000000000000000000000001")
+                }, Term {
+                    id = 5,
+                    factor = decimal("10000000000000000000000000000000000000000000000000000000000010000000007000000000000000000000000000000000000000000000000000000000007")
+                }, Term {
+                    id = 8,
+                    factor = decimal("10000000000000000000000000000000000000000000000000000000000010000000007000000000000000000000000000000000000000000000000000000000007")
+                }])
+    }
+    assert same_terms(combined15.terms, expected15.terms)
+    assert compare(combined15.constant, expected15.constant) == 0
+    let a16 = Linear {
+        constant = decimal("11"),
+        terms = terms_from_list([Term {
+                    id = -6,
+                    factor = decimal("2")
+                }, Term {
+                    id = 9,
+                    factor = decimal("1")
+                }])
+    }
+    let b16 = Linear {
+        constant = decimal("1000000000000000000000000000000000000000000000000000000000000000000000000000"),
+        terms = empty_terms()
+    }
+    let combined16 = add_scaled(a16, b16, decimal("1"))
+    let expected16 = Linear {
+        constant = decimal("1000000000000000000000000000000000000000000000000000000000000000000000000011"),
+        terms = terms_from_list([Term {
+                    id = -6,
+                    factor = decimal("2")
+                }, Term {
+                    id = 9,
+                    factor = decimal("1")
+                }])
+    }
+    assert same_terms(combined16.terms, expected16.terms)
+    assert compare(combined16.constant, expected16.constant) == 0
+    let a17 = Linear {
+        constant = decimal("0"),
+        terms = terms_from_list([Term {
+                    id = 3,
+                    factor = decimal("-1")
+                }, Term {
+                    id = 4,
+                    factor = decimal("-3")
+                }, Term {
+                    id = 10,
+                    factor = decimal("1")
+                }])
+    }
+    let b17 = Linear {
+        constant = decimal("0"),
+        terms = terms_from_list([Term {
+                    id = -6,
+                    factor = decimal("-3")
+                }, Term {
+                    id = 6,
+                    factor = decimal("2")
+                }, Term {
+                    id = 8,
+                    factor = decimal("2")
+                }])
+    }
+    let combined17 = add_scaled(a17, b17, decimal("1"))
+    let expected17 = Linear {
+        constant = decimal("0"),
+        terms = terms_from_list([Term {
+                    id = -6,
+                    factor = decimal("-3")
+                }, Term {
+                    id = 3,
+                    factor = decimal("-1")
+                }, Term {
+                    id = 4,
+                    factor = decimal("-3")
+                }, Term {
+                    id = 6,
+                    factor = decimal("2")
+                }, Term {
+                    id = 8,
+                    factor = decimal("2")
+                }, Term {
+                    id = 10,
+                    factor = decimal("1")
+                }])
+    }
+    assert same_terms(combined17.terms, expected17.terms)
+    assert compare(combined17.constant, expected17.constant) == 0
+    let a18 = Linear {
+        constant = decimal("100000000000000000000000000000000000000000000000000000000000000000000000000000000"),
+        terms = terms_from_list([Term {
+                    id = -4,
+                    factor = decimal("-1")
+                }, Term {
+                    id = 4,
+                    factor = decimal("10000000000000000000000000000000000000000000000000000000000000000000007")
+                }, Term {
+                    id = 6,
+                    factor = decimal("-3")
+                }, Term {
+                    id = 8,
+                    factor = decimal("1")
+                }])
+    }
+    let b18 = Linear {
+        constant = decimal("0"),
+        terms = terms_from_list([Term {
+                    id = -10,
+                    factor = decimal("-1")
+                }, Term {
+                    id = -4,
+                    factor = decimal("10000000000000000000000000000000000000000000000000000000000000000000007")
+                }, Term {
+                    id = -3,
+                    factor = decimal("10000000000000000000000000000000000000000000000000000000000000000000007")
+                }, Term {
+                    id = 0,
+                    factor = decimal("-3")
+                }, Term {
+                    id = 1,
+                    factor = decimal("-1")
+                }, Term {
+                    id = 6,
+                    factor = decimal("1")
+                }])
+    }
+    let combined18 = add_scaled(a18, b18, decimal("3"))
+    let expected18 = Linear {
+        constant = decimal("100000000000000000000000000000000000000000000000000000000000000000000000000000000"),
+        terms = terms_from_list([Term {
+                    id = -10,
+                    factor = decimal("-3")
+                }, Term {
+                    id = -4,
+                    factor = decimal("30000000000000000000000000000000000000000000000000000000000000000000020")
+                }, Term {
+                    id = -3,
+                    factor = decimal("30000000000000000000000000000000000000000000000000000000000000000000021")
+                }, Term {
+                    id = 0,
+                    factor = decimal("-9")
+                }, Term {
+                    id = 1,
+                    factor = decimal("-3")
+                }, Term {
+                    id = 4,
+                    factor = decimal("10000000000000000000000000000000000000000000000000000000000000000000007")
+                }, Term {
+                    id = 8,
+                    factor = decimal("1")
+                }])
+    }
+    assert same_terms(combined18.terms, expected18.terms)
+    assert compare(combined18.constant, expected18.constant) == 0
+    let a19 = Linear {
+        constant = decimal("11"),
+        terms = terms_from_list([Term {
+                    id = -10,
+                    factor = decimal("1")
+                }, Term {
+                    id = -3,
+                    factor = decimal("-1")
+                }, Term {
+                    id = 2,
+                    factor = decimal("10000000000000000000000000000000000000000000000000000000000000000000007")
+                }, Term {
+                    id = 7,
+                    factor = decimal("-1")
+                }, Term {
+                    id = 9,
+                    factor = decimal("2")
+                }])
+    }
+    let b19 = Linear {
+        constant = decimal("-29"),
+        terms = terms_from_list([Term {
+                    id = -3,
+                    factor = decimal("-3")
+                }])
+    }
+    let combined19 = add_scaled(a19, b19, decimal("3"))
+    let expected19 = Linear {
+        constant = decimal("-76"),
+        terms = terms_from_list([Term {
+                    id = -10,
+                    factor = decimal("1")
+                }, Term {
+                    id = -3,
+                    factor = decimal("-10")
+                }, Term {
+                    id = 2,
+                    factor = decimal("10000000000000000000000000000000000000000000000000000000000000000000007")
+                }, Term {
+                    id = 7,
+                    factor = decimal("-1")
+                }, Term {
+                    id = 9,
+                    factor = decimal("2")
+                }])
+    }
+    assert same_terms(combined19.terms, expected19.terms)
+    assert compare(combined19.constant, expected19.constant) == 0
+    let a20 = Linear {
+        constant = decimal("-17"),
+        terms = terms_from_list([Term {
+                    id = -10,
+                    factor = decimal("-1")
+                }, Term {
+                    id = -7,
+                    factor = decimal("2")
+                }, Term {
+                    id = -3,
+                    factor = decimal("-1")
+                }, Term {
+                    id = 0,
+                    factor = decimal("2")
+                }, Term {
+                    id = 6,
+                    factor = decimal("2")
+                }, Term {
+                    id = 7,
+                    factor = decimal("1")
+                }])
+    }
+    let b20 = Linear {
+        constant = decimal("0"),
+        terms = terms_from_list([Term {
+                    id = -6,
+                    factor = decimal("2")
+                }, Term {
+                    id = 5,
+                    factor = decimal("2")
+                }, Term {
+                    id = 6,
+                    factor = decimal("-1")
+                }, Term {
+                    id = 8,
+                    factor = decimal("10000000000000000000000000000000000000000000000000000000000000000000007")
+                }])
+    }
+    let combined20 = add_scaled(a20, b20, decimal("1000000000000000000000000000000000000000000000000000000000001"))
+    let expected20 = Linear {
+        constant = decimal("-17"),
+        terms = terms_from_list([Term {
+                    id = -10,
+                    factor = decimal("-1")
+                }, Term {
+                    id = -7,
+                    factor = decimal("2")
+                }, Term {
+                    id = -6,
+                    factor = decimal("2000000000000000000000000000000000000000000000000000000000002")
+                }, Term {
+                    id = -3,
+                    factor = decimal("-1")
+                }, Term {
+                    id = 0,
+                    factor = decimal("2")
+                }, Term {
+                    id = 5,
+                    factor = decimal("2000000000000000000000000000000000000000000000000000000000002")
+                }, Term {
+                    id = 6,
+                    factor = decimal("-999999999999999999999999999999999999999999999999999999999999")
+                }, Term {
+                    id = 7,
+                    factor = decimal("1")
+                }, Term {
+                    id = 8,
+                    factor = decimal("10000000000000000000000000000000000000000000000000000000000010000000007000000000000000000000000000000000000000000000000000000000007")
+                }])
+    }
+    assert same_terms(combined20.terms, expected20.terms)
+    assert compare(combined20.constant, expected20.constant) == 0
+    let a21 = Linear {
+        constant = decimal("0"),
+        terms = empty_terms()
+    }
+    let b21 = Linear {
+        constant = decimal("-29"),
+        terms = terms_from_list([Term {
+                    id = -9,
+                    factor = decimal("-1")
+                }, Term {
+                    id = -7,
+                    factor = decimal("2")
+                }, Term {
+                    id = -6,
+                    factor = decimal("10000000000000000000000000000000000000000000000000000000000000000000007")
+                }, Term {
+                    id = 1,
+                    factor = decimal("-1")
+                }, Term {
+                    id = 4,
+                    factor = decimal("10000000000000000000000000000000000000000000000000000000000000000000007")
+                }, Term {
+                    id = 9,
+                    factor = decimal("10000000000000000000000000000000000000000000000000000000000000000000007")
+                }, Term {
+                    id = 10,
+                    factor = decimal("-1")
+                }])
+    }
+    let combined21 = add_scaled(a21, b21, decimal("3"))
+    let expected21 = Linear {
+        constant = decimal("-87"),
+        terms = terms_from_list([Term {
+                    id = -9,
+                    factor = decimal("-3")
+                }, Term {
+                    id = -7,
+                    factor = decimal("6")
+                }, Term {
+                    id = -6,
+                    factor = decimal("30000000000000000000000000000000000000000000000000000000000000000000021")
+                }, Term {
+                    id = 1,
+                    factor = decimal("-3")
+                }, Term {
+                    id = 4,
+                    factor = decimal("30000000000000000000000000000000000000000000000000000000000000000000021")
+                }, Term {
+                    id = 9,
+                    factor = decimal("30000000000000000000000000000000000000000000000000000000000000000000021")
+                }, Term {
+                    id = 10,
+                    factor = decimal("-3")
+                }])
+    }
+    assert same_terms(combined21.terms, expected21.terms)
+    assert compare(combined21.constant, expected21.constant) == 0
+    let a22 = Linear {
+        constant = decimal("0"),
+        terms = terms_from_list([Term {
+                    id = 0,
+                    factor = decimal("2")
+                }])
+    }
+    let b22 = Linear {
+        constant = decimal("13"),
+        terms = terms_from_list([Term {
+                    id = -3,
+                    factor = decimal("-3")
+                }, Term {
+                    id = 10,
+                    factor = decimal("-1")
+                }])
+    }
+    let combined22 = add_scaled(a22, b22, decimal("1"))
+    let expected22 = Linear {
+        constant = decimal("13"),
+        terms = terms_from_list([Term {
+                    id = -3,
+                    factor = decimal("-3")
+                }, Term {
+                    id = 0,
+                    factor = decimal("2")
+                }, Term {
+                    id = 10,
+                    factor = decimal("-1")
+                }])
+    }
+    assert same_terms(combined22.terms, expected22.terms)
+    assert compare(combined22.constant, expected22.constant) == 0
+    let a23 = Linear {
+        constant = decimal("100000000000000000000000000000000000000000000000000000000000000000000000000000000"),
+        terms = terms_from_list([Term {
+                    id = -9,
+                    factor = decimal("2")
+                }, Term {
+                    id = -5,
+                    factor = decimal("2")
+                }])
+    }
+    let b23 = Linear {
+        constant = decimal("0"),
+        terms = terms_from_list([Term {
+                    id = -6,
+                    factor = decimal("-1")
+                }, Term {
+                    id = -4,
+                    factor = decimal("-1")
+                }, Term {
+                    id = 2,
+                    factor = decimal("-3")
+                }, Term {
+                    id = 5,
+                    factor = decimal("-3")
+                }, Term {
+                    id = 10,
+                    factor = decimal("-3")
+                }])
+    }
+    let combined23 = add_scaled(a23, b23, decimal("1000000000000000000000000000000000000000000000000000000000001"))
+    let expected23 = Linear {
+        constant = decimal("100000000000000000000000000000000000000000000000000000000000000000000000000000000"),
+        terms = terms_from_list([Term {
+                    id = -9,
+                    factor = decimal("2")
+                }, Term {
+                    id = -6,
+                    factor = decimal("-1000000000000000000000000000000000000000000000000000000000001")
+                }, Term {
+                    id = -5,
+                    factor = decimal("2")
+                }, Term {
+                    id = -4,
+                    factor = decimal("-1000000000000000000000000000000000000000000000000000000000001")
+                }, Term {
+                    id = 2,
+                    factor = decimal("-3000000000000000000000000000000000000000000000000000000000003")
+                }, Term {
+                    id = 5,
+                    factor = decimal("-3000000000000000000000000000000000000000000000000000000000003")
+                }, Term {
+                    id = 10,
+                    factor = decimal("-3000000000000000000000000000000000000000000000000000000000003")
+                }])
+    }
+    assert same_terms(combined23.terms, expected23.terms)
+    assert compare(combined23.constant, expected23.constant) == 0
+}

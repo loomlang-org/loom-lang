@@ -245,9 +245,9 @@ fn loop_extent_candidates(proof Verification, candidates List[LoopCandidate], wr
                 match get(entry.locals, local) {
                     Value.Number(_) => {
                         let initial = list_value_index(get(entry.locals, local))?
-                        let offset = add(list_extent(identity, entry)?, scale(initial, integer(-1)))
+                        let offset = add_scaled(list_extent(identity, entry)?, initial, integer(-1))
                         if extent_modified(get(entry.extents, extent), entry, resized) ||
-                        (length(offset.terms) == 0 && compare(offset.constant, integer(0)) == 0) {
+                        (term_count(offset.terms) == 0 && compare(offset.constant, integer(0)) == 0) {
                             discard loop_affine_pair(proof, candidates,
                                 LoopObservation.Storage(identity), LoopObservation.Local(local, new[Int]()),
                                 integer(1), integer(-1), entry)?

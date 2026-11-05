@@ -30,7 +30,7 @@ fn list_replace_outcomes(proof Verification, ty Int, receiver_type Int, identity
     let index = list_value_index(get(inputs, 1))?
     let size = list_extent(identity, state)?
     let valid = assume(assume(state, Predicate.Compare(">=", index)),
-        Predicate.Compare("<", add(index, scale(size, integer(-1)))))
+        Predicate.Compare("<", add_scaled(index, size, integer(-1))))
     let previous = read_element_outcomes(proof, element, receiver_type, identity, index, valid)?
     let output = new[Outcome]()
     var path = 0
@@ -81,7 +81,7 @@ fn list_take_outcomes(proof Verification, ty Int, receiver_type Int, identity In
                     index = observed.index
                     value = observed.value
                     valid = Predicate.And(predicates(observed.valid,
-                            Predicate.Compare("<", add(observed.index, scale(index, integer(-1))))))
+                            Predicate.Compare("<", add_scaled(observed.index, index, integer(-1)))))
                 })
             cell = cell + 1
         }

@@ -122,7 +122,7 @@ test fn loop_goal_clauses_keep_binder_dependent_guards_inside_each_universal() {
 test fn unit_division_and_true_quantifiers_keep_definedness_separate() {
     let term = add(variable(4), constant(integer(7)))
     assert match numeric("%", term, constant(integer(1))) {
-        Result.Ok(Value.Number(value)) => length(value.terms) == 0 && compare(value.constant, integer(0)) == 0
+        Result.Ok(Value.Number(value)) => term_count(value.terms) == 0 && compare(value.constant, integer(0)) == 0
         _ => false
     }
     assert match numeric("/", term, constant(integer(1))) {

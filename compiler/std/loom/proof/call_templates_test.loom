@@ -61,7 +61,7 @@ test fn effectful_source_calls_keep_stores_and_results_within_the_existing_work_
         _ => false
     }
     assert match known_element(10, constant(integer(0)), completed.state) {
-        Result.Ok(Value.Number(value)) => length(value.terms) == 0 && compare(value.constant, integer(2)) == 0
+        Result.Ok(Value.Number(value)) => term_count(value.terms) == 0 && compare(value.constant, integer(2)) == 0
         _ => false
     }
 }

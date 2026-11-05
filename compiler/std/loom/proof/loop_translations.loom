@@ -51,13 +51,13 @@ fn loop_translation_paths(proof Verification, value Expr, paths List[LoopTransla
     if (value.kind == ExprKind.Assign || value.kind == ExprKind.Let) && value.index >= 0 &&
     value.index < length(proof.function.locals) && get(proof.function.locals, value.index).ty == 1 {
         let delta = match pure(get(value.children, 0), symbols) {
-            Result.Ok(Value.Number(next)) => add(next, scale(variable(value.index), integer(-1)))
+            Result.Ok(Value.Number(next)) => add_scaled(next, variable(value.index), integer(-1))
             _ => variable(value.index)
         }
         index = 0
         while index < length(current) {
             let path = get(current, index)
-            if length(delta.terms) == 0 {
+            if term_count(delta.terms) == 0 {
                 set(path.values, value.index, sum(get(path.values, value.index), delta.constant))
             } else {
                 set(path.known, value.index, false)

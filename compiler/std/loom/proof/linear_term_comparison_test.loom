@@ -1,0 +1,66 @@
+fn reference_same_terms(first LinearTerms, second LinearTerms, opposite Bool) Bool {
+    if term_count(first) != term_count(second) {
+        return false
+    }
+    var index = 0
+    while index < term_count(first) {
+        let a = term_at(first, index)
+        let b = term_at(second, index)
+        if a.id != b.id || compare(a.factor, if opposite {
+                negate(b.factor)
+            } else {
+                b.factor
+            }) != 0 {
+            return false
+        }
+        index = index + 1
+    }
+    true
+}
+
+test fn inline_terms_direct_comparison_matches_mathematical_integer_reference() {
+    let rows = new[LinearTerms]()
+    push(rows, empty_terms())
+    push(rows, LinearTerms.Many(new[Term]()))
+    let factors = [integer(0), integer(1), integer(-1), integer(2), integer(-2),
+        integer(-9223372036854775808), integer(9223372036854775807),
+        decimal("9223372036854775808"), decimal("-9223372036854775809"),
+        decimal("123456789012345678901234567890123456789012345678901234567890123456789")]
+    var index = 0
+    while index < length(factors) {
+        let value = get(factors, index)
+        let first = Term {
+            id = -7,
+            factor = value
+        }
+        let second = Term {
+            id = 3,
+            factor = negate(value)
+        }
+        push(rows, terms_from_list([first]))
+        push(rows, LinearTerms.Many([first]))
+        push(rows, terms_from_list([first, second]))
+        push(rows, LinearTerms.Many([first, second]))
+        push(rows, terms_from_list([second, first]))
+        push(rows, terms_from_list([first, Term {
+                        id = -7,
+                        factor = value
+                    }]))
+        push(rows, terms_from_list([first, second, first]))
+        index = index + 1
+    }
+    var left = 0
+    while left < length(rows) {
+        var right = 0
+        while right < length(rows) {
+            let first = get(rows, left)
+            let second = get(rows, right)
+            assert same_terms(first, second) == reference_same_terms(first, second, false)
+            assert opposite_terms(first, second) == reference_same_terms(first, second, true)
+            assert same_terms(first, second) == same_terms(second, first)
+            assert opposite_terms(first, second) == opposite_terms(second, first)
+            right = right + 1
+        }
+        left = left + 1
+    }
+}

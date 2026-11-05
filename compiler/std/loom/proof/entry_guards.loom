@@ -68,8 +68,7 @@ fn entry_element(proof Verification, read Expr, guard Expr, entry State) Result[
     let location = element_location(read, entry)?
     let valid = Predicate.And(predicates(
             Predicate.Compare(">=", location.index),
-            Predicate.Compare("<", add(location.index,
-                    scale(list_extent(location.identity, entry)?, integer(-1))))))
+            Predicate.Compare("<", add_scaled(location.index, list_extent(location.identity, entry)?, integer(-1)))))
     // Read validity may establish index equality, but a surrounding guard may
     // not. Never export hypothetical bounds/guards into the function entry.
     let available = difference_facts(assume(entry, valid))

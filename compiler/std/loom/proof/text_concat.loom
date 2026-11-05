@@ -89,7 +89,7 @@ fn linear_text_size_defined(size Linear, state State) Bool {
         match get(state.facts, index) {
             Predicate.Compare(relation, term) => {
                 if (relation == "<=" || relation == "<" || relation == "==") &&
-                compare(range(add(goal, scale(term, integer(-1))), state.facts).high, integer(0)) <= 0 {
+                compare(range(add_scaled(goal, term, integer(-1)), state.facts).high, integer(0)) <= 0 {
                     return true
                 }
                 if (relation == ">=" || relation == ">" || relation == "==") &&

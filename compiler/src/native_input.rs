@@ -1,6 +1,6 @@
 //! Decode the source compiler's private checked-IR stream for native codegen.
 //! This boundary checks encoding, references and finite layouts, never source
-//! names, overloads, contracts or proof. Schema: loom/artifact/artifact.loom.
+//! names, overloads, contracts or proof. Schema: std/loom/artifact/artifact.loom.
 
 use crate::model::{Binary, Primitive, Span, Type, Unary, checked as c};
 

@@ -1,0 +1,71 @@
+test fn inline_terms_preserve_order_at_every_storage_boundary() {
+    let large = decimal("123456789012345678901234567890123456789012345678901234567890123456789")
+    var count = 0
+    while count <= 33 {
+        var terms = empty_terms()
+        var index = 0
+        while index < count {
+            terms = append_built_term(terms, Term {
+                    id = index * 2 - 8
+                    factor = sum(large, integer(index))
+                })
+            assert term_count(terms) == index + 1
+            index = index + 1
+        }
+        let original = Linear {
+            constant = large
+            terms = terms
+        }
+        let doubled = add(original, original)
+        let tripled = scale(original, integer(3))
+        let cancelled = add_scaled(tripled, original, integer(-3))
+        assert term_count(original.terms) == count
+        assert term_count(doubled.terms) == count
+        assert term_count(tripled.terms) == count
+        assert term_count(cancelled.terms) == 0 && number_size(cancelled.constant) == 0
+        index = 0
+        while index < count {
+            let expected = sum(large, integer(index))
+            let source = term_at(original.terms, index)
+            assert source.id == index * 2 - 8
+            assert compare(source.factor, expected) == 0
+            assert compare(term_at(doubled.terms, index).factor, product(expected, integer(2))) == 0
+            assert compare(term_at(tripled.terms, index).factor, product(expected, integer(3))) == 0
+            index = index + 1
+        }
+        count = count + 1
+    }
+}
+
+test fn inline_terms_keep_explicit_zeros_repeated_ids_and_source_aliases() {
+    var count = 0
+    while count <= 5 {
+        let items = new[Term]()
+        var index = 0
+        while index < count {
+            push(items, Term {
+                    id = index / 2
+                    factor = integer(index - 2)
+                })
+            index = index + 1
+        }
+        let original = Linear {
+            constant = integer(7)
+            terms = terms_from_list(items)
+        }
+        assert term_count(original.terms) == count
+        assert same_terms(scale(original, integer(1)).terms, original.terms)
+        assert same_terms(add(original, constant(integer(0))).terms, original.terms)
+        discard add_scaled(original, original, integer(2))
+        assert length(items) == count
+        index = 0
+        while index < count {
+            let source = term_at(original.terms, index)
+            assert source.id == index / 2 && compare(source.factor, integer(index - 2)) == 0
+            assert get(items, index).id == source.id
+            assert compare(get(items, index).factor, source.factor) == 0
+            index = index + 1
+        }
+        count = count + 1
+    }
+}

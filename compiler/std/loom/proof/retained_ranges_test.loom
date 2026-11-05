@@ -27,7 +27,7 @@ test fn retaining_ranges_drops_storage_privacy_and_loop_frames() {
     assert holds(Predicate.Compare(">=", add(end, scale(start, integer(-1)))), after.facts)
     assert private_storage_lost(before, after)
     assert match list_extent(11, after) {
-        Result.Ok(size) => length(size.terms) != 0
+        Result.Ok(size) => term_count(size.terms) != 0
         Result.Err(_) => false
     }
 

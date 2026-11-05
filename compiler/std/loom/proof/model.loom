@@ -11,7 +11,7 @@ record Term {
 
 record Linear {
     constant Number
-    terms List[Term]
+    terms LinearTerms
 }
 
 record FunctionApplication {
@@ -232,13 +232,13 @@ record Bounds {
 fn constant(value Number) Linear {
     Linear {
         constant = value
-        terms = new[Term]()
+        terms = empty_terms()
     }
 }
 
 fn variable(index Int) Linear {
-    let terms = new[Term]()
-    push(terms, Term {
+    var terms = empty_terms()
+    terms = append_built_term(terms, Term {
             id = index
             factor = integer(1)
         })

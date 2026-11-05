@@ -76,14 +76,14 @@ test fn scalar_summary_templates_resample_data_results_at_each_call_boundary() {
     assert length(two) == 1 && get(proof.budget, 0) == remaining
     assert match get(one, 0).value {
         Value.Record(fields) => match get(fields, 1) {
-            Value.Number(value) => length(value.terms) == 0 && compare(value.constant, integer(2)) == 0
+            Value.Number(value) => term_count(value.terms) == 0 && compare(value.constant, integer(2)) == 0
             _ => false
         }
         _ => false
     }
     assert match get(two, 0).value {
         Value.Record(fields) => match get(fields, 1) {
-            Value.Number(value) => length(value.terms) == 0 && compare(value.constant, integer(3)) == 0
+            Value.Number(value) => term_count(value.terms) == 0 && compare(value.constant, integer(3)) == 0
             _ => false
         }
         _ => false

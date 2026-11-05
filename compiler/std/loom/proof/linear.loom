@@ -5,30 +5,30 @@ import std.list.length
 
 // Published term lists are read-only; identity operations can reuse them.
 fn add(a Linear, b Linear) Linear {
-    if length(a.terms) == 0 {
+    if term_count(a.terms) == 0 {
         return Linear {
             constant = sum(a.constant, b.constant)
             terms = b.terms
         }
     }
-    if length(b.terms) == 0 {
+    if term_count(b.terms) == 0 {
         return Linear {
             constant = sum(a.constant, b.constant)
             terms = a.terms
         }
     }
-    let terms = new[Term]()
+    var terms = empty_terms()
     var left = 0
     var right = 0
-    while left < length(a.terms) || right < length(b.terms) {
-        let id = if right == length(b.terms) {
-            get(a.terms, left).id
+    while left < term_count(a.terms) || right < term_count(b.terms) {
+        let id = if right == term_count(b.terms) {
+            term_at(a.terms, left).id
         } else {
-            if left == length(a.terms) {
-                get(b.terms, right).id
+            if left == term_count(a.terms) {
+                term_at(b.terms, right).id
             } else {
-                let first = get(a.terms, left).id
-                let second = get(b.terms, right).id
+                let first = term_at(a.terms, left).id
+                let second = term_at(b.terms, right).id
                 if first < second {
                     first
                 } else {
@@ -37,16 +37,16 @@ fn add(a Linear, b Linear) Linear {
             }
         }
         var factor = integer(0)
-        if left < length(a.terms) && get(a.terms, left).id == id {
-            factor = get(a.terms, left).factor
+        if left < term_count(a.terms) && term_at(a.terms, left).id == id {
+            factor = term_at(a.terms, left).factor
             left = left + 1
         }
-        if right < length(b.terms) && get(b.terms, right).id == id {
-            factor = sum(factor, get(b.terms, right).factor)
+        if right < term_count(b.terms) && term_at(b.terms, right).id == id {
+            factor = sum(factor, term_at(b.terms, right).factor)
             right = right + 1
         }
-        if length(factor.digits) != 0 {
-            push(terms, Term {
+        if number_size(factor) != 0 {
+            terms = append_built_term(terms, Term {
                     id = id
                     factor = factor
                 })
@@ -59,19 +59,19 @@ fn add(a Linear, b Linear) Linear {
 }
 
 fn scale(value Linear, factor Number) Linear {
-    if length(factor.digits) == 0 {
+    if number_size(factor) == 0 {
         return constant(factor)
     }
     if !factor.negative && unit(factor) {
         return value
     }
-    let terms = new[Term]()
+    var terms = empty_terms()
     var index = 0
-    while index < length(value.terms) {
-        let term = get(value.terms, index)
+    while index < term_count(value.terms) {
+        let term = term_at(value.terms, index)
         let coefficient = product(term.factor, factor)
-        if length(coefficient.digits) != 0 {
-            push(terms, Term {
+        if number_size(coefficient) != 0 {
+            terms = append_built_term(terms, Term {
                     id = term.id
                     factor = coefficient
                 })
@@ -84,14 +84,177 @@ fn scale(value Linear, factor Number) Linear {
     }
 }
 
-fn same_terms(a List[Term], b List[Term]) Bool {
-    if length(a) != length(b) {
+// Equivalent to add(a, scale(b, factor)), without materializing the scaled
+// term list. Keep the existing identity behavior, including sparse zero inputs.
+fn add_scaled(a Linear, b Linear, factor Number) Linear {
+    if number_size(factor) == 0 {
+        return a
+    }
+    if !factor.negative && unit(factor) {
+        return add(a, b)
+    }
+    var nonzero = false
+    var index = 0
+    while index < term_count(b.terms) && !nonzero {
+        nonzero = number_size(term_at(b.terms, index).factor) != 0
+        index = index + 1
+    }
+    if !nonzero {
+        return Linear {
+            constant = sum(a.constant, product(b.constant, factor))
+            terms = a.terms
+        }
+    }
+    var terms = empty_terms()
+    var left = 0
+    var right = 0
+    while left < term_count(a.terms) || right < term_count(b.terms) {
+        // scale removes these before add sees them. Skipping before choosing
+        // an ID also preserves behavior when a zero precedes a repeated ID.
+        while right < term_count(b.terms) && number_size(term_at(b.terms, right).factor) == 0 {
+            right = right + 1
+        }
+        if left == term_count(a.terms) && right == term_count(b.terms) {
+            break
+        }
+        let id = if right == term_count(b.terms) {
+            term_at(a.terms, left).id
+        } else {
+            if left == term_count(a.terms) {
+                term_at(b.terms, right).id
+            } else {
+                let first = term_at(a.terms, left).id
+                let second = term_at(b.terms, right).id
+                if first < second {
+                    first
+                } else {
+                    second
+                }
+            }
+        }
+        let from_left = left < term_count(a.terms) && term_at(a.terms, left).id == id
+        var coefficient = if from_left {
+            term_at(a.terms, left).factor
+        } else {
+            product(term_at(b.terms, right).factor, factor)
+        }
+        if from_left {
+            left = left + 1
+        }
+        if right < term_count(b.terms) && term_at(b.terms, right).id == id {
+            if from_left {
+                coefficient = sum(coefficient, product(term_at(b.terms, right).factor, factor))
+            }
+            right = right + 1
+        }
+        if number_size(coefficient) != 0 {
+            terms = append_built_term(terms, Term {
+                    id = id,
+                    factor = coefficient
+                })
+        }
+    }
+    Linear {
+        constant = sum(a.constant, product(b.constant, factor))
+        terms = terms
+    }
+}
+
+// Equivalent to add(scale(a, first), scale(b, second)), with one output builder
+// instead of materializing either scaled input. Identity paths retain the old
+// handling of explicit zero terms; both nonidentity scales prune input zeros.
+fn add_scaled_pair(a Linear, first Number, b Linear, second Number) Linear {
+    if number_size(first) == 0 {
+        return scale(b, second)
+    }
+    if number_size(second) == 0 {
+        return scale(a, first)
+    }
+    if !first.negative && unit(first) {
+        return add_scaled(a, b, second)
+    }
+    if !second.negative && unit(second) {
+        return add_scaled(b, a, first)
+    }
+    var terms = empty_terms()
+    var left = 0
+    var right = 0
+    while left < term_count(a.terms) || right < term_count(b.terms) {
+        while left < term_count(a.terms) && number_size(term_at(a.terms, left).factor) == 0 {
+            left = left + 1
+        }
+        while right < term_count(b.terms) && number_size(term_at(b.terms, right).factor) == 0 {
+            right = right + 1
+        }
+        if left == term_count(a.terms) && right == term_count(b.terms) {
+            break
+        }
+        let id = if right == term_count(b.terms) {
+            term_at(a.terms, left).id
+        } else if left == term_count(a.terms) {
+            term_at(b.terms, right).id
+        } else if term_at(a.terms, left).id < term_at(b.terms, right).id {
+            term_at(a.terms, left).id
+        } else {
+            term_at(b.terms, right).id
+        }
+        let from_left = left < term_count(a.terms) && term_at(a.terms, left).id == id
+        var coefficient = if from_left {
+            product(term_at(a.terms, left).factor, first)
+        } else {
+            product(term_at(b.terms, right).factor, second)
+        }
+        if from_left {
+            left = left + 1
+        }
+        if right < term_count(b.terms) && term_at(b.terms, right).id == id {
+            if from_left {
+                coefficient = sum(coefficient, product(term_at(b.terms, right).factor, second))
+            }
+            right = right + 1
+        }
+        if number_size(coefficient) != 0 {
+            terms = append_built_term(terms, Term {
+                    id = id,
+                    factor = coefficient
+                })
+        }
+    }
+    Linear {
+        constant = sum(product(a.constant, first), product(b.constant, second))
+        terms = terms
+    }
+}
+
+fn same_terms(a LinearTerms, b LinearTerms) Bool {
+    // Inline coefficients are already canonical mathematical integers. Compare
+    // them directly, without repeatedly rebuilding Numbers for equality scans.
+    match a {
+        LinearTerms.Single(identity, factor) => match b {
+            LinearTerms.Single(other_id, other_factor) => {
+                return identity == other_id && factor == other_factor
+            }
+            _ => {
+            }
+        }
+        LinearTerms.Pair(first_id, first, second_id, second) => match b {
+            LinearTerms.Pair(other_first_id, other_first, other_second_id, other_second) => {
+                return first_id == other_first_id && first == other_first &&
+                second_id == other_second_id && second == other_second
+            }
+            _ => {
+            }
+        }
+        _ => {
+        }
+    }
+    if term_count(a) != term_count(b) {
         return false
     }
     var index = 0
-    while index < length(a) {
-        let left = get(a, index)
-        let right = get(b, index)
+    while index < term_count(a) {
+        let left = term_at(a, index)
+        let right = term_at(b, index)
         if left.id != right.id || compare(left.factor, right.factor) != 0 {
             return false
         }
@@ -100,20 +263,45 @@ fn same_terms(a List[Term], b List[Term]) Bool {
     true
 }
 
-fn opposite_terms(a List[Term], b List[Term]) Bool {
-    if length(a) != length(b) {
+fn opposite_terms(a LinearTerms, b LinearTerms) Bool {
+    match a {
+        LinearTerms.Single(identity, factor) => match b {
+            LinearTerms.Single(other_id, other_factor) => {
+                return identity == other_id && opposite_machine_factors(factor, other_factor)
+            }
+            _ => {
+            }
+        }
+        LinearTerms.Pair(first_id, first, second_id, second) => match b {
+            LinearTerms.Pair(other_first_id, other_first, other_second_id, other_second) => {
+                return first_id == other_first_id && opposite_machine_factors(first, other_first) &&
+                second_id == other_second_id && opposite_machine_factors(second, other_second)
+            }
+            _ => {
+            }
+        }
+        _ => {
+        }
+    }
+    if term_count(a) != term_count(b) {
         return false
     }
     var index = 0
-    while index < length(a) {
-        let left = get(a, index)
-        let right = get(b, index)
+    while index < term_count(a) {
+        let left = term_at(a, index)
+        let right = term_at(b, index)
         if left.id != right.id || compare(left.factor, negate(right.factor)) != 0 {
             return false
         }
         index = index + 1
     }
     true
+}
+
+fn opposite_machine_factors(first Int, second Int) Bool {
+    // IntMIN has no machine-sized additive inverse. Mixed inline/list inputs
+    // use the Number comparison above, including an arbitrary-precision +2^63.
+    second != -9223372036854775808 && first == -second
 }
 
 fn same_predicates(a List[Predicate], b List[Predicate]) Bool {
@@ -317,8 +505,8 @@ fn range(value Linear, facts List[Predicate]) Bounds {
     var low = value.constant
     var high = value.constant
     var index = 0
-    while index < length(value.terms) {
-        let coefficient = get(value.terms, index)
+    while index < term_count(value.terms) {
+        let coefficient = term_at(value.terms, index)
         var bounds = Bounds {
             low = integer(-9223372036854775808)
             high = integer(9223372036854775807)
@@ -327,8 +515,8 @@ fn range(value Linear, facts List[Predicate]) Bounds {
         while fact_index < length(facts) {
             match get(facts, fact_index) {
                 Predicate.Compare(relation, term) => {
-                    if length(term.terms) == 1 && get(term.terms, 0).id == coefficient.id {
-                        let factor = get(term.terms, 0).factor
+                    if term_count(term.terms) == 1 && term_at(term.terms, 0).id == coefficient.id {
+                        let factor = term_at(term.terms, 0).factor
                         if unit(factor) {
                             bounds = if factor.negative {
                                 tighten(bounds, flip(relation), term.constant)
