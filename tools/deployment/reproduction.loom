@@ -9,6 +9,7 @@ import std.list.length
 import std.list.new
 import std.list.push
 import std.loom.project.BuildOption
+import std.loom.project.join_path
 import std.process.capture
 import std.process.ExitStatus
 import std.process.Options
@@ -105,8 +106,8 @@ pub fn reproduce_artifact(request ReproductionRequest) Result[ReproducedArtifact
         }
     }
     let directory = reproduction_directory(request.output_directory)?
-    let artifact = concat(directory, "/artifact")
-    let receipt = concat(directory, "/build.receipt")
+    let artifact = join_path(directory, "artifact")
+    let receipt = join_path(directory, "build.receipt")
     let arguments = new[Text]()
     push(arguments, compiler)
     push(arguments, "build")
