@@ -16,6 +16,14 @@ An absent, different, unknown or nonreproducible identity remains unverified.
 The returned `ArtifactAnalysis` retains its analysis and reproduction evidence
 in private state. `artifact_analysis_snapshot` returns detached editable source
 metadata; `artifact_analysis_calls` runs the existing bounded source call query.
+
+`artifact_analysis_roots` reports the actual checked source entry, tests and
+exports selected for this associated analysis. `artifact_analysis_root_calls`
+accepts only one of those source roots; a valid ordinary callee is rejected with
+`Ok(None)`. Both queries revalidate the original receipt/artifact identity and
+return detached Lists. They use the unfiltered roots matching the associated
+`native_input`; async lowering can introduce private wrappers, so these IDs are
+not native addresses or a guarantee that an original body survives optimization.
 IDs belong to that retained analysis. Changing returned metadata does not change
 it. Later source-file edits do not replace the retained snapshot: this allows
 inspection of an older deployed build. Filesystem freshness is a separate query.
