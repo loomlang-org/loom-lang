@@ -1,0 +1,154 @@
+name: native-test-partition
+
+on:
+  workflow_call:
+    inputs:
+      platform:
+        type: string
+        required: true
+      runner:
+        type: string
+        required: true
+      partition:
+        type: number
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  native-tests:
+    name: ${{ inputs.platform }} native tests (${{ inputs.partition }}/2)
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: bash
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0 # Seed reproduction resolves its pinned source commit.
+
+      - name: Install LLVM 22
+        if: ${{ inputs.platform == 'macOS' }}
+        run: |
+          brew install llvm@22
+          llvm_prefix="$(brew --prefix llvm@22)"
+          echo "LLVM_SYS_221_PREFIX=$llvm_prefix" >> "$GITHUB_ENV"
+          echo "LOOM_CC=$llvm_prefix/bin/clang" >> "$GITHUB_ENV"
+          echo "$llvm_prefix/bin" >> "$GITHUB_PATH"
+
+      - name: Install LLVM development libraries
+        if: ${{ inputs.platform == 'Linux' }}
+        run: |
+          # The runner's mirror list can hang on Azure HTTP endpoints. Keep the
+          # Ubuntu suites/keyring but use the official HTTPS archive directly.
+          sudo sed -i 's|^URIs:.*|URIs: https://archive.ubuntu.com/ubuntu/|' /etc/apt/sources.list.d/ubuntu.sources
+          curl -fsSL --connect-timeout 15 --max-time 120 --retry 3 https://apt.llvm.org/llvm-snapshot.gpg.key -o "$RUNNER_TEMP/llvm-snapshot.asc"
+          sudo install -m 644 "$RUNNER_TEMP/llvm-snapshot.asc" /usr/share/keyrings/llvm-snapshot.asc
+          echo 'deb [signed-by=/usr/share/keyrings/llvm-snapshot.asc] https://apt.llvm.org/noble/ llvm-toolchain-noble-22 main' |
+            sudo tee /etc/apt/sources.list.d/llvm-22.list
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y llvm-22-dev clang-22 libpolly-22-dev
+          llvm-config-22 --version --system-libs
+          echo 'LLVM_SYS_221_PREFIX=/usr/lib/llvm-22' >> "$GITHUB_ENV"
+          echo 'LOOM_CC=/usr/bin/clang-22' >> "$GITHUB_ENV"
+
+      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
+        if: ${{ inputs.platform == 'Windows' }}
+
+      - name: Select the MSVC linker for Rust
+        if: ${{ inputs.platform == 'Windows' }}
+        shell: pwsh
+        run: |
+          # Git Bash also provides link.exe; Cargo must use the native linker.
+          "CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER=$env:VCToolsInstallDir/bin/Hostx64/x64/link.exe" >> $env:GITHUB_ENV
+
+      - name: Install the LLVM development archive
+        if: ${{ inputs.platform == 'Windows' }}
+        shell: pwsh
+        timeout-minutes: 10
+        run: |
+          $archive = "$env:RUNNER_TEMP/llvm-dev.tar.xz"
+          curl.exe -fL --retry 3 -o $archive 'https://github.com/llvm/llvm-project/releases/download/llvmorg-22.1.8/clang%2Bllvm-22.1.8-x86_64-pc-windows-msvc.tar.xz'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ((Get-FileHash $archive -Algorithm SHA256).Hash -ne 'd96c2cc1736f4eb7fa43cb9bbdf56d93551a9ae0a9aadb9c99c3c3b2b712a234') {
+            throw 'LLVM 22.1.8 development archive checksum mismatch'
+          }
+          # Windows tar stalled on this xz archive. Decode both archive layers
+          # explicitly with 7-Zip; a single extraction only produces the tar.
+          $expanded = "$env:RUNNER_TEMP/llvm-expanded"
+          $sevenZip = "$env:ProgramFiles/7-Zip/7z.exe"
+          & $sevenZip x $archive "-o$expanded" -y -bsp0
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $sevenZip x "$expanded/llvm-dev.tar" "-o$expanded/tree" -y -bsp0
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Move-Item "$expanded/tree/clang+llvm-22.1.8-x86_64-pc-windows-msvc" C:/llvm-22
+          'LLVM_PATH=C:/llvm-22' >> $env:GITHUB_ENV
+          'C:/llvm-22/bin' >> $env:GITHUB_PATH
+
+      - name: Complete the LLVM development package
+        if: ${{ inputs.platform == 'Windows' }}
+        shell: pwsh
+        run: |
+          $systemLibraries = & "$env:LLVM_PATH/bin/llvm-config.exe" --link-static --system-libs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $systemLibraries
+          # Complete an advertised but missing dependency with a real library.
+          if ($systemLibraries -match '\bxml2s\.lib\b' -and !(Test-Path "$env:LLVM_PATH/lib/xml2s.lib")) {
+            & "$env:VCPKG_INSTALLATION_ROOT/vcpkg.exe" install 'libxml2[core]:x64-windows-static'
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            Copy-Item "$env:VCPKG_INSTALLATION_ROOT/installed/x64-windows-static/lib/libxml2.lib" "$env:LLVM_PATH/lib/xml2s.lib"
+          }
+          "LLVM_SYS_221_PREFIX=$env:LLVM_PATH" >> $env:GITHUB_ENV
+          "LOOM_CC=$env:LLVM_PATH/bin/clang-cl.exe" >> $env:GITHUB_ENV
+          & "$env:LLVM_PATH/bin/llvm-config.exe" --version --link-static --system-libs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Install the compile-time proof solver
+        run: node .github/scripts/setup-z3.mjs
+
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8
+        with:
+          toolchain: 1.88.0
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+
+      - name: Install the native test runner
+        uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2.88.0
+        with:
+          tool: cargo-nextest@0.9.150
+
+      - name: Bootstrap the source compiler
+        run: |
+          cargo fmt --all -- --check
+          if [[ "$RUNNER_OS" == 'Windows' ]]; then
+            source scripts/windows-env.sh
+            LOOM_NATIVE_TIMINGS=1 bash scripts/bootstrap.sh
+          else
+            bash scripts/bootstrap.sh
+          fi
+
+      - name: Run the native test partition
+        run: |
+          if [[ "$RUNNER_OS" == 'Windows' ]]; then
+            source scripts/windows-env.sh
+          fi
+          node -e 'console.log(JSON.stringify({platform:process.platform,cpus:require("node:os").availableParallelism()}))'
+          cargo nextest list --locked --workspace --message-format json > target/native-test-manifest.json
+          cargo nextest run --locked --workspace --profile ci --test-threads 2 --no-fail-fast --partition slice:${{ inputs.partition }}/2
+
+      - name: Preserve the full manifest and partition results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-tests-${{ inputs.platform }}-${{ inputs.partition }}
+          path: |
+            target/native-test-manifest.json
+            target/nextest/ci/junit.xml
+          if-no-files-found: error
+          retention-days: 7
