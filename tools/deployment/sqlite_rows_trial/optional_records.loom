@@ -1,0 +1,171 @@
+import std.bytes.new
+import std.bytes.push
+
+pub type CanonicalNullableAmount = Int where self > 0
+
+pub record CanonicalNullableFields {
+    id Int
+    payload Bytes
+    count Option[Int]
+    enabled Option[Bool]
+    note Option[Bytes]
+    amount Option[CanonicalNullableAmount]
+}
+
+pub type CanonicalNullableRow = CanonicalNullableFields where self.id >= 0
+
+fn nullable_row_accepts(id Int, amount Int, present Bool) Bool {
+    let checked = match CanonicalNullableAmount(amount) {
+        Result.Ok(value) => Option.Some(value)
+        Result.Err(_) => Option.None
+    }
+    if present && match checked {
+        Option.None => true
+        _ => false
+    } {
+        return false
+    }
+    match CanonicalNullableRow(CanonicalNullableFields {
+            id = id
+            payload = std.bytes.new()
+            count = Option.None
+            enabled = Option.None
+            note = Option.None
+            amount = if present {
+                checked
+            } else {
+                Option.None
+            }
+        }) {
+        Result.Ok(_) => true
+        Result.Err(_) => false
+    }
+}
+
+fn check_canonical_optional_records(tool Text, database Text) {
+    let prepared = match sqlite_record_codec[CanonicalNullableRow](Table {
+            id = "nullable"
+            physical_name = "canonical nullable rows"
+            columns = [column("payload", "binary payload", ValueKind.Bytes, false),
+                column("count", "count", ValueKind.Int, true),
+                column("enabled", "enabled", ValueKind.Int, true),
+                column("note", "note", ValueKind.Bytes, true),
+                column("amount", "amount", ValueKind.Int, true),
+                column("id", "row id", ValueKind.Int, false)]
+        }) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            assert false
+            return
+        }
+    }
+    let codec = sqlite_codec_rows(prepared)
+    sql(tool, database, concat("CREATE TABLE \"canonical nullable rows\" (\"binary payload\", count, enabled, note, amount, \"row id\", ",
+            concat(sqlite_codec_check(prepared), ");")))
+    let ids = [-1, 0, 9223372036854775807]
+    let amounts = [-1, 0, 1, 9223372036854775807]
+    var key = 0
+    while key < std.list.length(ids) {
+        var amount = 0
+        while amount < std.list.length(amounts) {
+            var present = 0
+            while present < 2 {
+                let id = std.list.get(ids, key)
+                let value = std.list.get(amounts, amount)
+                let expected = nullable_row_accepts(id, value, present == 1)
+                let amount_sql = if present == 1 {
+                    std.int.to_text(value)
+                } else {
+                    "NULL"
+                }
+                let row = std.text.join(["x'00FF7C0A'", "NULL", "NULL", "NULL", amount_sql, std.int.to_text(id)], ",")
+                assert source_check_rejected(tool, database, concat("INSERT INTO \"canonical nullable rows\" VALUES (", concat(row, ");"))) != expected
+                present = present + 1
+            }
+            amount = amount + 1
+        }
+        key = key + 1
+    }
+    let invalid = ["(NULL,NULL,NULL,NULL,NULL,0)", "('blob',NULL,NULL,NULL,NULL,0)",
+        "(x'',1.0,NULL,NULL,NULL,0)", "(x'','1',NULL,NULL,NULL,0)",
+        "(x'',NULL,2,NULL,NULL,0)", "(x'',NULL,'1',NULL,NULL,0)",
+        "(x'',NULL,NULL,'',NULL,0)", "(x'',NULL,NULL,1,NULL,0)",
+        "(x'',NULL,NULL,NULL,0,0)", "(x'',NULL,NULL,NULL,-1,0)",
+        "(x'',NULL,NULL,NULL,NULL,NULL)"]
+    var index = 0
+    while index < std.list.length(invalid) {
+        assert source_check_rejected(tool, database, concat("INSERT INTO \"canonical nullable rows\" VALUES ", concat(std.list.get(invalid, index), ";")))
+        index = index + 1
+    }
+    let bytes = std.bytes.new()
+    std.bytes.push(bytes, 0)
+    std.bytes.push(bytes, 255)
+    assert match insert_sqlite_rows(tool, database, codec, [CanonicalNullableRow(CanonicalNullableFields {
+                    id = 7
+                    payload = bytes
+                    count = Option.Some(-9223372036854775808)
+                    enabled = Option.Some(false)
+                    note = Option.Some(std.bytes.new())
+                    amount = Option.Some(CanonicalNullableAmount(1))
+                })]) {
+        Result.Ok(true) => true
+        _ => false
+    }
+    let rows = match read_sqlite_rows(tool, database, codec) {
+        Result.Ok(values) => values
+        Result.Err(_) => {
+            assert false
+            return
+        }
+    }
+    var found = false
+    index = 0
+    while index < std.list.length(rows) {
+        let row = std.list.get(rows, index)
+        assert row.id >= 0
+        if row.id == 7 {
+            assert !found
+            found = true
+            assert std.bytes.length(row.payload) == 2 && std.bytes.get(row.payload, 1) == 255
+            assert match row.count {
+                Option.Some(-9223372036854775808) => true,
+                _ => false
+            }
+            assert match row.enabled {
+                Option.Some(false) => true,
+                _ => false
+            }
+            assert match row.note {
+                Option.Some(value) => std.bytes.length(value) == 0,
+                _ => false
+            }
+            assert match row.amount {
+                Option.Some(1) => true,
+                _ => false
+            }
+        }
+        index = index + 1
+    }
+    assert found
+    assert source_check_rejected(tool, database, "UPDATE \"canonical nullable rows\" SET enabled=2;")
+    assert source_check_rejected(tool, database, "UPDATE \"canonical nullable rows\" SET note='not a blob';")
+    assert source_check_rejected(tool, database, "UPDATE \"canonical nullable rows\" SET amount=0;")
+    sql(tool, database, "UPDATE \"canonical nullable rows\" SET count=NULL,enabled=NULL,note=NULL,amount=NULL;")
+    let cleared = match read_sqlite_rows(tool, database, codec) {
+        Result.Ok(values) => values
+        Result.Err(_) => {
+            assert false
+            return
+        }
+    }
+    assert std.list.length(cleared) == std.list.length(rows)
+    index = 0
+    while index < std.list.length(cleared) {
+        let row = std.list.get(cleared, index)
+        assert match (row.count, row.enabled, row.note, row.amount) {
+            (Option.None, Option.None, Option.None, Option.None) => true
+            _ => false
+        }
+        index = index + 1
+    }
+}
