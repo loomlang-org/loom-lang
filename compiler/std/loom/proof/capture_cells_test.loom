@@ -215,7 +215,7 @@ test fn capture_cell_stores_and_reads_share_versions_without_freezing_contents()
         })
     let extent = get(state.extents, 0)
     assert extent.fixed_extent && !extent.read_only && !extent.private_storage
-    assert compare(extent.size.constant, integer(1)) == 0 && length(extent.size.terms) == 0
+    assert compare(extent.size.constant, integer(1)) == 0 && term_count(extent.size.terms) == 0
 }
 
 test fn capture_cell_loops_and_call_frames_use_the_actual_write_footprint() {
@@ -245,7 +245,7 @@ test fn capture_cell_loops_and_call_frames_use_the_actual_write_footprint() {
     assert frame_function(program, setter, [Value.List(10)], state, writes, [256], 0)
     assert length(writes) == 1 && get(writes, 0).identity == 10
     assert match get(writes, 0).index {
-        Value.Number(index) => length(index.terms) == 0 && compare(index.constant, integer(0)) == 0
+        Value.Number(index) => term_count(index.terms) == 0 && compare(index.constant, integer(0)) == 0
         _ => false
     }
     let modified = new[Int]()

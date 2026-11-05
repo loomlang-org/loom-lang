@@ -3,38 +3,38 @@ test fn scaled_add_matches_composition_for_sparse_exact_and_shared_inputs() {
     let large = decimal("123456789012345678901234567890")
     let rows = [constant(zero), constant(large), variable(2), Linear {
             constant = negate(large)
-            terms = [Term {
-                    id = -1,
-                    factor = zero
-                },
-                Term {
-                    id = 2,
-                    factor = integer(-3)
-                },
-                Term {
-                    id = 7,
-                    factor = large
-                }]
+            terms = terms_from_list([Term {
+                        id = -1,
+                        factor = zero
+                    },
+                    Term {
+                        id = 2,
+                        factor = integer(-3)
+                    },
+                    Term {
+                        id = 7,
+                        factor = large
+                    }])
         }, Linear {
             constant = large
-            terms = [Term {
-                    id = 2,
-                    factor = zero
-                },
-                Term {
-                    id = 2,
-                    factor = integer(3)
-                },
-                Term {
-                    id = 8,
-                    factor = zero
-                }]
+            terms = terms_from_list([Term {
+                        id = 2,
+                        factor = zero
+                    },
+                    Term {
+                        id = 2,
+                        factor = integer(3)
+                    },
+                    Term {
+                        id = 8,
+                        factor = zero
+                    }])
         }, Linear {
             constant = large
-            terms = [Term {
-                    id = 2,
-                    factor = zero
-                }]
+            terms = terms_from_list([Term {
+                        id = 2,
+                        factor = zero
+                    }])
         }]
     let factors = [zero, integer(1), integer(-1), integer(2), large, negate(large)]
     var left = 0
@@ -56,8 +56,8 @@ test fn scaled_add_matches_composition_for_sparse_exact_and_shared_inputs() {
         }
         left = left + 1
     }
-    assert length(get(rows, 3).terms) == 3
-    assert compare(get(get(rows, 3).terms, 1).factor, integer(-3)) == 0
-    assert length(get(rows, 4).terms) == 3
-    assert number_size(get(get(rows, 4).terms, 0).factor) == 0
+    assert term_count(get(rows, 3).terms) == 3
+    assert compare(term_at(get(rows, 3).terms, 1).factor, integer(-3)) == 0
+    assert term_count(get(rows, 4).terms) == 3
+    assert number_size(term_at(get(rows, 4).terms, 0).factor) == 0
 }

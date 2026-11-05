@@ -20,8 +20,8 @@ fn smt_prefix(writer SmtWriter, before Int, after Int, size Linear) Result[Text,
     let sorts = std.bytes.new()
     let arguments = std.bytes.new()
     var index = 0
-    while index < length(size.terms) {
-        let term = get(size.terms, index)
+    while index < term_count(size.terms) {
+        let term = term_at(size.terms, index)
         if term.id < 0 {
             smt_append(sorts, " Int")
             smt_append(arguments, concat(" n", std.int.to_text(term.id)))

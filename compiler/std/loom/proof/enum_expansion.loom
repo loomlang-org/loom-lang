@@ -140,7 +140,7 @@ fn helper_match(context Expansion, source Expr, path HelperPath, locals List[Loc
 fn projection_index(value Value) Result[Int, Text] {
     match value {
         Value.Number(number) => {
-            if length(number.terms) == 0 {
+            if term_count(number.terms) == 0 {
                 return machine(number.constant)
             }
         }

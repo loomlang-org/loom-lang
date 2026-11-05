@@ -372,7 +372,7 @@ fn bag_needle_column(inputs List[PredicateKey], bound Int) Option[BagColumn] {
 fn bag_from_counts(value Predicate) Option[Predicate] {
     match value {
         Predicate.Forall(identity, start, end, conditions) => {
-            if length(start.terms) != 0 || compare(start.constant, integer(0)) != 0 || length(conditions) != 1 {
+            if term_count(start.terms) != 0 || compare(start.constant, integer(0)) != 0 || length(conditions) != 1 {
                 return Option.None
             }
             match get(conditions, 0) {
@@ -499,7 +499,7 @@ fn bag_fact(value Predicate, facts List[Predicate]) Predicate {
 fn pointwise_bag(value Predicate) Option[Predicate] {
     match value {
         Predicate.Forall(identity, start, end, conditions) => {
-            if length(start.terms) != 0 || compare(start.constant, integer(0)) != 0 || length(conditions) != 1 {
+            if term_count(start.terms) != 0 || compare(start.constant, integer(0)) != 0 || length(conditions) != 1 {
                 return Option.None
             }
             match get(conditions, 0) {

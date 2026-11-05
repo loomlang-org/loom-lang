@@ -3,12 +3,12 @@
 // and adds an established zero. Relations therefore keep their direction,
 // without division, rounding, machine overflow or assumptions about divisibility.
 fn affine_size(value Linear) Bool {
-    if length(value.terms) > 32 || number_size(value.constant) > 16 {
+    if term_count(value.terms) > 32 || number_size(value.constant) > 16 {
         return false
     }
     var index = 0
-    while index < length(value.terms) {
-        if number_size(get(value.terms, index).factor) > 16 {
+    while index < term_count(value.terms) {
+        if number_size(term_at(value.terms, index).factor) > 16 {
             return false
         }
         index = index + 1
@@ -18,8 +18,8 @@ fn affine_size(value Linear) Bool {
 
 fn affine_coefficient(value Linear, id Int) Number {
     var index = 0
-    while index < length(value.terms) {
-        let term = get(value.terms, index)
+    while index < term_count(value.terms) {
+        let term = term_at(value.terms, index)
         if term.id == id {
             return term.factor
         }
@@ -42,7 +42,7 @@ fn affine_reduce(value Linear, basis List[Linear], budget List[Int]) Result[Line
             return Result.Err("affine proof work budget exhausted")
         }
         let row = get(basis, index)
-        let pivot = get(row.terms, 0)
+        let pivot = term_at(row.terms, 0)
         let factor = affine_coefficient(reduced, pivot.id)
         if number_size(factor) != 0 {
             reduced = add_scaled(scale(reduced, pivot.factor), row, negate(factor))
@@ -56,12 +56,12 @@ fn affine_reduce(value Linear, basis List[Linear], budget List[Int]) Result[Line
 }
 
 fn affine_consequence(relation Text, value Linear, operator Text, premise Linear) Bool {
-    if length(value.terms) == 0 || length(premise.terms) == 0 ||
-    get(value.terms, 0).id != get(premise.terms, 0).id {
+    if term_count(value.terms) == 0 || term_count(premise.terms) == 0 ||
+    term_at(value.terms, 0).id != term_at(premise.terms, 0).id {
         return false
     }
-    let first = get(value.terms, 0).factor
-    let second = get(premise.terms, 0).factor
+    let first = term_at(value.terms, 0).factor
+    let second = term_at(premise.terms, 0).factor
     let goal = scale(value, if second.negative {
             negate(second)
         } else {
@@ -88,7 +88,7 @@ fn affine_consequence(relation Text, value Linear, operator Text, premise Linear
 fn insert_affine_row(basis List[Linear], row Linear) {
     var position = length(basis)
     push(basis, row)
-    while position > 0 && get(get(basis, position - 1).terms, 0).id > get(row.terms, 0).id {
+    while position > 0 && term_at(get(basis, position - 1).terms, 0).id > term_at(row.terms, 0).id {
         set(basis, position, get(basis, position - 1))
         position = position - 1
     }
@@ -105,7 +105,7 @@ fn affine_query(relation Text, value Linear, facts List[Predicate]) Result[Bool,
             Predicate.Compare(operator, term) => {
                 if operator == "==" {
                     var row = affine_reduce(term, basis, budget)?
-                    if length(row.terms) == 0 {
+                    if term_count(row.terms) == 0 {
                         if number_size(row.constant) != 0 {
                             // An actual combination of established equalities
                             // is inconsistent; there is no reachable input.
@@ -115,7 +115,7 @@ fn affine_query(relation Text, value Linear, facts List[Predicate]) Result[Bool,
                         if length(basis) >= 32 {
                             return Result.Err("affine proof rank budget exhausted")
                         }
-                        if get(row.terms, 0).factor.negative {
+                        if term_at(row.terms, 0).factor.negative {
                             row = scale(row, integer(-1))
                         }
                         // Keep pivots sorted. Later rows cannot reintroduce a

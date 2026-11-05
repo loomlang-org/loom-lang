@@ -175,9 +175,9 @@ fn smt_linear(writer SmtWriter, value Linear) Result[Text, Text] {
     let output = std.bytes.new()
     smt_append(output, concat("(+ ", smt_number(value.constant)))
     var index = 0
-    while index < length(value.terms) {
+    while index < term_count(value.terms) {
         discard smt_step(writer, 0)?
-        let term = get(value.terms, index)
+        let term = term_at(value.terms, index)
         let name = smt_name(writer, "n", term.id, "Int")
         smt_append(output, concat(" (* ", concat(smt_number(term.factor), concat(" ", concat(name, ")")))))
         index = index + 1

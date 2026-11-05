@@ -502,13 +502,13 @@ fn cut_linked_goals(value Predicate, roots List[Linear], goals List[Linear], bud
         return
     }
     match value {
-        Predicate.Compare(_, term) => if length(term.terms) == 2 {
+        Predicate.Compare(_, term) => if term_count(term.terms) == 2 {
             var root = 0
             var linked = false
             while root < length(roots) && !linked {
                 var part = 0
-                while part < length(term.terms) && !linked {
-                    linked = order_mentions(get(roots, root), get(term.terms, part).id)
+                while part < term_count(term.terms) && !linked {
+                    linked = order_mentions(get(roots, root), term_at(term.terms, part).id)
                     part = part + 1
                 }
                 root = root + 1
@@ -581,8 +581,8 @@ fn cut_saved_reads(goals List[Linear], facts List[Predicate], reads List[Arithme
                 var relevant = false
                 while goal < length(goals) && !relevant {
                     var term = 0
-                    while term < length(value.terms) && !relevant {
-                        relevant = order_mentions(get(goals, goal), get(value.terms, term).id)
+                    while term < term_count(value.terms) && !relevant {
+                        relevant = order_mentions(get(goals, goal), term_at(value.terms, term).id)
                         term = term + 1
                     }
                     goal = goal + 1
@@ -632,8 +632,8 @@ fn cut_path(scan ArithmeticScan, first ArithmeticRead, second ArithmeticRead) Op
     if retained > length(scan.scope) {
         let outer = get(scope, retained - 1)
         var term = 0
-        while term < length(second.index.terms) {
-            let coefficient = get(second.index.terms, term)
+        while term < term_count(second.index.terms) {
+            let coefficient = term_at(second.index.terms, term)
             if coefficient.id == outer.identity && compare(coefficient.factor, integer(1)) == 0 &&
             !order_mentions(first.index, outer.identity) && !order_mentions(offset, outer.identity) &&
             !order_mentions(outer.end, outer.identity) && !cut_mentions(scan.guard, outer.identity) {

@@ -19,7 +19,7 @@ fn unary(operator Text, value Value) Result[Value, Text] {
         let term = integer_term(value)?
         match term {
             IntegerTerm.Linear(number) => {
-                if length(number.terms) == 0 {
+                if term_count(number.terms) == 0 {
                     return Result.Ok(Value.Number(constant(integer(~machine(number.constant)?))))
                 }
             }
@@ -54,7 +54,7 @@ fn unary(operator Text, value Value) Result[Value, Text] {
 
 fn numeric(operator Text, a Linear, b Linear) Result[Value, Text] {
     if integer_bitwise(operator) {
-        if length(a.terms) == 0 && length(b.terms) == 0 {
+        if term_count(a.terms) == 0 && term_count(b.terms) == 0 {
             return integer_bitwise_literal(operator, machine(a.constant)?, machine(b.constant)?)
         }
         return integer_operation(operator, IntegerTerm.Linear(a), IntegerTerm.Linear(b))
@@ -66,16 +66,16 @@ fn numeric(operator Text, a Linear, b Linear) Result[Value, Text] {
         return Result.Ok(Value.Number(add_scaled(a, b, integer(-1))))
     }
     if operator == "*" {
-        if length(a.terms) == 0 {
+        if term_count(a.terms) == 0 {
             return Result.Ok(Value.Number(scale(b, a.constant)))
         }
-        if length(b.terms) == 0 {
+        if term_count(b.terms) == 0 {
             return Result.Ok(Value.Number(scale(a, b.constant)))
         }
         return integer_operation(operator, IntegerTerm.Linear(a), IntegerTerm.Linear(b))
     }
     if operator == "/" || operator == "%" {
-        if length(b.terms) == 0 && compare(b.constant, integer(1)) == 0 {
+        if term_count(b.terms) == 0 && compare(b.constant, integer(1)) == 0 {
             // Positive one is defined even at MIN. Keep the separate source
             // evaluation obligations; in particular MIN / -1 is not reduced.
             return Result.Ok(Value.Number(if operator == "/" {
@@ -84,7 +84,7 @@ fn numeric(operator Text, a Linear, b Linear) Result[Value, Text] {
                         constant(integer(0))
                     }))
         }
-        if length(a.terms) != 0 || length(b.terms) != 0 {
+        if term_count(a.terms) != 0 || term_count(b.terms) != 0 {
             return integer_operation(operator, IntegerTerm.Linear(a), IntegerTerm.Linear(b))
         }
         let left = machine(a.constant)?

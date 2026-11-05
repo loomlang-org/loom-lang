@@ -185,8 +185,8 @@ fn same_loop_graph_root(first ListExtent, second ListExtent) Bool {
     first.identity == second.identity && first.frontier == second.frontier &&
     same_projection(first.unreachable, second.unreachable) &&
     same_projection(first.element_unreachable, second.element_unreachable) &&
-    ((length(first.size.terms) == 0 && number_size(first.size.constant) == 0) ==
-        (length(second.size.terms) == 0 && number_size(second.size.constant) == 0))
+    ((term_count(first.size.terms) == 0 && number_size(first.size.constant) == 0) ==
+        (term_count(second.size.terms) == 0 && number_size(second.size.constant) == 0))
 }
 
 // Exact inputs to graph/element exclusion tests can be reused. Scalar contents

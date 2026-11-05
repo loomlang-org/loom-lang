@@ -57,7 +57,7 @@ fn loop_translation_paths(proof Verification, value Expr, paths List[LoopTransla
         index = 0
         while index < length(current) {
             let path = get(current, index)
-            if length(delta.terms) == 0 {
+            if term_count(delta.terms) == 0 {
                 set(path.values, value.index, sum(get(path.values, value.index), delta.constant))
             } else {
                 set(path.known, value.index, false)

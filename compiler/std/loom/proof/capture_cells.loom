@@ -61,7 +61,7 @@ fn input_capture_cells(proof Verification, ty Int, value Value, state State, dep
 fn fixed_capture_cell(identity Int, state State) State {
     match list_state(identity, state) {
         Result.Ok(extent) => {
-            if extent.fixed_extent && length(extent.size.terms) == 0 &&
+            if extent.fixed_extent && term_count(extent.size.terms) == 0 &&
             compare(extent.size.constant, integer(1)) == 0 {
                 return state
             }

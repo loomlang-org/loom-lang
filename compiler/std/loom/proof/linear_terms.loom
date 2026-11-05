@@ -1,0 +1,79 @@
+import std.list.new
+import std.list.push
+import std.list.get
+import std.list.length
+
+// Published sequences are immutable. Common constant, single-variable and
+// difference expressions keep their terms inline, without a managed list.
+enum LinearTerms {
+    Empty
+    Single(Term)
+    Pair(Term, Term)
+    Many(List[Term])
+}
+
+fn empty_terms() LinearTerms {
+    LinearTerms.Empty
+}
+
+fn term_count(values LinearTerms) Int {
+    match values {
+        LinearTerms.Empty => 0
+        LinearTerms.Single(_) => 1
+        LinearTerms.Pair(_, _) => 2
+        LinearTerms.Many(items) => length(items)
+    }
+}
+
+fn term_at(values LinearTerms, index Int) Term {
+    match values {
+        LinearTerms.Single(first) => if index == 0 {
+            first
+        } else {
+            get(new[Term](), index)
+        }
+        LinearTerms.Pair(first, second) => if index == 0 {
+            first
+        } else if index == 1 {
+            second
+        } else {
+            get(new[Term](), index)
+        }
+        LinearTerms.Many(items) => get(items, index)
+        LinearTerms.Empty => get(new[Term](), index)
+    }
+}
+
+// Construction only: every caller starts at Empty and keeps sole ownership of
+// the builder until publication. Never append to a published input sequence.
+fn append_built_term(values LinearTerms, value Term) LinearTerms {
+    match values {
+        LinearTerms.Empty => LinearTerms.Single(value)
+        LinearTerms.Single(first) => LinearTerms.Pair(first, value)
+        LinearTerms.Pair(first, second) => {
+            let items = new[Term](4)
+            push(items, first)
+            push(items, second)
+            push(items, value)
+            LinearTerms.Many(items)
+        }
+        LinearTerms.Many(items) => {
+            push(items, value)
+            values
+        }
+    }
+}
+
+// Preserve fixture inputs and arbitrary lengths, including explicit zeros and
+// repeated IDs; normalization still belongs to the existing arithmetic.
+fn terms_from_list(items List[Term]) LinearTerms {
+    if length(items) == 0 {
+        LinearTerms.Empty
+    } else if length(items) == 1 {
+        LinearTerms.Single(get(items, 0))
+    } else if length(items) == 2 {
+        LinearTerms.Pair(get(items, 0), get(items, 1))
+    } else {
+        LinearTerms.Many(items)
+    }
+}

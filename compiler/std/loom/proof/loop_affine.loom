@@ -93,7 +93,7 @@ fn loop_affine_rates(proof Verification, expr Expr, symbols State, rates List[Li
         match loop_affine_update(proof, get(expr.children, 0), symbols, hints) {
             Result.Ok(Value.Number(next)) => {
                 let delta = add_scaled(next, variable(expr.index), integer(-1))
-                if length(delta.terms) == 0 && number_size(delta.constant) != 0 {
+                if term_count(delta.terms) == 0 && number_size(delta.constant) != 0 {
                     let choices = get(rates, expr.index)
                     var found = false
                     var index = 0

@@ -5,7 +5,7 @@ fn list_element_frame(root ListExtent, target ListExtent) Bool {
     if target.birth_floor < 0 || !target.private_storage {
         return false
     }
-    (length(root.size.terms) == 0 && number_size(root.size.constant) == 0) ||
+    (term_count(root.size.terms) == 0 && number_size(root.size.constant) == 0) ||
     storage_identity_member(root.element_unreachable, target.identity) ||
     list_graph_frame(root, target)
 }

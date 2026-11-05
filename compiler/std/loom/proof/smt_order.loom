@@ -7,8 +7,8 @@ record OrderStep {
 
 fn order_mentions(value Linear, identity Int) Bool {
     var index = 0
-    while index < length(value.terms) {
-        if get(value.terms, index).id == identity {
+    while index < term_count(value.terms) {
+        if term_at(value.terms, index).id == identity {
             return true
         }
         index = index + 1

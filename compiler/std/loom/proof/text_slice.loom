@@ -125,7 +125,7 @@ fn text_range(text TextValue, start IntegerTerm, end IntegerTerm) TextValue {
         TextValue.Literal(literal) => match start {
             IntegerTerm.Linear(first) => match end {
                 IntegerTerm.Linear(last) => {
-                    if length(first.terms) == 0 && length(last.terms) == 0 {
+                    if term_count(first.terms) == 0 && term_count(last.terms) == 0 {
                         match machine(first.constant) {
                             Result.Ok(a) => match machine(last.constant) {
                                 Result.Ok(b) => {

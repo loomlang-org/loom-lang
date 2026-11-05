@@ -8,7 +8,7 @@ fn histogram_enum_type_guard(value Predicate) Bool {
         Predicate.IntegerCompare(relation, first, second) => match first {
             IntegerTerm.Select(_, path, _) => match second {
                 IntegerTerm.Linear(tag) => relation == "!=" && length(path) > 0 &&
-                get(path, length(path) - 1) == -1 && length(tag.terms) == 0 &&
+                get(path, length(path) - 1) == -1 && term_count(tag.terms) == 0 &&
                 compare(tag.constant, integer(0)) >= 0
                 _ => false
             }
@@ -34,7 +34,7 @@ fn loop_histogram_type_bound(value Predicate, depth Int) Bool {
         Predicate.IntegerCompare(relation, term, right) => {
             match right {
                 IntegerTerm.Linear(limit) => {
-                    if length(limit.terms) != 0 {
+                    if term_count(limit.terms) != 0 {
                         return false
                     }
                     let upper = relation == "<=" && compare(limit.constant, integer(9223372036854775807)) == 0
