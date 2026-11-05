@@ -160,6 +160,72 @@ fn add_scaled(a Linear, b Linear, factor Number) Linear {
     }
 }
 
+// Equivalent to add(scale(a, first), scale(b, second)), with one output builder
+// instead of materializing either scaled input. Identity paths retain the old
+// handling of explicit zero terms; both nonidentity scales prune input zeros.
+fn add_scaled_pair(a Linear, first Number, b Linear, second Number) Linear {
+    if number_size(first) == 0 {
+        return scale(b, second)
+    }
+    if number_size(second) == 0 {
+        return scale(a, first)
+    }
+    if !first.negative && unit(first) {
+        return add_scaled(a, b, second)
+    }
+    if !second.negative && unit(second) {
+        return add_scaled(b, a, first)
+    }
+    var terms = empty_terms()
+    var left = 0
+    var right = 0
+    while left < term_count(a.terms) || right < term_count(b.terms) {
+        while left < term_count(a.terms) && number_size(term_at(a.terms, left).factor) == 0 {
+            left = left + 1
+        }
+        while right < term_count(b.terms) && number_size(term_at(b.terms, right).factor) == 0 {
+            right = right + 1
+        }
+        if left == term_count(a.terms) && right == term_count(b.terms) {
+            break
+        }
+        let id = if right == term_count(b.terms) {
+            term_at(a.terms, left).id
+        } else if left == term_count(a.terms) {
+            term_at(b.terms, right).id
+        } else if term_at(a.terms, left).id < term_at(b.terms, right).id {
+            term_at(a.terms, left).id
+        } else {
+            term_at(b.terms, right).id
+        }
+        let from_left = left < term_count(a.terms) && term_at(a.terms, left).id == id
+        var coefficient = if from_left {
+            product(term_at(a.terms, left).factor, first)
+        } else {
+            product(term_at(b.terms, right).factor, second)
+        }
+        if from_left {
+            left = left + 1
+        }
+        if right < term_count(b.terms) && term_at(b.terms, right).id == id {
+            if from_left {
+                coefficient = sum(coefficient, product(term_at(b.terms, right).factor, second))
+            }
+            right = right + 1
+        }
+        if number_size(coefficient) != 0 {
+            terms = append_built_term(terms, Term {
+                    id = id,
+                    factor = coefficient
+                })
+        }
+    }
+    Linear {
+        constant = sum(product(a.constant, first), product(b.constant, second))
+        terms = terms
+    }
+}
+
 fn same_terms(a LinearTerms, b LinearTerms) Bool {
     // Inline coefficients are already canonical mathematical integers. Compare
     // them directly, without repeatedly rebuilding Numbers for equality scans.
