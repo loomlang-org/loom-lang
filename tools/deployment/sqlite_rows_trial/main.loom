@@ -194,4 +194,5 @@ fn main() {
     check_refined_record_rows(tool, database)
     check_source_record_constraints(tool, database)
     check_canonical_record_constraints(tool, database)
+    check_canonical_optional_records(tool, database)
 }

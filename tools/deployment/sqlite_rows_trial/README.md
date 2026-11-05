@@ -44,6 +44,16 @@ rows and typed insertion decode through the same prepared codec. This closes
 the unreferenced-field gap for the admitted canonical Int/Bool record domain,
 without certifying arbitrary codecs or application/deployment compatibility.
 
+The canonical nullable-record trial uses the same factory for binary fields and
+one `Option` layer over canonical Int, Bool, Bytes or an admitted refinement.
+It checks each field's storage class and nullability against the frozen mapping.
+SQL NULL represents `None`; empty blobs remain `Some(empty)` for optional Bytes.
+Twenty-four constructor versus raw INSERT controls, eleven wrong-class/domain
+controls, typed insertion/readback and invalid UPDATEs exercise real SQLite.
+Nested options, same-shaped user enums, untranslated optional/content predicates
+and unsupported scalar types reject. Bytes retain their ordinary mutable alias
+semantics; this factory does not freeze content or prove writer compatibility.
+
 The trusted CLI runs one read-only SELECT, with literal arguments and quoted
 identifiers; user startup commands are disabled. Cells use tagged hexadecimal
 payloads, including SQLite CLI's
