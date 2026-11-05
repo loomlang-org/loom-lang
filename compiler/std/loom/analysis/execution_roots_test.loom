@@ -1,0 +1,77 @@
+fn execution_roots_entry_is(entry Option[Int], expected Int) Bool {
+    match entry {
+        Option.Some(value) => value == expected
+        Option.None => expected < 0
+    }
+}
+
+test fn execution_roots_use_checked_selection_and_detach_mutable_lists() {
+    let analysis = published(input("""
+        fn helper(value Int) Int { value }
+        pub fn exported() Int { helper(7) }
+        fn main() { discard helper(3) }
+        """))
+    let root = call_closure_named(analysis, "main")
+    let exported = call_closure_named(analysis, "exported")
+    let helper = call_closure_named(analysis, "helper")
+    let selected = execution_roots(analysis)
+    assert execution_roots_entry_is(selected.entry, root)
+    assert length(selected.tests) == 0 && length(selected.test_names) == 0
+    assert length(selected.exports) == 1 && get(selected.exports, 0) == exported
+    assert !call_closure_contains(selected.exports, helper)
+    set(selected.exports, 0, helper)
+    push(selected.tests, helper)
+    push(selected.test_names, "invented")
+    let repeated = execution_roots(analysis)
+    assert execution_roots_entry_is(repeated.entry, root)
+    assert length(repeated.exports) == 1 && get(repeated.exports, 0) == exported
+    assert length(repeated.tests) == 0 && length(repeated.test_names) == 0
+    let bytes = native_input(analysis)
+    assert execution_roots_entry_is(execution_roots(analysis).entry, root)
+    assert native_input(analysis) == bytes
+}
+
+test fn execution_roots_keep_async_source_ids_and_do_not_invent_library_entries() {
+    let asynchronous = published(input("async fn main() { discard 7 }"))
+    let root = call_closure_named(asynchronous, "main")
+    assert execution_roots_entry_is(execution_roots(asynchronous).entry, root)
+    assert function_at(asynchronous, root).is_async
+    discard native_input(asynchronous)
+    assert execution_roots_entry_is(execution_roots(asynchronous).entry, root)
+    assert function_at(asynchronous, root).is_async
+    let library = published(input("pub fn exported() Int { 7 }"))
+    let selected = execution_roots(library)
+    assert execution_roots_entry_is(selected.entry, -1) && length(selected.exports) == 1
+    assert get(selected.exports, 0) == call_closure_named(library, "exported")
+}
+
+test fn execution_roots_follow_test_mode_and_preserve_test_names_and_order() {
+    let project = input("""
+        fn main() {}
+        test fn first() {}
+        test async fn second() {}
+        """)
+    let production = execution_roots(published(project))
+    assert length(production.tests) == 0 && length(production.test_names) == 0
+    let analysis = match analyze(project, true) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            assert false
+            published(input("fn main() {}"))
+        }
+    }
+    let selected = execution_roots(analysis)
+    assert execution_roots_entry_is(selected.entry, call_closure_named(analysis, "main"))
+    assert length(selected.tests) == 2 && length(selected.test_names) == 2
+    assert get(selected.tests, 0) == call_closure_named(analysis, "first")
+    assert get(selected.tests, 1) == call_closure_named(analysis, "second")
+    assert get(selected.test_names, 0) == "app.first"
+    assert get(selected.test_names, 1) == "app.second"
+    set(selected.tests, 0, -1)
+    set(selected.test_names, 0, "invented")
+    let repeated = execution_roots(analysis)
+    assert get(repeated.tests, 0) == call_closure_named(analysis, "first")
+    assert get(repeated.test_names, 0) == "app.first"
+    discard native_input(analysis)
+    assert get(execution_roots(analysis).tests, 1) == call_closure_named(analysis, "second")
+}

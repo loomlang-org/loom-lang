@@ -49,6 +49,19 @@ still need their own checks. See the
 
 ## Checked call closure
 
+`execution_roots(analysis)` returns the actual checked source entry (an
+`Option[Int]`), test function IDs and their names, and export IDs. These are the
+unfiltered roots supplied to the same preparation path as `native_input`, not
+guesses from names or public visibility. Production and test analysis retain
+their respective selections. All returned Lists are detached.
+
+The IDs still address source functions in this analysis. Async lowering can add
+private entry/test wrappers with different IDs; a source root ID is not a native
+address or a promise that its original body survives optimization. Selection
+does not mean the root was invoked, establish termination, or summarize all
+machine-level effects. A call closure started at a selected source root retains
+the limits below.
+
 `call_closure(analysis, root, boundaries)` inspects the checked source IR retained
 by an `Analysis`. `root` and each boundary are function indices in that same
 analysis. `snapshot(analysis).functions` maps these indices to source symbols;

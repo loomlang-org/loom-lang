@@ -4,6 +4,8 @@ import deployment.artifact_analysis.reproduce_analysis
 import deployment.artifact_analysis.artifact_analysis_snapshot
 import deployment.artifact_analysis.artifact_analysis_calls
 import deployment.artifact_analysis.artifact_analysis_evidence
+import deployment.artifact_analysis.artifact_analysis_roots
+import deployment.artifact_analysis.artifact_analysis_root_calls
 import std.loom.project.load
 import std.loom.project.join_path
 import std.loom.project.BuildOption
@@ -20,6 +22,8 @@ import std.bytes.push
 import std.list.get
 import std.list.length
 import std.list.transfer.take_last
+import std.list.set
+import std.list.push
 import std.option.Option
 import std.process.arguments
 import std.process.EnvChange
@@ -59,6 +63,33 @@ fn named(data AnalysisData, name Text) Int {
 }
 
 fn query(bound ArtifactAnalysis, root Int) {
+    let roots = must(artifact_analysis_roots(bound))
+    assert match roots.entry {
+        Option.Some(entry) => entry == root
+        Option.None => false
+    }
+    assert length(roots.tests) == 0 && length(roots.test_names) == 0
+    assert length(roots.exports) == 1
+    let exported = named(must(artifact_analysis_snapshot(bound)), "exported")
+    let helper = named(must(artifact_analysis_snapshot(bound)), "helper")
+    assert get(roots.exports, 0) == exported && helper != root && helper != exported
+    set(roots.exports, 0, helper)
+    push(roots.tests, helper)
+    push(roots.test_names, "invented")
+    assert get(must(artifact_analysis_roots(bound)).exports, 0) == exported
+    assert length(must(artifact_analysis_roots(bound)).tests) == 0
+    assert match must(artifact_analysis_root_calls(bound, root, [])) {
+        Option.Some(report) => report.root == root && length(report.functions) >= 2
+        _ => false
+    }
+    assert match must(artifact_analysis_root_calls(bound, exported, [])) {
+        Option.Some(report) => report.root == exported
+        _ => false
+    }
+    assert match must(artifact_analysis_root_calls(bound, helper, [])) {
+        Option.None => true
+        _ => false
+    }
     assert match must(artifact_analysis_calls(bound, root, [])) {
         Option.Some(report) => report.root == root && length(report.functions) >= 1
         Option.None => false
@@ -132,6 +163,10 @@ fn main() {
             Result.Err(_) => true
             _ => false
         }
+        assert match artifact_analysis_roots(bound) {
+            Result.Err(_) => true
+            _ => false
+        }
         discard must(std.file.write_text(get(args, 7), original_receipt))
         let evidence = must(artifact_analysis_evidence(bound))
         let original_artifact = must(read_bytes(evidence.claimed.artifact_path))
@@ -139,6 +174,10 @@ fn main() {
         std.bytes.push(changed_artifact, 0)
         discard must(write_bytes(evidence.claimed.artifact_path, changed_artifact))
         assert match artifact_analysis_calls(bound, root, []) {
+            Result.Err(_) => true
+            _ => false
+        }
+        assert match artifact_analysis_root_calls(bound, root, []) {
             Result.Err(_) => true
             _ => false
         }
