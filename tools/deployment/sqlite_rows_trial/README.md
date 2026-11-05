@@ -33,6 +33,17 @@ Fifty source-constructor versus real-database INSERT controls cover every admitt
 operator, both field-selection forms and both Int limits. They are regression
 examples, not a universal compatibility proof.
 
+The canonical-record trial prepares `sqlite_record_codec[CanonicalRow]` once
+and uses both its row codec and SQL clause. Its positive Amount field has no
+`ColumnValue` implementation: the factory selects the canonical Int
+representation and checks the source constructor when decoding. The complete
+row also has an unreferenced Bool and an `id >= 0 && amount >= id` predicate.
+Forty source-constructor versus raw INSERT controls, wrong classes, NULLs,
+non-Boolean integers and invalid UPDATEs exercise the real database; accepted
+rows and typed insertion decode through the same prepared codec. This closes
+the unreferenced-field gap for the admitted canonical Int/Bool record domain,
+without certifying arbitrary codecs or application/deployment compatibility.
+
 The trusted CLI runs one read-only SELECT, with literal arguments and quoted
 identifiers; user startup commands are disabled. Cells use tagged hexadecimal
 payloads, including SQLite CLI's

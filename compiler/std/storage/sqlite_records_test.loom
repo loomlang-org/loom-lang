@@ -1,0 +1,215 @@
+pub type CanonicalAmount = Int where self > 0
+
+// Deliberately different application policy. The canonical SQLite factory
+// must obtain its representation from the visible type rather than this impl.
+impl ColumnValue for CanonicalAmount {
+    fn column_kind() ValueKind {
+        ValueKind.Int
+    }
+    fn to_column(self CanonicalAmount) Result[Value, CodecError] {
+        Result.Ok(Value.Int(99))
+    }
+    fn from_column(value Value) Result[CanonicalAmount, CodecError] {
+        discard value
+        Result.Ok(CanonicalAmount(1))
+    }
+}
+
+pub record CanonicalFields {
+    key Int
+    amount CanonicalAmount
+    enabled Bool
+}
+
+pub type CanonicalOrder = CanonicalFields where self.key >= 0 && self.amount >= self.key
+
+fn canonical_table() Table {
+    Table {
+        id = "canonical"
+        physical_name = "canonical rows"
+        columns = [column("enabled", "flag", ValueKind.Int, false),
+            column("amount-id", "sum\"value", ValueKind.Int, false),
+            column("key", "key", ValueKind.Int, false)]
+    }
+}
+
+fn canonical_aliases() List[(Text, Text)] {
+    [("amount", "amount-id")]
+}
+
+test fn sqlite_record_codec_covers_unused_fields_and_uses_canonical_refined_values() {
+    let prepared = match sqlite_record_codec[CanonicalOrder](canonical_table(), canonical_aliases()) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            assert false
+            return
+        }
+    }
+    let sql = sqlite_codec_check(prepared)
+    assert contains(sql, "typeof(\"flag\") = 'integer'")
+    assert contains(sql, "\"flag\" IN (0, 1)")
+    assert contains(sql, "\"sum\"\"value\" > 0")
+    assert contains(sql, "\"sum\"\"value\" >= \"key\"")
+    let codec = sqlite_codec_rows(prepared)
+    let row = match encode_prepared_row(codec, CanonicalOrder(CanonicalFields {
+                key = 2
+                amount = CanonicalAmount(3)
+                enabled = true
+            })) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            assert false
+            return
+        }
+    }
+    assert match (get(row, 0), get(row, 1), get(row, 2)) {
+        (Value.Int(1), Value.Int(3), Value.Int(2)) => true
+        _ => false
+    }
+    assert match decode_prepared_row(codec, row) {
+        Result.Ok(value) => value.key == 2 && value.amount == 3 && value.enabled
+        _ => false
+    }
+    let invalid = [[Value.Int(2), Value.Int(3), Value.Int(2)],
+        [Value.Int(1), Value.Int(0), Value.Int(0)],
+        [Value.Int(1), Value.Int(1), Value.Int(2)],
+        [Value.Int(1), Value.Int(3), Value.Int(-1)]]
+    var index = 0
+    while index < length(invalid) {
+        assert match decode_prepared_row(codec, get(invalid, index)) {
+            Result.Err(_) => true
+            _ => false
+        }
+        index = index + 1
+    }
+}
+
+test fn sqlite_record_codec_freezes_plain_record_mapping_and_returns_copies() {
+    let table = canonical_table()
+    let aliases = canonical_aliases()
+    let prepared = match sqlite_record_codec[CanonicalFields](table, aliases) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            assert false
+            return
+        }
+    }
+    set(table.columns, 0, column("changed", "missing", ValueKind.Text, true))
+    set(aliases, 0, ("amount", "key"))
+    let codec = sqlite_codec_rows(prepared)
+    let description = codec_table(codec)
+    set(description.columns, 1, column("changed", "missing", ValueKind.Text, true))
+    assert get(codec_table(codec).columns, 1).id == "amount-id"
+    assert contains(sqlite_codec_check(prepared), "\"sum\"\"value\" > 0")
+    assert match decode_prepared_row(codec, [Value.Int(0), Value.Int(1), Value.Int(-7)]) {
+        Result.Ok(value) => value.amount == 1 && value.key == -7 && !value.enabled
+        _ => false
+    }
+}
+
+fn canonical_amount_helper(value Int) Bool {
+    value > 0
+}
+
+pub type CanonicalHelperAmount = Int where canonical_amount_helper(self)
+
+pub record CanonicalHelperFields {
+    amount CanonicalHelperAmount
+}
+
+pub record CanonicalCustomValue {
+    value Int
+}
+
+impl ColumnValue for CanonicalCustomValue {
+    fn column_kind() ValueKind {
+        ValueKind.Int
+    }
+    fn to_column(self CanonicalCustomValue) Result[Value, CodecError] {
+        Result.Ok(Value.Int(self.value))
+    }
+    fn from_column(value Value) Result[CanonicalCustomValue, CodecError] {
+        match value {
+            Value.Int(number) => Result.Ok(CanonicalCustomValue {
+                    value = number
+                })
+            _ => Result.Err(CodecError.Rejected)
+        }
+    }
+}
+
+pub record CanonicalCustomFields {
+    amount CanonicalCustomValue
+}
+
+test fn sqlite_record_codec_rejects_untranslated_predicates_and_custom_field_representations() {
+    let table = Table {
+        id = "amounts"
+        physical_name = "amounts"
+        columns = [column("amount", "amount", ValueKind.Int, false)]
+    }
+    assert match sqlite_record_codec[CanonicalHelperFields](table) {
+        Result.Err(SqliteCheckError.UnsupportedPredicate) => true
+        _ => false
+    }
+    assert match sqlite_record_codec[CanonicalCustomFields](table) {
+        Result.Err(SqliteCheckError.UnsupportedType) => true
+        _ => false
+    }
+    let nullable = canonical_table()
+    set(nullable.columns, 0, column("enabled", "flag", ValueKind.Int, true))
+    assert match sqlite_record_codec[CanonicalFields](nullable, canonical_aliases()) {
+        Result.Err(SqliteCheckError.InvalidMapping) => true
+        _ => false
+    }
+    let duplicate = canonical_table()
+    set(duplicate.columns, 0, column("enabled", "KEY", ValueKind.Int, false))
+    assert match sqlite_record_codec[CanonicalFields](duplicate, canonical_aliases()) {
+        Result.Err(SqliteCheckError.InvalidMapping) => true
+        _ => false
+    }
+}
+
+test fn sqlite_record_codec_can_prepare_and_decode_during_compile_time_execution() {
+    let value = comptime {
+        match sqlite_record_codec[CanonicalOrder](canonical_table(), canonical_aliases()) {
+            Result.Ok(prepared) => decode_prepared_row(sqlite_codec_rows(prepared),
+                [Value.Int(1), Value.Int(3), Value.Int(2)])
+            Result.Err(_) => Result.Err(CodecError.InvalidSchema)
+        }
+    }
+    assert match value {
+        Result.Ok(row) => row.key == 2 && row.amount == 3 && row.enabled
+        _ => false
+    }
+}
+
+pub type CanonicalEnabled = Bool where self
+
+pub record CanonicalEnabledFields {
+    enabled CanonicalEnabled
+}
+
+test fn sqlite_record_codec_checks_boolean_field_refinements_without_user_codecs() {
+    let prepared = match sqlite_record_codec[CanonicalEnabledFields](Table {
+            id = "enabled"
+            physical_name = "enabled rows"
+            columns = [column("enabled", "flag", ValueKind.Int, false)]
+        }) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            assert false
+            return
+        }
+    }
+    assert contains(sqlite_codec_check(prepared), "\"flag\" IN (0, 1)")
+    let codec = sqlite_codec_rows(prepared)
+    assert match decode_prepared_row(codec, [Value.Int(1)]) {
+        Result.Ok(value) => value.enabled
+        _ => false
+    }
+    assert match decode_prepared_row(codec, [Value.Int(0)]) {
+        Result.Err(CodecError.Rejected) => true
+        _ => false
+    }
+}

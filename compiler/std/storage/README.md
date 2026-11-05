@@ -111,3 +111,32 @@ writers, artifact identity or deployment compatibility. Other fields retain
 their ordinary codec and database validation. See the
 [real SQLite trial](../../../tools/deployment/sqlite_rows_trial/README.md) for
 raw INSERT/UPDATE rejection alongside typed decoding and insertion.
+
+## Canonical SQLite record codecs
+
+`sqlite_record_codec[T](table[, aliases])` prepares a `SqliteRecordCodec[T]`.
+`sqlite_codec_rows(codec)` supplies its frozen `PreparedRowCodec[T]` to typed row
+readers and writers; `sqlite_codec_check(codec)` supplies the matching SQL
+`CHECK` clause. Both come from the same visible field types and stable-ID mapping.
+
+This factory selects a canonical representation: non-null `Int` cells for `Int`,
+integer 0/1 for `Bool`, and those same representations for visible direct
+refinements over either built-in. It uses checked constructors when decoding
+refinements and does not call application `ColumnValue` implementations. Choose
+`record_codec` when application-defined field conversion is required.
+
+Every field contributes its storage-class and value constraints, including
+fields unused by a whole-record predicate. Direct scalar field predicates and
+the optional whole-record predicate use the expression fragment described above.
+Plain visible records are supported too. Unsupported field types or predicates,
+inaccessible definitions, nullable mappings and ambiguous names return an error;
+the factory does not silently omit a field's requirements. In particular, it
+does not certify arbitrary custom codecs or nullable/text/blob/float fields.
+
+The caller installs the clause in its own database. With SQLite constraints
+enabled, the clause enforces the admitted canonical row domain on stored cells;
+affinity may convert incoming values before they are checked. This API does not
+inspect an existing schema, prevent constraints from being disabled, bind an
+application artifact, authorize migration, or prove deployment compatibility.
+The [SQLite trial](../../../tools/deployment/sqlite_rows_trial/README.md) compares
+source constructors with real raw writes and typed reads.

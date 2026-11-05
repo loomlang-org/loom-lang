@@ -96,6 +96,21 @@ fn sqlite_check_scalar(sql Text, kind SqliteCheckKind) SqliteCheckTerm {
     }
 }
 
+fn sqlite_check_cell(field SqliteCheckField) Result[SqliteCheckTerm, SqliteCheckError] {
+    if field.kind == SqliteCheckKind.Unsupported {
+        return Result.Err(SqliteCheckError.UnsupportedPredicate)
+    }
+    let guards = [concat("typeof(", concat(field.column, ") = 'integer'"))]
+    if field.kind == SqliteCheckKind.Boolean {
+        push(guards, concat(field.column, " IN (0, 1)"))
+    }
+    Result.Ok(SqliteCheckTerm {
+            sql = field.column
+            kind = field.kind
+            guards = guards
+        })
+}
+
 fn sqlite_check_expression(node Node, fields List[SqliteCheckField], depth Int) Result[SqliteCheckTerm, SqliteCheckError] {
     if depth >= 64 {
         return Result.Err(SqliteCheckError.UnsupportedPredicate)
@@ -121,6 +136,10 @@ fn sqlite_check_expression(node Node, fields List[SqliteCheckField], depth Int) 
     }
     var selected = ""
     if node.kind == NodeKind.Name && count == 0 {
+        // An empty field name denotes the scalar refinement's own value.
+        if node.value == "self" && length(fields) == 1 && get(fields, 0).name == "" {
+            return sqlite_check_cell(get(fields, 0))
+        }
         var index = 0
         while index < length(fields) {
             let field = get(fields, index)
@@ -141,18 +160,7 @@ fn sqlite_check_expression(node Node, fields List[SqliteCheckField], depth Int) 
         while index < length(fields) {
             let field = get(fields, index)
             if field.name == selected {
-                if field.kind == SqliteCheckKind.Unsupported {
-                    return Result.Err(SqliteCheckError.UnsupportedPredicate)
-                }
-                let guards = [concat("typeof(", concat(field.column, ") = 'integer'"))]
-                if field.kind == SqliteCheckKind.Boolean {
-                    push(guards, concat(field.column, " IN (0, 1)"))
-                }
-                return Result.Ok(SqliteCheckTerm {
-                        sql = field.column
-                        kind = field.kind
-                        guards = guards
-                    })
+                return sqlite_check_cell(field)
             }
             index = index + 1
         }
