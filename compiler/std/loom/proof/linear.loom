@@ -161,6 +161,27 @@ fn add_scaled(a Linear, b Linear, factor Number) Linear {
 }
 
 fn same_terms(a LinearTerms, b LinearTerms) Bool {
+    // Inline coefficients are already canonical mathematical integers. Compare
+    // them directly, without repeatedly rebuilding Numbers for equality scans.
+    match a {
+        LinearTerms.Single(identity, factor) => match b {
+            LinearTerms.Single(other_id, other_factor) => {
+                return identity == other_id && factor == other_factor
+            }
+            _ => {
+            }
+        }
+        LinearTerms.Pair(first_id, first, second_id, second) => match b {
+            LinearTerms.Pair(other_first_id, other_first, other_second_id, other_second) => {
+                return first_id == other_first_id && first == other_first &&
+                second_id == other_second_id && second == other_second
+            }
+            _ => {
+            }
+        }
+        _ => {
+        }
+    }
     if term_count(a) != term_count(b) {
         return false
     }
@@ -177,6 +198,25 @@ fn same_terms(a LinearTerms, b LinearTerms) Bool {
 }
 
 fn opposite_terms(a LinearTerms, b LinearTerms) Bool {
+    match a {
+        LinearTerms.Single(identity, factor) => match b {
+            LinearTerms.Single(other_id, other_factor) => {
+                return identity == other_id && opposite_machine_factors(factor, other_factor)
+            }
+            _ => {
+            }
+        }
+        LinearTerms.Pair(first_id, first, second_id, second) => match b {
+            LinearTerms.Pair(other_first_id, other_first, other_second_id, other_second) => {
+                return first_id == other_first_id && opposite_machine_factors(first, other_first) &&
+                second_id == other_second_id && opposite_machine_factors(second, other_second)
+            }
+            _ => {
+            }
+        }
+        _ => {
+        }
+    }
     if term_count(a) != term_count(b) {
         return false
     }
@@ -190,6 +230,12 @@ fn opposite_terms(a LinearTerms, b LinearTerms) Bool {
         index = index + 1
     }
     true
+}
+
+fn opposite_machine_factors(first Int, second Int) Bool {
+    // IntMIN has no machine-sized additive inverse. Mixed inline/list inputs
+    // use the Number comparison above, including an arbitrary-precision +2^63.
+    second != -9223372036854775808 && first == -second
 }
 
 fn same_predicates(a List[Predicate], b List[Predicate]) Bool {
