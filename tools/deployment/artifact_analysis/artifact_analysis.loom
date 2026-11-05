@@ -1,0 +1,105 @@
+import deployment.BuildReceipt
+import deployment.ReproducedArtifact
+import deployment.ReproductionRequest
+import deployment.read_build_receipt
+import deployment.reproduce_artifact
+import std.fs.canonicalize
+import std.hash.sha256.hex
+import std.loom.analysis.Analysis
+import std.loom.analysis.AnalysisData
+import std.loom.analysis.CallClosure
+import std.loom.analysis.build_basis
+import std.loom.analysis.native_input
+import std.loom.analysis.snapshot
+import std.loom.analysis.call_closure
+import std.option.Option
+import std.result.Result
+import std.text.to_bytes
+
+// A retained local association, not an attestation or deployment permission.
+// The selected toolchain and Analysis host retain their existing assumptions.
+pub record ArtifactAnalysis {
+    state ArtifactAnalysisState
+}
+
+record ArtifactAnalysisState {
+    analysis Analysis
+    evidence ReproducedArtifact
+    receipt_path Text
+}
+
+fn same_artifact_receipt(a BuildReceipt, b BuildReceipt) Bool {
+    a.receipt == b.receipt && a.checked == b.checked && a.basis == b.basis &&
+    a.artifact == b.artifact && a.backend == b.backend && a.artifact_path == b.artifact_path
+}
+
+fn artifact_analysis_current(value ArtifactAnalysis) Result[Bool, Text] {
+    let current = read_build_receipt(value.state.receipt_path)?
+    if !same_artifact_receipt(current, value.state.evidence.claimed) {
+        return Result.Err("artifact analysis receipt or artifact identity changed")
+    }
+    Result.Ok(true)
+}
+
+// Explicitly rebuild, then associate the exact frozen source/graph/input basis
+// and native input with the observed artifact. An unused option or fork still
+// matters even when emitted code and artifact bytes happen to be identical.
+pub fn reproduce_analysis(analysis Analysis, request ReproductionRequest) Result[ArtifactAnalysis, Text] {
+    let path = match canonicalize(request.receipt_path) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            return Result.Err("cannot resolve artifact analysis receipt")
+        }
+    }
+    let claimed = read_build_receipt(path)?
+    if claimed.basis == "" {
+        return Result.Err("artifact analysis requires a v5 build basis")
+    }
+    let basis = build_basis(analysis)
+    if basis != claimed.basis {
+        return Result.Err("analysis build basis differs from the artifact receipt")
+    }
+    let checked = hex(to_bytes(native_input(analysis)))
+    if checked != claimed.checked {
+        return Result.Err("analysis native input differs from the artifact receipt")
+    }
+    let evidence = reproduce_artifact(request)?
+    if !same_artifact_receipt(evidence.claimed, claimed) ||
+    evidence.reproduced.basis != basis || evidence.reproduced.checked != checked {
+        return Result.Err("artifact analysis identities changed during reproduction")
+    }
+    let value = ArtifactAnalysis {
+        state = ArtifactAnalysisState {
+            analysis = analysis
+            evidence = evidence
+            receipt_path = path
+        }
+    }
+    discard artifact_analysis_current(value)?
+    Result.Ok(value)
+}
+
+// Queries inspect the retained snapshot, not later filesystem source edits.
+// The original receipt and actual artifact must still have their bound identity.
+// Returned records are detached observations and are not compatibility evidence.
+pub fn artifact_analysis_snapshot(value ArtifactAnalysis) Result[AnalysisData, Text] {
+    discard artifact_analysis_current(value)?
+    let data = snapshot(value.state.analysis)
+    discard artifact_analysis_current(value)?
+    Result.Ok(data)
+}
+
+// IDs address this source Analysis. This is the same bounded source call query;
+// an arbitrary root need not be emitted in the artifact. Opaque cuts and runtime
+// operations still require independent justification. No writer proof is added.
+pub fn artifact_analysis_calls(value ArtifactAnalysis, root Int, boundaries List[Int]) Result[Option[CallClosure], Text] {
+    discard artifact_analysis_current(value)?
+    let calls = call_closure(value.state.analysis, root, boundaries)
+    discard artifact_analysis_current(value)?
+    Result.Ok(calls)
+}
+
+pub fn artifact_analysis_evidence(value ArtifactAnalysis) Result[ReproducedArtifact, Text] {
+    discard artifact_analysis_current(value)?
+    Result.Ok(value.state.evidence)
+}

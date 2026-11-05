@@ -1,0 +1,5 @@
+[module]
+name="artifact_analysis_trial"
+
+[dependencies.deployment]
+path=".."
