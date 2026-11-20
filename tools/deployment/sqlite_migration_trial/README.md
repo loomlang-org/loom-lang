@@ -24,9 +24,11 @@ resume. The successful retry preserves the v1 positive edit and note, while
 replacing and archiving only the new zero. These are exact assertions for this
 fixed schema and sample rows, not a proof for arbitrary migrations or writers.
 
-The built v1/v2 clients use source-derived `std.storage` codecs and the typed
-SQLite reader/writer; each version's explicit `ColumnValue` implementation checks its
-own Amount constructor. The trial runs the exact receipt-verified executables:
+The built v1/v2 clients use `std.storage.sqlite_record_codec` and the typed
+SQLite reader/writer. The canonical order codec derives each version's Amount
+representation and checked constructor directly; neither client supplies a
+custom `ColumnValue` implementation. Notes retain their ordinary Text codec.
+The trial runs the exact receipt-verified executables:
 v1 inserts the original zero amounts, v2 refuses those rows, migration permits
 v2 reads, and both the v2 constructor and migrated database reject zero writes.
 After downgrade, v1 reads and inserts a new zero; v2 refuses it until re-upgrade.

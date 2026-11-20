@@ -3,12 +3,6 @@ import deployment.fixture.notes
 import deployment.fixture.report
 import std.process.arguments
 import std.result.Result
-import std.storage.Value
-import std.storage.ValueKind
-import std.storage.ColumnValue
-import std.storage.CodecError
-import std.storage.encode_refined_column
-import std.storage.decode_refined_column
 
 pub type Amount = Int where self > 0
 
@@ -20,20 +14,6 @@ pub record Order {
 pub record Note {
     id Int
     body Text
-}
-
-impl ColumnValue for Amount {
-    fn column_kind() ValueKind {
-        ValueKind.Int
-    }
-
-    fn to_column(self Amount) Result[Value, CodecError] {
-        encode_refined_column[Amount, Int](self)
-    }
-
-    fn from_column(value Value) Result[Amount, CodecError] {
-        decode_refined_column[Amount, Int](value)
-    }
 }
 
 fn make(id Int, amount Int) Result[Order, Text] {
