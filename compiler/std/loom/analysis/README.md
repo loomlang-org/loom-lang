@@ -1,5 +1,26 @@
 # Checked analysis
 
+## Build basis
+
+`build_basis(analysis)` returns the SHA-256 recorded as `basis-sha256` in a v5
+build receipt. Compiler publication and analysis use the same source-written
+encoding. It binds the selected modules, configuration, package identities and
+resolved import edges, file ownership/flags, source bytes and ASTs, test mode,
+and observed file, option and target inputs. It reads the retained private
+snapshot and does not invoke application functions or reread the filesystem.
+
+Resolved edges matter even if the module/source lists and native code are
+unchanged: a local fork can change the meaning of a refinement in an unused
+generic declaration. ASTs matter independently of `SourceFile.text`. This hash
+is separate from `native_input` and the artifact digest. A matching native input
+does not establish matching source contracts.
+
+Receipts are produced by `build`, so a matching analysis uses production mode
+and the build's exact observations. A legacy v3/v4 receipt has no complete basis
+digest. Filesystem freshness, receipt provenance and actual artifact bytes still
+need their own checks. Matching hashes do not establish storage/writer or
+deployment compatibility.
+
 ## Native compiler input
 
 `native_input(analysis)` returns the encoded native backend input prepared from

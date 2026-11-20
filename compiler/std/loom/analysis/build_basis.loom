@@ -1,0 +1,11 @@
+import std.loom.compilation.build_basis
+
+// Bind retained source/AST, resolved graph, test mode and all observed inputs.
+// The corresponding v5 receipt field is basis-sha256. Compare native_input and
+// actual artifact identities separately; none of these hashes grants deployment
+// or writer compatibility permission.
+pub fn build_basis(analysis Analysis) Text {
+    let state = analysis.state
+    std.loom.compilation.build_basis(state.source, state.bindings.tests,
+        state.inputs, state.options, state.targets)
+}

@@ -1,0 +1,75 @@
+import std.loom.project.load
+import std.loom.project.read_input
+import std.loom.project.BuildOption
+import std.loom.checking.build_inputs
+import std.loom.analysis.analyze_with_inputs
+import std.loom.analysis.build_basis
+import std.loom.analysis.native_input
+import std.loom.analysis.snapshot
+import std.hash.sha256.hex
+import std.text.to_bytes
+import std.text.split
+import std.text.concat
+import std.list.new
+import std.list.get
+import std.list.push
+import std.list.set
+import std.list.length
+import std.process.arguments
+import std.result.Result
+import std.io.write_text
+import std.io.write_error
+
+fn target_snapshot(context Text) Result[List[BuildOption], Text] {
+    let lines = split(context, "\n")
+    assert length(lines) == 6 && get(lines, 0) == "loom-target 1"
+    let values = new[BuildOption]()
+    var index = 1
+    while index < 5 {
+        let fields = split(get(lines, index), " ")
+        assert length(fields) == 2
+        push(values, BuildOption {
+                name = get(fields, 0)
+                value = get(fields, 1)
+            })
+        index = index + 1
+    }
+    Result.Ok(values)
+}
+
+fn main() {
+    let args = arguments()
+    assert length(args) == 5
+    let project = match load(get(args, 1), get(args, 2), false) {
+        Result.Ok(value) => value
+        Result.Err(problem) => {
+            discard write_error(problem)
+            assert false
+            return
+        }
+    }
+    let inputs = build_inputs(read_input,
+        [BuildOption {
+                name = "app.mode"
+                value = get(args, 4)
+            }], target_snapshot, get(args, 3))
+    match analyze_with_inputs(project, false, inputs) {
+        Result.Ok(analysis) => {
+            let basis = build_basis(analysis)
+            let checked = hex(to_bytes(native_input(analysis)))
+            let view = snapshot(analysis)
+            assert length(view.inputs) == 1 && length(view.targets) == 4
+            set(inputs.options, 0, BuildOption {
+                    name = "app.mode"
+                    value = "caller-edited"
+                })
+            assert build_basis(analysis) == basis
+            discard write_text(concat("basis ", concat(basis, "\n")))
+            discard write_text(concat("checked ", concat(checked, "\n")))
+        }
+        Result.Err(problem) => {
+            discard write_error(problem.diagnostic.message)
+            assert false
+        }
+    }
+}

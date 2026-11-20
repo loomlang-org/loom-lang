@@ -467,7 +467,7 @@ fn execute_package(selected Options) Result[Text, Text] {
             if before != after {
                 return Result.Err("native backend changed during build; receipt not published")
             }
-            discard publish_build_receipt(selected.receipt, output, input, before, prepared.project, prepared.inputs, selected.build_options)?
+            discard publish_build_receipt(selected.receipt, output, input, before, prepared.project, prepared.inputs, selected.build_options, prepared.targets)?
         }
         return Result.Ok(concat("built ", concat(output, "\n")))
     }

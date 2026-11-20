@@ -359,7 +359,7 @@ pub fn consume(value Message) Int { codec.consume(value) }
         assert_eq!(output.stdout, b"search|export");
     }
     let original = fs::read_to_string(&receipt).unwrap();
-    assert!(original.starts_with("loom-build-receipt 4\n"));
+    assert!(original.starts_with("loom-build-receipt 5\n"));
     let codec_root = root.join("codec").canonicalize().unwrap();
     let hex_root: String = codec_root
         .to_str()
