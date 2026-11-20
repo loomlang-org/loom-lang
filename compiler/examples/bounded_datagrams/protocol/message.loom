@@ -1,0 +1,51 @@
+import std.bytes.decode_utf8
+import std.bytes.length
+import std.result.Result
+import std.text.length
+import std.text.to_bytes
+
+type Body = Text where std.text.length(self) <= 64
+
+pub record Message {
+    payload Payload
+}
+
+record Payload {
+    body Body
+}
+
+pub enum DecodeError {
+    Utf8
+    TooLarge
+}
+
+pub fn message(value Text) Result[Message, DecodeError] {
+    match Body(value) {
+        Result.Ok(body) => Result.Ok(Message {
+                payload = Payload {
+                    body = body
+                }
+            })
+        Result.Err(_) => Result.Err(DecodeError.TooLarge)
+    }
+}
+
+pub fn decode(value Bytes) Result[Message, DecodeError] {
+    let text = match decode_utf8(value) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            return Result.Err(DecodeError.Utf8)
+        }
+    }
+    message(text)
+}
+
+pub fn text(value Message) Text
+ensures std.text.length(result) <= 64 {
+    value.payload.body
+}
+
+pub fn encode(value Message) Bytes
+ensures std.bytes.length(result) <= 64 {
+    to_bytes(text(value))
+}

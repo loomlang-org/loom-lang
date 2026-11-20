@@ -1,0 +1,59 @@
+import bounded_datagrams.protocol.Message
+import bounded_datagrams.protocol.DecodeError
+import bounded_datagrams.protocol.decode
+import bounded_datagrams.protocol.encode
+import std.net.udp.Socket
+import std.net.udp.UdpError
+import std.net.udp.bind_owned
+import std.net.udp.connect_owned
+import std.net.udp.detach
+import std.net.udp.close
+import std.net.udp.local_address
+import std.net.udp.receive
+import std.net.udp.send
+import std.result.Result
+import std.time.sleep_ms
+
+enum ExchangeError {
+    Network(UdpError)
+    Protocol(DecodeError)
+}
+
+async fn serve_once(server Socket) Result[Int, UdpError] {
+    let packet = receive(server, 64).await?
+    send(server, packet.data, packet.sender).await
+}
+
+async fn request(address Text, bytes Bytes) Result[Bytes, UdpError] {
+    scoped client = connect_owned(address).await?
+    // Delay submission to exercise the server's reactor readiness path.
+    sleep_ms(2).await
+    discard send(client, bytes).await?
+    Result.Ok(receive(client, 64).await?.data)
+}
+
+async fn wire(bytes Bytes) Result[Bytes, UdpError] {
+    scoped acquired = bind_owned("127.0.0.1:0").await?
+    // Parallel protocol Tasks explicitly share a manually managed identity.
+    let server = detach(acquired)?
+    defer {
+        discard close(server)
+    }
+    let address = local_address(server)?
+    let incoming, outgoing = (serve_once(server), request(address, bytes)).await
+    discard incoming?
+    outgoing
+}
+
+async fn exchange(value Message) Result[Message, ExchangeError] {
+    let bytes = match wire(encode(value)).await {
+        Result.Ok(value) => value
+        Result.Err(error) => {
+            return Result.Err(ExchangeError.Network(error))
+        }
+    }
+    match decode(bytes) {
+        Result.Ok(value) => Result.Ok(value)
+        Result.Err(error) => Result.Err(ExchangeError.Protocol(error))
+    }
+}

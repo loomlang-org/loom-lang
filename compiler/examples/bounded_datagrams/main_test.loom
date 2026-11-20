@@ -1,0 +1,13 @@
+test async fn bounded_private_protocol_roundtrips_through_scoped_datagrams() {
+    let value = match message("checked message") {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            assert false
+            return
+        }
+    }
+    assert match after_ns(exchange(value), 10000000000).await {
+        Outcome.Completed(Result.Ok(reply)) => text(reply) == "checked message"
+        _ => false
+    }
+}
