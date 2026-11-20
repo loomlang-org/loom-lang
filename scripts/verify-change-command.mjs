@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { verifyMemberChangeCommand } from "./verify-member-change-command.mjs";
 import { verifyDependencyChangeCommand } from "./verify-dependency-change-command.mjs";
 import { verifyBodyChangeCommand } from "./verify-body-change-command.mjs";
+import { verifyRetiredPackageChangeCommand } from "./verify-retired-package-change-command.mjs";
 
 // Exercise the delivered command, including argument forwarding and child exit
 // status, from a directory outside the checkout and toolchain.
@@ -47,6 +48,7 @@ export function verifyChangeCommand(loom, fixtures, directory, environment, stan
   assert.equal(tested.stdout, "1 tests passed\n");
   verifyMemberChangeCommand(loom, join(directory, "owned methods"), environment, standard);
   verifyBodyChangeCommand(loom, join(directory, "composed bodies"), environment, standard);
+  if (standard) verifyRetiredPackageChangeCommand(loom, join(directory, "retired package history"), environment, standard);
   if (standard) verifyDependencyChangeCommand(loom, join(directory, "dependency review"), environment, standard);
   return { inputs, token };
 }

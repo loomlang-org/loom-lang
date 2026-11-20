@@ -213,6 +213,9 @@ fn module_lineage(snapshot ModuleSnapshot, relative Text) Result[List[Lineage], 
         }
         index = index + 1
     }
+    if asset_index(snapshot.assets, retired_path(relative)) >= 0 {
+        return Result.Ok(retired_metadata(snapshot, relative)?.lineage)
+    }
     Result.Ok(new[Lineage]())
 }
 

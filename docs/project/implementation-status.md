@@ -900,7 +900,11 @@ require resolution.
 Explicit `refresh --derive` records copy/split/merge provenance within a package,
 allocating fresh child identities rather than equating them with their parents.
 Canonical acyclic origin records survive refresh, drafts and reviewed directory/
-Git output. Changed or removed history and conflicting concurrent origins reject;
+Git output. A deleted package can retain a resolved, source-free `.loom-ids` in
+its original directory, preserving its package name, allocator and complete
+history through reviewed module and Git-tree output. It contributes no active
+declarations; later merges require that sidecar unchanged. Changed or removed
+history, implicit reactivation and conflicting concurrent origins reject;
 cross-package derivation/history relocation remains open.
 Complete module batches can rename public functions, records, enums, refined
 types and concepts across checked imports,
