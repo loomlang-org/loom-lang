@@ -31,9 +31,16 @@ The frontend gate's source unit-test suites and large tool test harnesses use O0
 to avoid optimizing test-only code. Bootstrap and application builds stay at O2;
 native regressions retain their explicit optimization levels.
 
-CI runs the native tests across crates with pinned `cargo-nextest`, using at most
-two concurrent test processes. Cargo doctests run separately. Bootstrap
-comparisons and source/application gates retain their existing settings.
+CI runs the complete native workspace suite with pinned `cargo-nextest`. Each
+platform uses two `slice` partitions on separate runners, with at most two test
+processes per runner. Both partitions must pass before that platform's remaining
+toolchain gates. Each toolchain job downloads both full manifests and JUnit
+reports and checks their disjoint union against every enabled test, including
+the exact worker checkout commits. The standard-library-only Python 3 auditor
+and its rejection tests live in `.github/scripts`; CI runs them on all three
+hosts before the remaining gates. These small evidence artifacts remain
+available for 90 days. Cargo doctests run separately; bootstrap comparisons, source
+trials, GC settings and the 120-minute job limits retain their existing settings.
 
 Start with the narrowest test that exercises a change. A language change needs
 source-to-native evidence and the important rejection case, not another public
