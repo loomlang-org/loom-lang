@@ -1,0 +1,37 @@
+import bounded_datagrams.protocol.message
+import bounded_datagrams.protocol.text
+import std.io.write_text
+import std.io.write_error
+import std.list.length
+import std.list.get
+import std.process.arguments
+import std.process.exit_code
+import std.task.Outcome
+import std.task.deadline.after_ns
+import std.text.concat
+
+async fn main() {
+    let args = arguments()
+    let input = if length(args) > 1 {
+        get(args, 1)
+    } else {
+        "bounded hello"
+    }
+    let value = match message(input) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            discard write_error("message exceeds 64 UTF-8 bytes\n")
+            exit_code(1)
+            return
+        }
+    }
+    match after_ns(exchange(value), 10000000000).await {
+        Outcome.Completed(Result.Ok(reply)) => {
+            discard write_text(concat(text(reply), "\n"))
+        }
+        _ => {
+            discard write_error("datagram exchange failed or was cancelled\n")
+            exit_code(1)
+        }
+    }
+}

@@ -1,0 +1,39 @@
+import std.bytes.new
+import std.bytes.push
+import std.bytes.set
+import std.text.concat
+
+test fn immutable_messages_isolate_mutable_datagrams_and_retain_their_bound() {
+    let bytes = to_bytes("bounded hello")
+    let parsed = match decode(bytes) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            assert false
+            return
+        }
+    }
+    set(bytes, 0, 88)
+    assert text(parsed) == "bounded hello"
+    assert std.bytes.length(encode(parsed)) <= 64
+    // Private representation is available only in this package's test scope.
+    assert std.text.length(parsed.payload.body) <= 64
+}
+
+test fn malformed_and_oversized_messages_reject_at_the_boundary() {
+    let invalid = new()
+    push(invalid, 255)
+    assert match decode(invalid) {
+        Result.Err(error) => error == DecodeError.Utf8
+        _ => false
+    }
+    var large = ""
+    var index = 0
+    while index < 65 {
+        large = std.text.concat(large, "x")
+        index = index + 1
+    }
+    assert match message(large) {
+        Result.Err(error) => error == DecodeError.TooLarge
+        _ => false
+    }
+}

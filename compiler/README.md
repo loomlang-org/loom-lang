@@ -5305,6 +5305,10 @@ cleanup. Borrowed I/O is directly awaited; `detach` explicitly transfers the
 socket to manual management. Both types support idempotent `close` and buffer
 options; bound owners also support broadcast and multicast configuration.
 
+The [bounded datagram application](examples/bounded_datagrams/README.md) combines
+these owners with directory-private representation, mandatory byte-length
+contracts, immutable decoding, separate package tests and editor queries.
+
 `std.net.dns.resolve(host, port).await` returns numeric socket addresses in OS
 resolver order, including hosts-file entries, as `Result[List[Text], ResolveError]`.
 `std.net.tcp.connect(host, port).await` interleaves address families, preserving

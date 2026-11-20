@@ -54,6 +54,12 @@ Source positions are static failure-path data; runtime-library-internal faults
 still lack positions. Test faults preserve the active test name and first fault.
 The [wordcount trial](../../compiler/examples/wordcount/README.md) exercises
 initialization, private packages, resources, tests and argument forwarding.
+The [bounded datagram application](../../compiler/examples/bounded_datagrams/README.md)
+combines checked UTF-8 byte bounds, a private immutable payload, isolated decoding,
+separate package tests, scoped UDP and an explicit manual server handoff. Native
+O0/O2 tests use moving GC; editor queries and edited contract/privacy failures use
+the ordinary checker. This is one application acceptance case; general constrained
+shared-alias preservation and broader networking remain open.
 
 The [VS Code extension](../../editors/vscode/README.md) uses the real compiler for
 unsaved diagnostics, formatting, hover/navigation, references, completion and
