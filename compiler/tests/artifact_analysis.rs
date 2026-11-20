@@ -26,7 +26,7 @@ fn reproduced_analysis_rejects_mixed_bases_and_keeps_frozen_source_queries() {
         "[module]\nname=\"artifact_analysis_subject\"\n",
     )
     .unwrap();
-    let program = "fn main() {}\n";
+    let program = "fn helper(value Int) Int { value }\npub fn exported() Int { helper(3) }\nfn main() { discard helper(7) }\n";
     fs::write(subject.join("main.loom"), program).unwrap();
     let compiler = common::compiler();
     let native = Path::new(env!("CARGO_BIN_EXE_loom-native"));

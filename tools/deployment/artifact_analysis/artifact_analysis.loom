@@ -3,6 +3,10 @@ import deployment.ReproducedArtifact
 import deployment.ReproductionRequest
 import deployment.read_build_receipt
 import deployment.reproduce_artifact
+import std.loom.analysis.ExecutionRoots
+import std.loom.analysis.execution_roots
+import std.list.length
+import std.list.get
 import std.fs.canonicalize
 import std.hash.sha256.hex
 import std.loom.analysis.Analysis
@@ -97,6 +101,51 @@ pub fn artifact_analysis_calls(value ArtifactAnalysis, root Int, boundaries List
     let calls = call_closure(value.state.analysis, root, boundaries)
     discard artifact_analysis_current(value)?
     Result.Ok(calls)
+}
+
+// Selected checked source roots, before lowering adds any async root wrapper.
+pub fn artifact_analysis_roots(value ArtifactAnalysis) Result[ExecutionRoots, Text] {
+    discard artifact_analysis_current(value)?
+    let roots = execution_roots(value.state.analysis)
+    discard artifact_analysis_current(value)?
+    Result.Ok(roots)
+}
+
+fn artifact_analysis_has_root(roots ExecutionRoots, root Int) Bool {
+    match roots.entry {
+        Option.Some(entry) => {
+            if entry == root {
+                return true
+            }
+        }
+        Option.None => {
+        }
+    }
+    var index = 0
+    while index < std.list.length(roots.tests) {
+        if std.list.get(roots.tests, index) == root {
+            return true
+        }
+        index = index + 1
+    }
+    index = 0
+    while index < std.list.length(roots.exports) {
+        if std.list.get(roots.exports, index) == root {
+            return true
+        }
+        index = index + 1
+    }
+    false
+}
+
+// Accept only a selected source entry/test/export root. The call metadata still
+// has the same issues, opaque cuts and limits. This is not writer compatibility.
+pub fn artifact_analysis_root_calls(value ArtifactAnalysis, root Int, boundaries List[Int]) Result[Option[CallClosure], Text] {
+    let roots = artifact_analysis_roots(value)?
+    if !artifact_analysis_has_root(roots, root) {
+        return Result.Ok(Option.None)
+    }
+    artifact_analysis_calls(value, root, boundaries)
 }
 
 pub fn artifact_analysis_evidence(value ArtifactAnalysis) Result[ReproducedArtifact, Text] {
