@@ -36,13 +36,21 @@ fn add(a Linear, b Linear) Linear {
                 }
             }
         }
-        var factor = integer(0)
-        if left < term_count(a.terms) && term_at(a.terms, left).id == id {
-            factor = term_at(a.terms, left).factor
+        // At least one input supplies this ID. Published coefficients are
+        // immutable, so initialize from that input without constructing zero.
+        let from_left = left < term_count(a.terms) && term_at(a.terms, left).id == id
+        var factor = if from_left {
+            term_at(a.terms, left).factor
+        } else {
+            term_at(b.terms, right).factor
+        }
+        if from_left {
             left = left + 1
         }
         if right < term_count(b.terms) && term_at(b.terms, right).id == id {
-            factor = sum(factor, term_at(b.terms, right).factor)
+            if from_left {
+                factor = sum(factor, term_at(b.terms, right).factor)
+            }
             right = right + 1
         }
         if number_size(factor) != 0 {
