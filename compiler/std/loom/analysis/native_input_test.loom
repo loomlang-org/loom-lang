@@ -1,0 +1,48 @@
+import std.text.starts_with
+
+test fn native_input_distinguishes_same_text_different_checked_trees() {
+    let project = input("fn answer() Int { 7 }\nfn main() { discard answer() }")
+    let original = published(project)
+    let before = native_input(original)
+    let main = get(get(project.files, 0).tree.children, 1)
+    let body = get(main.children, length(main.children) - 1)
+    while length(body.children) > 0 {
+        discard take_last(body.children)
+    }
+    let edited = published(project)
+    assert get(snapshot(original).source.files, 0).text == get(snapshot(edited).source.files, 0).text
+    assert native_input(edited) != before
+    assert native_input(original) == before
+    assert starts_with(before, "loom-checked-1\n")
+    assert !is_current(original, project, false)
+}
+
+test fn native_input_keeps_published_async_dispatch_and_program_tables_unchanged() {
+    let project = input("""
+        concept Worker { async fn work(self Self) Int }
+        impl Worker for Int { async fn work(self Int) Int { self } }
+        async fn main() {
+            let worker dyn Worker = 7
+            discard worker.work().await
+        }
+        """)
+    let analysis = published(project)
+    let state = analysis.state
+    let types = length(state.program.types)
+    let functions = length(state.program.functions)
+    let method = get(get(state.program.interfaces, 0).methods, 0)
+    assert method.is_async
+    let encoded = native_input(analysis)
+    assert starts_with(encoded, "loom-checked-1\n")
+    assert length(state.program.types) == types
+    assert length(state.program.functions) == functions
+    assert get(get(state.program.interfaces, 0).methods, 0).is_async
+    assert is_current(analysis, project, false)
+    assert native_input(analysis) == encoded
+    let draft = std.loom.typed.snapshot(state.program)
+    push(get(get(draft.interfaces, 0).methods, 0).params, 999999)
+    assert length(get(get(state.program.interfaces, 0).methods, 0).params) == length(method.params)
+    assert length(draft.witnesses) > 0
+    set(get(draft.witnesses, 0).methods, 0, -1)
+    assert get(get(state.program.witnesses, 0).methods, 0) >= 0
+}

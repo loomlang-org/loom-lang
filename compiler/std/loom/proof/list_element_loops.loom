@@ -87,7 +87,7 @@ fn loop_element_candidates(proof Verification, clauses List[Expr], candidates Li
                         LoopCandidate.Element(extent.identity, cell.index, ">=", cell.value), entry)
                     propose_element_candidate(candidates,
                         LoopCandidate.Element(extent.identity, cell.index, "<=", cell.value), entry)
-                    if length(term.terms) != 0 {
+                    if term_count(term.terms) != 0 {
                         let bounds = range(term, entry.facts)
                         if compare(bounds.low, integer(-9223372036854775808)) > 0 {
                             propose_element_candidate(candidates,

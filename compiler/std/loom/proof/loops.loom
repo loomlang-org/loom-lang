@@ -398,7 +398,7 @@ fn loop_entry_candidates(proof Verification, candidates List[LoopCandidate], ind
             // A nested loop may preserve a scalar range even when the
             // stronger relation to its symbolic entry value needs
             // arithmetic outside the difference solver's fragment.
-            if length(term.terms) != 0 {
+            if term_count(term.terms) != 0 {
                 let bounds = range(term, entry.facts)
                 if compare(bounds.low, integer(-9223372036854775808)) > 0 {
                     discard add_loop_candidate(candidates,

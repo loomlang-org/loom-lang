@@ -27,7 +27,7 @@ fn balanced_bag_terms(terms List[BagTerm]) List[BagTerm] {
     while index < length(combined) {
         let term = get(combined, index)
         if compare(term.factor, integer(0)) != 0 &&
-        (length(term.size.terms) != 0 || compare(term.size.constant, integer(0)) != 0) {
+        (term_count(term.size.terms) != 0 || compare(term.size.constant, integer(0)) != 0) {
             push(output, term)
         }
         index = index + 1

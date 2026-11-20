@@ -131,7 +131,7 @@ fn list_operation_outcomes(proof Verification, primitive Text, ty Int, receiver_
         // the source. Do not grant private origin or a frame for that storage.
         state = forget_extents(proof, published_storage(state))
         state = assume(assume(state, Predicate.Compare(">=", start)),
-            Predicate.Compare(">=", add(end, scale(start, integer(-1)))))
+            Predicate.Compare(">=", add_scaled(end, start, integer(-1))))
         return Result.Ok(outcomes(state, Value.Empty))
     }
     if length(inputs.values) > 0 {
@@ -141,7 +141,7 @@ fn list_operation_outcomes(proof Verification, primitive Text, ty Int, receiver_
                     let index = list_value_index(get(inputs.values, 1))?
                     // These are established callee facts, not caller goals.
                     state = assume(assume(state, Predicate.Compare(">=", index)),
-                        Predicate.Compare("<", add(index, scale(size, integer(-1)))))
+                        Predicate.Compare("<", add_scaled(index, size, integer(-1))))
                 } else if name != "list_len" || length(inputs.values) != 1 {
                     return Result.Err("entry List values cannot be mutated")
                 }
@@ -267,7 +267,7 @@ fn list_operation_outcomes(proof Verification, primitive Text, ty Int, receiver_
         // Native bounds checks have succeeded on normal continuation. Reuse
         // established observations; an unknown read supplies an arbitrary value.
         state = assume(assume(state, Predicate.Compare(">=", index)),
-            Predicate.Compare("<", add(index, scale(size, integer(-1)))))
+            Predicate.Compare("<", add_scaled(index, size, integer(-1))))
         if name == "list_get" {
             return read_element_outcomes(proof, ty, receiver_type, identity, index, state)
         }

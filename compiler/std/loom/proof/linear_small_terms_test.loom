@@ -1,0 +1,69 @@
+test fn inline_terms_small_coefficients_preserve_machine_edges_and_spills() {
+    let coefficients = [integer(0), integer(1), integer(-1),
+        integer(-9223372036854775808), integer(9223372036854775807),
+        decimal("9223372036854775808"), decimal("-9223372036854775809"),
+        decimal("123456789012345678901234567890123456789012345678901234567890123456789")]
+    var first = 0
+    while first < length(coefficients) {
+        var second = 0
+        while second < length(coefficients) {
+            var built = empty_terms()
+            built = append_built_term(built, Term {
+                    id = -7,
+                    factor = get(coefficients, first)
+                })
+            built = append_built_term(built, Term {
+                    id = 3,
+                    factor = get(coefficients, second)
+                })
+            assert term_count(built) == 2
+            let original = Linear {
+                constant = integer(1),
+                terms = built
+            }
+            let source = terms_from_list([Term {
+                        id = -7,
+                        factor = get(coefficients, first)
+                    },
+                    Term {
+                        id = 3,
+                        factor = get(coefficients, second)
+                    }])
+            assert same_terms(original.terms, source)
+            let doubled = add(original, original)
+            assert compare(doubled.constant, integer(2)) == 0
+            if number_size(get(coefficients, first)) != 0 {
+                assert term_at(doubled.terms, 0).id == -7
+                assert compare(term_at(doubled.terms, 0).factor, product(get(coefficients, first), integer(2))) == 0
+            } else if number_size(get(coefficients, second)) != 0 {
+                assert term_at(doubled.terms, 0).id == 3
+                assert compare(term_at(doubled.terms, 0).factor, product(get(coefficients, second), integer(2))) == 0
+            } else {
+                assert term_count(doubled.terms) == 0
+            }
+            assert same_terms(original.terms, source)
+            assert compare(term_at(original.terms, 0).factor, get(coefficients, first)) == 0
+            assert compare(term_at(original.terms, 1).factor, get(coefficients, second)) == 0
+            var spill = empty_terms()
+            spill = append_built_term(spill, Term {
+                    id = -7,
+                    factor = get(coefficients, first)
+                })
+            spill = append_built_term(spill, Term {
+                    id = 3,
+                    factor = get(coefficients, second)
+                })
+            spill = append_built_term(spill, Term {
+                    id = 9,
+                    factor = integer(1)
+                })
+            assert term_count(spill) == 3
+            assert compare(term_at(spill, 0).factor, get(coefficients, first)) == 0
+            assert compare(term_at(spill, 1).factor, get(coefficients, second)) == 0
+            assert term_at(spill, 2).id == 9 && compare(term_at(spill, 2).factor, integer(1)) == 0
+            assert same_terms(original.terms, source)
+            second = second + 1
+        }
+        first = first + 1
+    }
+}

@@ -131,8 +131,8 @@ fn difference_edges(edges List[Difference], identities List[Int], relation Text,
     var positive = -1
     var negative = -1
     var index = 0
-    while index < length(value.terms) {
-        let term = get(value.terms, index)
+    while index < term_count(value.terms) {
+        let term = term_at(value.terms, index)
         if term.id < 0 {
             return Result.Err("invalid difference identity")
         }
@@ -200,7 +200,7 @@ fn difference_facts(state State) State {
     while index < length(state.facts) && index < 256 && !coupled {
         match get(state.facts, index) {
             Predicate.Compare(_, value) => {
-                coupled = length(value.terms) == 2
+                coupled = term_count(value.terms) == 2
             }
             _ => {
             }

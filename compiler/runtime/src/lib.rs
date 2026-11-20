@@ -677,6 +677,17 @@ extern "C-unwind" fn loom_rt_float_format(value: f64) -> *mut u8 {
 
 #[unsafe(no_mangle)]
 unsafe extern "C-unwind" fn loom_rt_text_concat(left: *const u8, right: *const u8) -> *mut u8 {
+    // Text is immutable. Identity operands can retain the existing live object
+    // without allocating or entering a collection point.
+    // SAFETY: Both inputs are live Text; reading their headers cannot collect.
+    unsafe {
+        if (*left.cast::<Text>()).len == 0 {
+            return right.cast_mut();
+        }
+        if (*right.cast::<Text>()).len == 0 {
+            return left.cast_mut();
+        }
+    }
     rooted([left.cast_mut(), right.cast_mut()], |slots| {
         // SAFETY: Read lengths before allocation; obtain fresh interior pointers
         // from the rewritten input slots only after allocation has finished.
@@ -707,6 +718,13 @@ unsafe extern "C-unwind" fn loom_rt_text_slice(text: *const u8, start: i64, end:
         .ok()
         .zip(usize::try_from(end).ok())
         .unwrap_or_else(|| fault("invalid text slice range or UTF-8 boundary"));
+    // A full range is valid for every live UTF-8 Text, including empty Text.
+    // Partial ranges still take the ordinary bounds/boundary validation below.
+    // SAFETY: The input is live and no allocation occurs before the return.
+    let length = unsafe { (*text.cast::<Text>()).len };
+    if start == 0 && end == length {
+        return text.cast_mut();
+    }
     rooted([text.cast_mut()], |slots| {
         // SAFETY: Validation borrows the input only before allocation. The copy
         // reloads its rooted header and reconstructs the same byte offset.
@@ -2189,6 +2207,40 @@ mod tests {
             drop(copied_root);
         }
         drop(checkpoint);
+        loom_rt_collect();
+        assert_eq!(live(), 0);
+    }
+
+    #[test]
+    fn text_identity_aliases_survive_moving_collection_without_copying() {
+        let mut source = text("界🙂");
+        let source_root = root(ptr::addr_of_mut!(source));
+        let mut empty = text("");
+        let empty_root = root(ptr::addr_of_mut!(empty));
+        HEAP.with(|heap| heap.borrow_mut().threshold = 0);
+        let count = live();
+        // SAFETY: All input and returned pointer slots remain independently
+        // rooted. The later explicit collection must rewrite every alias.
+        unsafe {
+            let mut whole = loom_rt_text_slice(source, 0, 7);
+            let whole_root = root(ptr::addr_of_mut!(whole));
+            let mut left = loom_rt_text_concat(empty, whole);
+            let left_root = root(ptr::addr_of_mut!(left));
+            let mut right = loom_rt_text_concat(whole, empty);
+            let right_root = root(ptr::addr_of_mut!(right));
+            let mut empty_whole = loom_rt_text_slice(empty, 0, 0);
+            let empty_whole_root = root(ptr::addr_of_mut!(empty_whole));
+            assert_eq!(live(), count);
+            let previous = source as usize;
+            loom_rt_collect();
+            assert_ne!(source as usize, previous);
+            for value in [source, whole, left, right] {
+                assert_eq!(text_bytes(value), "界🙂".as_bytes());
+            }
+            assert_eq!(text_bytes(empty_whole), b"");
+            drop((empty_whole_root, right_root, left_root, whole_root));
+        }
+        drop((empty_root, source_root));
         loom_rt_collect();
         assert_eq!(live(), 0);
     }

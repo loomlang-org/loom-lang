@@ -68,7 +68,7 @@ fn operation_safety(value Expr, state State) Result[Predicate, Text] {
         let size = list_value_extent(pure(get(value.children, 0), state)?, state)?
         let index = list_value_index(pure(get(value.children, 1), state)?)?
         return Result.Ok(Predicate.And([Predicate.Compare(">=", index),
-                    Predicate.Compare("<", add(index, scale(size, integer(-1))))]))
+                    Predicate.Compare("<", add_scaled(index, size, integer(-1)))]))
     }
     Result.Err("unsupported operation safety formula")
 }
@@ -300,7 +300,7 @@ fn predicate_key(value Value, budget List[Int]) Result[PredicateKey, Text] {
             }
             let fields = new[List[PredicateKey]]()
             let literal = match tag {
-                IntegerTerm.Linear(number) => if length(number.terms) == 0 {
+                IntegerTerm.Linear(number) => if term_count(number.terms) == 0 {
                     let selected = machine(number.constant)?
                     if selected < 0 || selected >= length(payloads) {
                         return Result.Err("predicate enum key has an invalid tag")

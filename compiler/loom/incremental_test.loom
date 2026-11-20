@@ -116,3 +116,6 @@ test fn reused_concrete_bodies_build_and_run_through_the_native_backend() {
         Result.Err(_) => false
     }
 }
+
+import std.loom.artifact.encode
+import std.loom.lowering.lower

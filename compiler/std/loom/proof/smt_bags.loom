@@ -31,8 +31,8 @@ fn bag_bound_scope(value Text, sizes List[Linear]) Text {
     while size < length(sizes) {
         let terms = get(sizes, size).terms
         var index = 0
-        while index < length(terms) {
-            let identity = get(terms, index).id
+        while index < term_count(terms) {
+            let identity = term_at(terms, index).id
             var found = false
             var prior = 0
             while prior < length(bindings) && !found {

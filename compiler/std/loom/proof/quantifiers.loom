@@ -3,8 +3,8 @@ fn quantified_scope(expr Expr, state State) Result[State, Text] {
     let end = list_value_index(pure(get(expr.children, 1), state)?)?
     let bound = variable(expr.index)
     Result.Ok(assume(assume(state,
-                Predicate.Compare(">=", add(bound, scale(start, integer(-1))))),
-            Predicate.Compare("<", add(bound, scale(end, integer(-1))))))
+                Predicate.Compare(">=", add_scaled(bound, start, integer(-1)))),
+            Predicate.Compare("<", add_scaled(bound, end, integer(-1)))))
 }
 
 fn quantified_predicate(expr Expr, state State) Result[Predicate, Text] {
