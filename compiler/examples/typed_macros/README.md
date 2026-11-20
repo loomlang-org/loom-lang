@@ -13,6 +13,12 @@ one inferred input type. The result is parsed as one expression and checked in
 the generator's package. The generator may live beside its consumers; no
 separate macro package or host-language plugin is needed.
 
+Named generators may also declare `comptime` parameters. Supply those operands
+first, in declaration order, followed by the expression inputs. Only expression
+inputs contribute descriptors and `$0`, `$1`, ... positions. The
+[static parameter example](../static_macros) demonstrates a configured field
+projection and a callback with an available captured environment.
+
 `$0`, `$1`, ... refer to input values in generated source. Inputs evaluate once,
 left to right, including unused inputs. Repeated placeholders reuse the saved
 value; they do not duplicate effects. Positional inputs cannot be shadowed by a

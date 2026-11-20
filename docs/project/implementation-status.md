@@ -406,7 +406,10 @@ Type/value/function parameters, structural type construction, associated
 projections, hygienic expression macros and explicit declaration generation use
 ordinary typing and visibility. Declaration generation is not an implicit
 fixed-point expansion. Reflection exposes filtered schemas, not extra access
-or conformance evidence. Static type iteration accepts ordinary type syntax,
+or conformance evidence. Named expression generators accept ordinary static
+parameters beside their descriptor list; configured field projections preserve
+whole-record constraints and mandatory proofs, while runtime captures remain
+unavailable during generation. Static type iteration accepts ordinary type syntax,
 including generic instances, tuples and computed type identities, without an
 intermediate alias; unknown shapes still reject. Direct `dyn` type values use
 ordinary dynamic-header checks and preserve local family binders rather than
