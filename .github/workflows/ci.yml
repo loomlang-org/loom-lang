@@ -64,6 +64,30 @@ jobs:
           persist-credentials: false
           fetch-depth: 0 # Seed reproduction resolves its pinned source commit.
 
+      - name: Download first native partition
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: native-tests-${{ runner.os }}-1
+          path: target/native-partitions/1
+
+      - name: Download second native partition
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: native-tests-${{ runner.os }}-2
+          path: target/native-partitions/2
+
+      - name: Verify native partition source and complete coverage
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == 'Windows' ]]; then
+            partition_python=python
+          else
+            partition_python=python3
+          fi
+          "$partition_python" -B -m unittest discover -s .github/scripts -p test_native_partitions.py
+          "$partition_python" -B .github/scripts/verify-native-partitions.py \
+            target/native-partitions/1 target/native-partitions/2 --require-checkout
+
       - name: Check documentation
         run: |
           node --test .github/scripts/check-docs.test.mjs
@@ -161,6 +185,30 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
 
+      - name: Download first native partition
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: native-tests-${{ runner.os }}-1
+          path: target/native-partitions/1
+
+      - name: Download second native partition
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: native-tests-${{ runner.os }}-2
+          path: target/native-partitions/2
+
+      - name: Verify native partition source and complete coverage
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == 'Windows' ]]; then
+            partition_python=python
+          else
+            partition_python=python3
+          fi
+          "$partition_python" -B -m unittest discover -s .github/scripts -p test_native_partitions.py
+          "$partition_python" -B .github/scripts/verify-native-partitions.py \
+            target/native-partitions/1 target/native-partitions/2 --require-checkout
+
       - name: Install LLVM development libraries
         run: |
           # The runner's mirror list can hang on Azure HTTP endpoints. Keep the
@@ -224,6 +272,30 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      - name: Download first native partition
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: native-tests-${{ runner.os }}-1
+          path: target/native-partitions/1
+
+      - name: Download second native partition
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: native-tests-${{ runner.os }}-2
+          path: target/native-partitions/2
+
+      - name: Verify native partition source and complete coverage
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == 'Windows' ]]; then
+            partition_python=python
+          else
+            partition_python=python3
+          fi
+          "$partition_python" -B -m unittest discover -s .github/scripts -p test_native_partitions.py
+          "$partition_python" -B .github/scripts/verify-native-partitions.py \
+            target/native-partitions/1 target/native-partitions/2 --require-checkout
 
       - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
 
