@@ -141,6 +141,8 @@ jobs:
           node -e 'console.log(JSON.stringify({platform:process.platform,cpus:require("node:os").availableParallelism()}))'
           cargo nextest list --locked --workspace --message-format json > target/native-test-manifest.json
           cargo nextest run --locked --workspace --profile ci --test-threads 2 --no-fail-fast --partition slice:${{ inputs.partition }}/2
+          test -z "$(git status --porcelain)"
+          git rev-parse HEAD > target/native-test-source.txt
 
       - name: Preserve the full manifest and partition results
         if: always()
@@ -149,6 +151,7 @@ jobs:
           name: native-tests-${{ inputs.platform }}-${{ inputs.partition }}
           path: |
             target/native-test-manifest.json
+            target/native-test-source.txt
             target/nextest/ci/junit.xml
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 90
