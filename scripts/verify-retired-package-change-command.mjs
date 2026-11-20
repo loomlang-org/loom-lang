@@ -59,4 +59,43 @@ export function verifyRetiredPackageChangeCommand(loom, directory, environment, 
   const binary = join(directory, `retired-tests${process.platform === "win32" ? ".exe" : ""}`);
   success(invoke(loom, ["test", output, "--no-run", "--output", binary]));
   success(invoke(binary, [], { ...environment, LOOM_GC_STRESS: "1" }));
+  // It becomes a semantic baseline below, so account for the new root test.
+  success(change("refresh", output));
+
+  const revived = join(directory, "revived"), unchanged = join(directory, "unchanged");
+  cpSync(output, revived, { recursive: true, filter: () => true });
+  cpSync(output, unchanged, { recursive: true, filter: () => true });
+  const revivedPackage = join(revived, "history");
+  writeFileSync(join(revivedPackage, "value.loom"), `
+concept Value { fn value(self Self) Int }
+record Marker {}
+impl Value for Marker { fn value(self Marker) Int { 9 } }
+fn source() Int { 9 }
+fn copied() Int { source() }
+`);
+  writeFileSync(join(revivedPackage, "value_test.loom"), "test fn private_restored_member() {\n    assert Marker {}.value() == 9\n    assert copied() == 9\n}\n");
+  success(change("refresh", revivedPackage, "--derive", parent, "value.loom", "copied", "-"));
+  const fresh = readFileSync(metadataAt(revived), "utf8");
+  const freshSource = fresh.match(/^id (\S+) fn source /m)?.[1];
+  assert.ok(freshSource && freshSource !== parent);
+  assert.match(fresh, new RegExp(`^origin ${child} ${parent}$`, "m"));
+  const next = Number(fresh.match(/^next (\d+)$/m)?.[1]);
+  const oldNext = Number(retired.match(/^next (\d+)$/m)?.[1]);
+  assert.ok(next > oldNext);
+  const restoredPreview = success(review(output, revived, unchanged));
+  const restoredToken = restoredPreview.match(/^review token: ([a-f0-9]{64})$/m)?.[1]; assert.ok(restoredToken);
+  const restored = join(directory, "restored");
+  success(change("--apply", restoredToken, restored, "--module", standard, output, revived, unchanged));
+  // Reviewed output canonically orders IDs; every complete row must survive.
+  assert.deepEqual(readFileSync(metadataAt(restored), "utf8").split("\n").sort(), fresh.split("\n").sort());
+  success(invoke(loom, ["test", join(restored, "history"), "--no-run", "--output", binary]));
+  success(invoke(binary, [], { ...environment, LOOM_GC_STRESS: "1" }));
+  writeFileSync(metadataAt(revived), fresh.replace(`next ${next}\n`, `next ${oldNext}\n`));
+  const reset = review(output, revived, unchanged);
+  assert.equal(reset.status, 1);
+  assert.match(reset.stdout + reset.stderr, /retained allocator/);
+  const staleRestoration = join(directory, "stale restoration");
+  assert.equal(change("--apply", restoredToken, staleRestoration, "--module", standard, output, revived, unchanged).status, 1);
+  assert.ok(!existsSync(staleRestoration));
+  writeFileSync(metadataAt(revived), fresh);
 }

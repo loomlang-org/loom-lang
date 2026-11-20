@@ -913,9 +913,13 @@ Canonical acyclic origin records survive refresh, drafts and reviewed directory/
 Git output. A deleted package can retain a resolved, source-free `.loom-ids` in
 its original directory, preserving its package name, allocator and complete
 history through reviewed module and Git-tree output. It contributes no active
-declarations; later merges require that sidecar unchanged. Changed or removed
-history, implicit reactivation and conflicting concurrent origins reject;
-cross-package derivation/history relocation remains open.
+declarations; later merges retain an inactive sidecar unchanged. Explicit fresh
+reactivation through `refresh` replays the root/member allocator from the retained
+counter and preserves every historical origin. Reused names do not restore old
+IDs. Reset allocators, lost history and different concurrent reactivations reject;
+subsequent moves/edits use the reactivated snapshot as their active baseline.
+Arbitrary intervening reactivation histories, cross-package derivation and history
+relocation remain open.
 Complete module batches can rename public functions, records, enums, refined
 types and concepts across checked imports,
 calls and independent private tests, including partial overload-group renames

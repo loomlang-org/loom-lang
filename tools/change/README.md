@@ -94,10 +94,18 @@ Keep the resulting `.loom-ids`, with no active identities or unresolved draft,
 its original package name, allocator and complete origin rows. Module review
 labels this retained package history, excludes it from the active import graph,
 and preserves its bytes in directory and Git-tree output. Consumers must still
-pass ordinary checks without the deleted package. Later merges require that
-retired sidecar unchanged; deleting, relocating, rewriting or reactivating its
-scope needs explicit resolution outside this bounded workflow. A source-free
-sidecar with no derivation history remains invalid.
+pass ordinary checks without the deleted package. Later merges retain an
+inactive sidecar unchanged. To reuse the directory, keep that sidecar, add the
+initial sources and explicitly run `refresh DIR` (optionally with `--derive`
+from a retained historical parent). Review replays the existing root/member
+allocator from the archived counter and requires the exact fresh IDs, next
+counter and complete origins. Former names do not resurrect former identities.
+Deleting or reinitializing the sidecar cannot authorize reactivation. Different
+concurrent reactivations require selecting one explicit snapshot; after that
+active snapshot becomes the baseline, ordinary move/edit handling applies.
+This initial reactivation check does not infer an arbitrary intervening identity
+history. Relocating history remains unsupported. A source-free sidecar with no
+derivation history remains invalid.
 
 For a method target, name its identified concept or impl explicitly:
 

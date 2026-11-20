@@ -11,7 +11,11 @@ fn retired_relative(relative Text) Option[Text] {
 }
 
 fn retired_path(relative Text) Text {
-    if relative == "" { ".loom-ids" } else { concat(relative, "/.loom-ids") }
+    if relative == "" {
+        ".loom-ids"
+    } else {
+        concat(relative, "/.loom-ids")
+    }
 }
 
 fn retired_header(bytes Bytes) Result[Header, Text] {
@@ -36,18 +40,113 @@ fn retired_metadata(snapshot ModuleSnapshot, relative Text) Result[Header, Text]
     retired_header(get(snapshot.assets, index).bytes)
 }
 
-// Moving/removing an already retired sidecar would lose its package scope.
-// Recovery/reactivation needs an explicit future identity operation, not an
-// ordinary asset deletion or a fresh package with the same directory name.
+// Replay the existing allocator from the retained high-water mark. No former
+// declaration can acquire its old ID just by reusing a name. This admits the
+// explicit fresh refresh operation, not a guessed restoration of old identity.
+fn reactivated_allocation(previous Header, candidates List[Identity], kept List[Identity],
+    next Int) Result[Int, Text] {
+    var sequence = next
+    var index = 0
+    while index < length(candidates) {
+        let candidate = get(candidates, index)
+        var id = ""
+        var allocated = false
+        while !allocated {
+            if sequence >= 9223372036854775806 {
+                return Result.Err("reactivated package identity allocator exhausted")
+            }
+            id = fresh_id(previous.package_name, candidate, sequence)
+            sequence = sequence + 1
+            allocated = !lineage_known(new[Identity](), previous.lineage, id) && identity_at(kept, id) < 0
+        }
+        push(kept, Identity {
+                id = id
+                ..candidate
+            })
+        index = index + 1
+    }
+    Result.Ok(sequence)
+}
+
+fn reactivated_package(previous Header, current Loaded) Result[Bool, Text] {
+    if previous.package_name != current.revision.package_name {
+        return Result.Err("reactivated package must retain its package identity")
+    }
+    let roots = declarations(current.revision.files)?
+    let expected = new[Identity]()
+    let next = reactivated_allocation(previous, roots, expected, previous.next)?
+    let members = member_declarations(current.revision.files, expected)?
+    let final_next = reactivated_allocation(previous, members, expected, next)?
+    if final_next != current.next || length(expected) != length(current.revision.identities) {
+        return Result.Err("retired package history needs fresh reactivation identities from its retained allocator")
+    }
+    var index = 0
+    while index < length(expected) {
+        let identity = get(expected, index)
+        let actual = identity_at(current.revision.identities, identity.id)
+        if actual < 0 || !same_declaration(identity, get(current.revision.identities, actual)) {
+            return Result.Err("retired package history needs fresh reactivation identities from its retained allocator")
+        }
+        index = index + 1
+    }
+    let lineage = loaded_lineage(current)?
+    discard join_lineage(previous.lineage, lineage, lineage, new[Identity]())?
+    index = 0
+    while index < length(lineage) {
+        let origin = get(lineage, index)
+        if lineage_index(previous.lineage, origin.id) < 0 {
+            if identity_at(expected, origin.id) < 0 {
+                return Result.Err("reactivated package has an origin without a fresh declaration")
+            }
+            var parent = 0
+            while parent < length(origin.parents) {
+                if !lineage_known(new[Identity](), previous.lineage, get(origin.parents, parent)) {
+                    return Result.Err("reactivated package derivation needs a retained historical parent")
+                }
+                parent = parent + 1
+            }
+        }
+        index = index + 1
+    }
+    Result.Ok(true)
+}
+
+// Ordinary asset edits still cannot remove or rewrite a retired scope. Active
+// source needs the exact explicit fresh refresh, including all retained origins.
 fn retain_retired_packages(base ModuleSnapshot, left ModuleSnapshot, right ModuleSnapshot) Result[Bool, Text] {
     var index = 0
     while index < length(base.assets) {
         let asset = get(base.assets, index)
         match retired_relative(asset.relative) {
-            Option.Some(_) => {
-                if !equal_asset(base.assets, index, left.assets, asset_index(left.assets, asset.relative)) ||
-                !equal_asset(base.assets, index, right.assets, asset_index(right.assets, asset.relative)) {
-                    return Result.Err("retired package history cannot be removed, rewritten or reactivated implicitly")
+            Option.Some(relative) => {
+                let branches = [left, right]
+                var side = 0
+                while side < length(branches) {
+                    let branch = get(branches, side)
+                    match module_package(branch, relative) {
+                        Result.Ok(active) => {
+                            discard reactivated_package(retired_header(asset.bytes)?, active)?
+                        }
+                        Result.Err(_) => {
+                            if !equal_asset(base.assets, index, branch.assets, asset_index(branch.assets, asset.relative)) {
+                                return Result.Err("retired package history cannot be removed or rewritten")
+                            }
+                        }
+                    }
+                    side = side + 1
+                }
+                match module_package(left, relative) {
+                    Result.Ok(a) => match module_package(right, relative) {
+                        Result.Ok(b) => {
+                            if a.sidecar != b.sidecar || files_stamp(a.revision.files) != files_stamp(b.revision.files) {
+                                return Result.Err("concurrent package reactivation requires one explicit selected snapshot")
+                            }
+                        }
+                        Result.Err(_) => {
+                        }
+                    }
+                    Result.Err(_) => {
+                    }
                 }
             }
             Option.None => {
