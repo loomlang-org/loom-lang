@@ -4,6 +4,15 @@ record GitBasis {
     right Text
 }
 
+fn git_baseline_tree(executable Text, repository Text, commit Text) Result[Text, Text] {
+    let tree = trim(git(executable, repository,
+            ["rev-parse", "--verify", concat(commit, "^{tree}")])?)
+    if !git_object_id(tree, std.text.length(commit)) {
+        return Result.Err("Git baseline has no verified repository tree identity")
+    }
+    Result.Ok(tree)
+}
+
 // Pin all three refs before consulting history or reading snapshots. An older
 // common ancestor is not the actual baseline, even if its source still checks.
 fn git_basis(executable Text, repository Text, base Text, left Text, right Text) Result[GitBasis, Text] {
@@ -21,11 +30,31 @@ fn git_basis(executable Text, repository Text, base Text, left Text, right Text)
             return Result.Err("Git branches have no established common baseline; explicit resolution required")
         }
     }
-    if length(common) != 1 || get(common, 0) == "" {
+    if length(common) == 0 || get(common, 0) == "" {
         return Result.Err("Git branches have multiple common baselines; explicit resolution required")
     }
-    if get(common, 0) != pinned.base {
-        return Result.Err("Git baseline is not the unique merge base of the selected branches")
+    if length(common) == 1 {
+        if get(common, 0) != pinned.base {
+            return Result.Err("Git baseline is not the unique merge base of the selected branches")
+        }
+    } else {
+        // Different ancestry can retain exactly one baseline snapshot. Compare
+        // the entire repository tree, including identities/configuration and
+        // monorepo dependencies, not merely the selected source directory.
+        let tree = git_baseline_tree(executable, repository, get(common, 0))?
+        var selected = false
+        var index = 0
+        while index < length(common) {
+            let candidate = get(common, index)
+            if git_baseline_tree(executable, repository, candidate)? != tree {
+                return Result.Err("Git branches have multiple common baselines with different repository trees; explicit resolution required")
+            }
+            selected = selected || candidate == pinned.base
+            index = index + 1
+        }
+        if !selected {
+            return Result.Err("Git branches have multiple common baselines; BASE must explicitly select an actual equal-tree merge base")
+        }
     }
     Result.Ok(pinned)
 }

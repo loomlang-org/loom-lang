@@ -211,13 +211,19 @@ submodules, nested modules and unsupported config changes; file modes are not
 preserved by this directory-output mode. Dependencies outside the pinned source
 basis and arbitrary module/configuration changes remain unimplemented.
 
-Every Git merge mode requires `BASE` to be the unique Git merge base of the
+Every Git merge mode requires `BASE` to be an actual Git merge base of the
 resolved `LEFT` and `RIGHT` commits, not merely an older common ancestor with
-matching source. Refs are pinned before reading snapshots and checked again
-before apply. Unrelated histories, multiple merge bases and shallow repositories
-require explicit resolution or obtaining complete local history; the tool never
-fetches history or guesses a synthetic base. Directory snapshots have no Git
-ancestry evidence: their caller remains responsible for the common baseline.
+matching source. A unique merge base is accepted directly. When there are
+multiple actual bases, their complete repository tree identities must all match,
+and `BASE` must explicitly select one of them. Matching only the selected package
+is insufficient: sidecars, configuration and monorepo dependency context matter
+too. Review retains the selected commit's provenance even when the resulting
+merged tree is identical for either choice.
+Refs are pinned before reading snapshots and checked again before apply.
+Unrelated histories, different baseline trees and shallow repositories require
+explicit resolution or obtaining complete local history; the tool never fetches
+history or guesses a synthetic base. Directory snapshots have no Git ancestry
+evidence: their caller remains responsible for the common baseline.
 
 ### Git-derived project context
 
