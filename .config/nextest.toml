@@ -1,0 +1,4 @@
+# Native partitions retain the default test behavior and write selected results.
+[profile.ci.junit]
+path = "junit.xml"
+report-skipped = "none"
