@@ -1,0 +1,5 @@
+[module]
+name = "artifact_reproduction_trial"
+
+[dependencies.deployment]
+path = ".."

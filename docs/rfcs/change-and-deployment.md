@@ -15,6 +15,11 @@ change an existing workspace or Git history. General migration packages and proo
 that application code obeys the declared storage mapping remain open. The fixed
 SQLite executor checks a local build receipt
 against its target artifact; this is not signed deployment evidence.
+An explicit [artifact reproduction API](../../tools/deployment/reproduction_trial/README.md)
+also rebuilds with caller-selected compiler/native images and checks the real
+artifact, checked input, complete v5 build basis and backend identity. This
+observes reproducibility for the selected toolchain; it does not establish the
+application writer or storage-mapping obligations above.
 
 ## Story 1: Evolve a library without hiding dependency changes
 
