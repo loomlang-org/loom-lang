@@ -1,0 +1,230 @@
+import std.task.cancel
+import std.task.outcome
+
+async fn owned_tick() {
+}
+
+async fn owned_packets() Result[Bool, UdpError] {
+    scoped server = bind_owned("127.0.0.1:0").await?
+    let address = local_address(server)?
+    let parts = split(address, ":")
+    let port = match parse(parts[1]) {
+        Result.Ok(value) => value
+        Result.Err(_) => { return Result.Err(UdpError.Address) }
+    }
+    scoped client = connect_owned("127.0.0.1", port).await?
+    assert peer_address(client)? == address
+    discard set_receive_buffer_size(server, 32768)?
+    discard set_send_buffer_size(client, 32768)?
+    assert receive_buffer_size(server)? > 0 && send_buffer_size(client)? > 0
+    assert !broadcast(server)?
+    discard set_broadcast(server, true)?
+    assert broadcast(server)?
+    discard set_broadcast(server, false)?
+    discard join_multicast(server, "239.255.0.1", "0.0.0.0")?
+    discard leave_multicast(server, "239.255.0.1", "0.0.0.0")?
+    discard set_multicast(server, MulticastV4 {
+            interface = "127.0.0.1"
+            loopback = true
+            hops = 0
+        })?
+    discard send(client, to_bytes("packet")).await?
+    let packet = receive(server).await?
+    assert packet.sender == local_address(client)?
+    discard send(server, packet.data, packet.sender).await?
+    assert to_text(receive(client, 32).await?.data) == "packet"
+    discard send(client, to_bytes("too long")).await?
+    assert match receive(server, 2).await {
+        Result.Err(error) => error == UdpError.Truncated
+        _ => false
+    }
+    discard send(client, new()).await?
+    assert length(receive(server).await?.data) == 0
+    discard close(client)?
+    discard close(client)?
+    assert match send(client, new()).await {
+        Result.Err(error) => error == UdpError.Close
+        _ => false
+    }
+    discard close(server)?
+    assert match receive(server).await {
+        Result.Err(error) => error == UdpError.Close
+        _ => false
+    }
+    Result.Ok(true)
+}
+
+test async fn owned_udp_preserves_peer_packets_limits_options_and_idempotent_close() {
+    assert match after_ns(owned_packets(), 10000000000).await {
+        Outcome.Completed(Result.Ok(value)) => value
+        _ => false
+    }
+}
+
+test async fn owned_udp_unclaimed_binding_and_connection_tasks_close_their_payloads() {
+    var bound_token = -1
+    {
+        let pending = bind_owned("127.0.0.1:0")
+        owned_tick().await
+        scoped finished = cancel(pending)
+        match finished {
+            Outcome.Completed(Result.Ok(socket)) => {
+                bound_token = socket.state.token
+                assert match local_address(socket) {
+                    Result.Ok(value) => value != ""
+                    _ => false
+                }
+            }
+            _ => { assert false }
+        }
+    }
+    assert bound_token >= 0 && socket_address(bound_token, 0) == ""
+    var connected_token = -1
+    {
+        let pending = connect_owned("127.0.0.1:9")
+        owned_tick().await
+        scoped finished = cancel(pending)
+        match finished {
+            Outcome.Completed(Result.Ok(socket)) => {
+                connected_token = socket.state.token
+                assert match peer_address(socket) {
+                    Result.Ok(value) => value == "127.0.0.1:9"
+                    _ => false
+                }
+            }
+            _ => { assert false }
+        }
+    }
+    assert connected_token >= 0 && socket_address(connected_token, 0) == ""
+}
+
+async fn owned_waiting(tokens List[Int], ready List[Bool]) Result[Bool, UdpError] {
+    scoped socket = bind_owned("127.0.0.1:0").await?
+    tokens[0] = socket.state.token
+    ready[0] = true
+    discard receive(socket).await?
+    Result.Ok(true)
+}
+
+test async fn owned_udp_cancellation_drains_readiness_before_disposal() {
+    let tokens = [-1]
+    let ready = [false]
+    let pending = owned_waiting(tokens, ready)
+    while !ready[0] { owned_tick().await }
+    assert match cancel(pending) {
+        Outcome.Cancelled => true
+        _ => false
+    }
+    assert tokens[0] >= 0 && socket_address(tokens[0], 0) == ""
+}
+
+async fn owned_faulting(tokens List[Int]) Result[Bool, UdpError] {
+    scoped socket = connect_owned("127.0.0.1:9").await?
+    tokens[0] = socket.state.token
+    assert false
+    Result.Ok(true)
+}
+
+test async fn owned_udp_faults_release_the_scoped_connection() {
+    let tokens = [-1]
+    assert match outcome(owned_faulting(tokens)).await {
+        Outcome.Faulted(_) => true
+        _ => false
+    }
+    assert tokens[0] >= 0 && socket_address(tokens[0], 0) == ""
+}
+
+async fn owned_detached() Result[Bool, UdpError] {
+    let server = {
+        scoped socket = bind_owned("127.0.0.1:0").await?
+        let raw = detach(socket)?
+        assert match detach(socket) {
+            Result.Err(error) => error == UdpError.Close
+            _ => false
+        }
+        assert match set_receive_buffer_size(socket, 4096) {
+            Result.Err(error) => error == UdpError.Close
+            _ => false
+        }
+        discard close(socket)?
+        raw
+    }
+    defer { discard close(server) }
+    let client = {
+        scoped socket = connect_owned(local_address(server)?).await?
+        let raw = detach(socket)?
+        assert match peer_address(socket) {
+            Result.Err(error) => error == UdpError.Close
+            _ => false
+        }
+        assert match detach(socket) {
+            Result.Err(error) => error == UdpError.Close
+            _ => false
+        }
+        raw
+    }
+    defer { discard close(client) }
+    discard send(client, to_bytes("manual")).await?
+    Result.Ok(to_text(receive(server).await?.data) == "manual")
+}
+
+test async fn owned_udp_detach_explicitly_transfers_each_socket_mode() {
+    assert match after_ns(owned_detached(), 10000000000).await {
+        Outcome.Completed(Result.Ok(value)) => value
+        _ => false
+    }
+}
+
+async fn owned_produced(token Int, ready List[Bool]) BoundSocket {
+    ready[0] = true
+    owned_bound(token)
+}
+
+async fn owned_forwarded(token Int, ready List[Bool]) BoundSocket {
+    owned_produced(token, ready).await
+}
+
+test async fn owned_udp_child_completion_before_cancelled_handoff_keeps_cleanup() {
+    let raw = match bind("127.0.0.1:0").await {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            assert false
+            return
+        }
+    }
+    defer { discard close(raw) }
+    let ready = [false]
+    {
+        let pending = owned_forwarded(raw.state.token, ready)
+        while !ready[0] { owned_tick().await }
+        scoped finished = cancel(pending)
+        assert match finished {
+            Outcome.Cancelled => true
+            _ => false
+        }
+    }
+    assert socket_address(raw.state.token, 0) == ""
+}
+
+test async fn owned_udp_acquisition_errors_keep_typed_resource_results() {
+    scoped binding = bind_owned("invalid numeric endpoint").await
+    assert match binding {
+        Result.Err(error) => error == UdpError.Bind
+        _ => false
+    }
+    scoped numeric = connect_owned("invalid numeric endpoint").await
+    assert match numeric {
+        Result.Err(error) => error == UdpError.Connect
+        _ => false
+    }
+    scoped invalid_port = connect_owned("127.0.0.1", 0).await
+    assert match invalid_port {
+        Result.Err(error) => error == UdpError.Connect
+        _ => false
+    }
+    scoped missing_host = connect_owned("", 1234).await
+    assert match missing_host {
+        Result.Err(error) => error == UdpError.Resolve
+        _ => false
+    }
+}

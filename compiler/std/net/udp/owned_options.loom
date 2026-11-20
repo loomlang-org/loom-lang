@@ -1,0 +1,55 @@
+pub fn receive_buffer_size(socket BoundSocket) Result[Int, UdpError] {
+    receive_buffer_size(owner_socket(socket.state)?)
+}
+
+pub fn send_buffer_size(socket BoundSocket) Result[Int, UdpError] {
+    send_buffer_size(owner_socket(socket.state)?)
+}
+
+pub fn set_receive_buffer_size(socket BoundSocket, size Int) Result[Int, UdpError] {
+    set_receive_buffer_size(owner_socket(socket.state)?, size)
+}
+
+pub fn set_send_buffer_size(socket BoundSocket, size Int) Result[Int, UdpError] {
+    set_send_buffer_size(owner_socket(socket.state)?, size)
+}
+
+pub fn receive_buffer_size(socket ConnectedSocket) Result[Int, UdpError] {
+    receive_buffer_size(owner_connection(socket.state)?)
+}
+
+pub fn send_buffer_size(socket ConnectedSocket) Result[Int, UdpError] {
+    send_buffer_size(owner_connection(socket.state)?)
+}
+
+pub fn set_receive_buffer_size(socket ConnectedSocket, size Int) Result[Int, UdpError] {
+    set_receive_buffer_size(owner_connection(socket.state)?, size)
+}
+
+pub fn set_send_buffer_size(socket ConnectedSocket, size Int) Result[Int, UdpError] {
+    set_send_buffer_size(owner_connection(socket.state)?, size)
+}
+
+pub fn join_multicast(socket BoundSocket, group Text, interface Text) Result[Int, UdpError] {
+    join_multicast(owner_socket(socket.state)?, group, interface)
+}
+
+pub fn join_multicast(socket BoundSocket, group Text, interface Int) Result[Int, UdpError] {
+    join_multicast(owner_socket(socket.state)?, group, interface)
+}
+
+pub fn leave_multicast(socket BoundSocket, group Text, interface Text) Result[Int, UdpError] {
+    leave_multicast(owner_socket(socket.state)?, group, interface)
+}
+
+pub fn leave_multicast(socket BoundSocket, group Text, interface Int) Result[Int, UdpError] {
+    leave_multicast(owner_socket(socket.state)?, group, interface)
+}
+
+pub fn set_multicast(socket BoundSocket, options MulticastV4) Result[Int, UdpError] {
+    set_multicast(owner_socket(socket.state)?, options)
+}
+
+pub fn set_multicast(socket BoundSocket, options MulticastV6) Result[Int, UdpError] {
+    set_multicast(owner_socket(socket.state)?, options)
+}

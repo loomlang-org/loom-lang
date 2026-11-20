@@ -66,6 +66,10 @@ async fn exercise() Result[Bool, UdpError] {
 }
 
 async fn main() {
+    assert match exercise_owned().await {
+        Result.Ok(value) => value
+        Result.Err(_) => false
+    }
     assert match exercise().await {
         Result.Ok(value) => value
         Result.Err(_) => false
