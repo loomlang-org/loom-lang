@@ -1,0 +1,99 @@
+// A source-free package can retain its existing sidecar as history. It owns
+// no active declarations and never enters the checked import graph.
+fn retired_relative(relative Text) Option[Text] {
+    if relative == ".loom-ids" {
+        return Option.Some("")
+    }
+    if ends_with(relative, "/.loom-ids") {
+        return Option.Some(std.text.slice(relative, 0, std.text.length(relative) - 10))
+    }
+    Option.None
+}
+
+fn retired_path(relative Text) Text {
+    if relative == "" { ".loom-ids" } else { concat(relative, "/.loom-ids") }
+}
+
+fn retired_header(bytes Bytes) Result[Header, Text] {
+    let text = match decode_utf8(bytes) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            return Result.Err("retired package sidecar is not UTF-8")
+        }
+    }
+    let value = header(text, "retired package .loom-ids")?
+    if length(value.identities) != 0 || value.draft != "" || length(value.lineage) == 0 {
+        return Result.Err("source-free identity sidecar must contain only resolved derivation history")
+    }
+    Result.Ok(value)
+}
+
+fn retired_metadata(snapshot ModuleSnapshot, relative Text) Result[Header, Text] {
+    let index = asset_index(snapshot.assets, retired_path(relative))
+    if index < 0 {
+        return Result.Err("deleted package must retain its derivation history sidecar")
+    }
+    retired_header(get(snapshot.assets, index).bytes)
+}
+
+// Moving/removing an already retired sidecar would lose its package scope.
+// Recovery/reactivation needs an explicit future identity operation, not an
+// ordinary asset deletion or a fresh package with the same directory name.
+fn retain_retired_packages(base ModuleSnapshot, left ModuleSnapshot, right ModuleSnapshot) Result[Bool, Text] {
+    var index = 0
+    while index < length(base.assets) {
+        let asset = get(base.assets, index)
+        match retired_relative(asset.relative) {
+            Option.Some(_) => {
+                if !equal_asset(base.assets, index, left.assets, asset_index(left.assets, asset.relative)) ||
+                !equal_asset(base.assets, index, right.assets, asset_index(right.assets, asset.relative)) {
+                    return Result.Err("retired package history cannot be removed, rewritten or reactivated implicitly")
+                }
+            }
+            Option.None => {
+            }
+        }
+        index = index + 1
+    }
+    Result.Ok(true)
+}
+
+fn check_retired_deletion(base ModuleSnapshot, left ModuleSnapshot, right ModuleSnapshot,
+    assets List[Asset], package ModulePackage) Result[Bool, Text] {
+    // Each deleting branch must preserve all previously known origins. The
+    // surviving branch can add history too; the chosen sidecar must retain it.
+    let lineage = module_review_lineage(base, left, right, package.relative)?
+    if length(lineage) == 0 {
+        return Result.Ok(true)
+    }
+    let index = asset_index(assets, retired_path(package.relative))
+    if index < 0 {
+        return Result.Err("package deletion cannot discard derivation history; retain its resolved .loom-ids")
+    }
+    let retired = retired_header(get(assets, index).bytes)?
+    let next = std.int.maximum(module_next(base, package.relative),
+        std.int.maximum(module_next(left, package.relative), module_next(right, package.relative)))
+    if retired.package_name != package.loaded.revision.package_name || retired.next != next ||
+    lineage_rows(retired.lineage) != lineage_rows(lineage) {
+        return Result.Err("retired package sidecar does not retain its package identity, allocator and complete lineage")
+    }
+    Result.Ok(true)
+}
+
+fn check_retired_assets(base ModuleSnapshot, assets List[Asset], removed List[Text]) Result[Bool, Text] {
+    var index = 0
+    while index < length(assets) {
+        let asset = get(assets, index)
+        match retired_relative(asset.relative) {
+            Option.Some(relative) => {
+                if asset_index(base.assets, asset.relative) < 0 && !module_relative_present(removed, relative) {
+                    return Result.Err("new retired package history needs the actual removed baseline package")
+                }
+            }
+            Option.None => {
+            }
+        }
+        index = index + 1
+    }
+    Result.Ok(true)
+}

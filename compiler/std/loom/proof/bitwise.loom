@@ -16,7 +16,7 @@ fn xor_factors(value IntegerTerm, terms List[IntegerTerm], odd List[Bool], budge
             }
         }
         IntegerTerm.Linear(number) => {
-            if length(number.terms) == 0 && compare(number.constant, integer(0)) == 0 {
+            if term_count(number.terms) == 0 && compare(number.constant, integer(0)) == 0 {
                 return Result.Ok(true)
             }
         }

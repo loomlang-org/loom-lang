@@ -225,13 +225,23 @@ fn read_git_module_tree(executable Text, repository Text, tree GitTree, context_
     while index < length(groups) {
         let group = get(groups, index)
         if length(group.files) == 0 {
-            return Result.Err("identity sidecar has no package source files")
+            let metadata = to_bytes(group.metadata)
+            discard retired_header(metadata)?
+            push(assets, Asset {
+                    relative = retired_path(group.relative)
+                    bytes = metadata
+                })
+            index = index + 1
+            continue
         }
         push(packages, ModulePackage {
                 relative = group.relative
                 loaded = git_loaded(group.files, group.metadata, tree.commit)?
             })
         index = index + 1
+    }
+    if length(packages) == 0 {
+        return Result.Err("Git module snapshot has no active Loom packages")
     }
     Result.Ok(ModuleSnapshot {
             directory = context_directory

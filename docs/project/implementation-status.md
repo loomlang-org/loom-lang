@@ -406,7 +406,10 @@ Type/value/function parameters, structural type construction, associated
 projections, hygienic expression macros and explicit declaration generation use
 ordinary typing and visibility. Declaration generation is not an implicit
 fixed-point expansion. Reflection exposes filtered schemas, not extra access
-or conformance evidence. Static type iteration accepts ordinary type syntax,
+or conformance evidence. Named expression generators accept ordinary static
+parameters beside their descriptor list; configured field projections preserve
+whole-record constraints and mandatory proofs, while runtime captures remain
+unavailable during generation. Static type iteration accepts ordinary type syntax,
 including generic instances, tuples and computed type identities, without an
 intermediate alias; unknown shapes still reject. Direct `dyn` type values use
 ordinary dynamic-header checks and preserve local family binders rather than
@@ -897,7 +900,11 @@ require resolution.
 Explicit `refresh --derive` records copy/split/merge provenance within a package,
 allocating fresh child identities rather than equating them with their parents.
 Canonical acyclic origin records survive refresh, drafts and reviewed directory/
-Git output. Changed or removed history and conflicting concurrent origins reject;
+Git output. A deleted package can retain a resolved, source-free `.loom-ids` in
+its original directory, preserving its package name, allocator and complete
+history through reviewed module and Git-tree output. It contributes no active
+declarations; later merges require that sidecar unchanged. Changed or removed
+history, implicit reactivation and conflicting concurrent origins reject;
 cross-package derivation/history relocation remains open.
 Complete module batches can rename public functions, records, enums, refined
 types and concepts across checked imports,

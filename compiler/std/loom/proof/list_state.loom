@@ -70,7 +70,7 @@ fn with_extent(identity Int, size Linear, allocated Bool, initially_private Bool
         }
         index = index + 1
     }
-    if length(size.terms) == 0 && length(size.constant.digits) == 0 {
+    if term_count(size.terms) == 0 && number_size(size.constant) == 0 {
         element_unreachable = new[Int]()
         index = 0
         while index < length(state.extents) {

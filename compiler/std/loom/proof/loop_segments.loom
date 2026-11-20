@@ -103,7 +103,7 @@ fn loop_segmented_clause(proof Verification, value Expr, candidates List[LoopCan
             while local < length(writes) && length(candidates) < 64 {
                 if get(writes, local) {
                     let singleton = match get(entry.locals, local) {
-                        Value.Number(term) => length(term.terms) == 0 && compare(term.constant, integer(1)) == 0
+                        Value.Number(term) => term_count(term.terms) == 0 && compare(term.constant, integer(1)) == 0
                         _ => false
                     }
                     if singleton {

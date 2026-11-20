@@ -1,3 +1,39 @@
+test fn snapshot_text_fields_keep_distinct_bytes_across_repeated_and_evicted_names() {
+    let values = new[Text]()
+    var index = 0
+    while index < 700 {
+        push(values, std.text.concat("name-", std.int.to_text(index)))
+        push(values, "index")
+        // These pairs share byte counts and endpoints, but not their contents.
+        push(values, if index % 2 == 0 { "a-b-z" } else { "a-c-z" })
+        push(values, if index % 2 == 0 { "雪山" } else { "雨山" })
+        index = index + 1
+    }
+    push(values, "a long field that exceeds the bounded short name reuse table capacity")
+    push(values, "")
+    let output = std.bytes.new()
+    index = 0
+    while index < length(values) {
+        cache_text(output, get(values, index))
+        cache_int(output, index)
+        index = index + 1
+    }
+    let reader = cache_reader(std.bytes.to_text(output))
+    index = 0
+    while index < length(values) {
+        assert match cache_read_text(reader) {
+            Result.Ok(value) => value == get(values, index)
+            Result.Err(_) => false
+        }
+        assert match cache_read_int(reader) {
+            Result.Ok(value) => value == index
+            Result.Err(_) => false
+        }
+        index = index + 1
+    }
+    assert get(reader.cursor, 0) == std.text.length(reader.text)
+}
+
 test fn snapshot_enum_tags_preserve_declaration_order_and_reject_unknowns() {
     assert cache_type_tag(TypeKind.Unit) == 0 && cache_type_tag(TypeKind.Rigid) == 19
     assert cache_expression_tag(ExprKind.Integer) == 0

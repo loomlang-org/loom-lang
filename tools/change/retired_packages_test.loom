@@ -1,0 +1,174 @@
+fn retired_fixture(directory Text) Result[Text, Text] {
+    discard module_fixture(directory)?
+    let package = path(directory, "history")
+    discard create_dir(package)
+    let source = "fn source() Int { 1 }\n"
+    discard std.file.write_text(path(package, "value.loom"), source)
+    discard initialize("sample.history", package)?
+    let parent = lineage_declaration(read(package)?, "source").id
+    discard std.file.write_text(path(package, "value.loom"), concat(source, "fn copied() Int { 1 }\n"))
+    discard refresh_command(["trial", "refresh", package, "--derive", parent, "value.loom", "copied", "-"])?
+    Result.Ok("history fixture created")
+}
+
+fn retire_fixture(directory Text) Result[Text, Text] {
+    let package = path(directory, "history")
+    let previous = read(package)?
+    discard remove_file(path(package, "value.loom"))
+    let options = new[Resolution]()
+    var index = 0
+    while index < length(previous.revision.identities) {
+        let identity = get(previous.revision.identities, index)
+        push(options, Resolution {
+                owner = ""
+                id = identity.id
+                path = ""
+                name = ""
+                key = ""
+                deletion = true
+            })
+        index = index + 1
+    }
+    discard refresh(package, options, false)?
+    Result.Ok("package source retired")
+}
+
+fn retired_lifecycle(staging Text) Result[Text, Text] {
+    discard create_dir(staging)
+    let base = path(staging, "base")
+    let left = path(staging, "left")
+    let right = path(staging, "right")
+    discard retired_fixture(base)?
+    discard retired_fixture(left)?
+    discard retired_fixture(right)?
+    let original = read_module(base)?
+    let old_history = module_lineage(original, "history")?
+    let next = module_next(original, "history")
+    discard retire_fixture(left)?
+    discard std.file.write_text(path(right, "lib/value.loom"), "fn secret() Int { 7 }\npub fn amount() Int { 2 }\n")
+    let a = read_module(left)?
+    let b = read_module(right)?
+    let context = module_context(original, "compiler/std")?
+    let merged = review_module(original, a, b, context)?
+    let reversed = review_module(original, b, a, context)?
+    let metadata = text_at(path(left, "history/.loom-ids"))
+    assert lineage_rows(retired_metadata(a, "history")?.lineage) == lineage_rows(old_history)
+    assert module_next(a, "history") == next
+    assert asset_index(merged.assets, "history/.loom-ids") >= 0
+    assert equal_asset(merged.assets, asset_index(merged.assets, "history/.loom-ids"),
+        reversed.assets, asset_index(reversed.assets, "history/.loom-ids"))
+    assert contains(show_module(merged), "removed package history\n")
+    assert contains(show_module(merged), "retained package history history\n")
+
+    let stale = path(staging, "stale")
+    discard std.file.write_text(path(left, "history/.loom-ids"), concat(metadata, "# changed review basis\n"))
+    assert match apply_module(merged.token, stale, "compiler/std", base, left, right) {
+        Result.Err(message) => contains(message, "review token")
+        Result.Ok(_) => false
+    }
+    discard vacant(stale)?
+    discard std.file.write_text(path(left, "history/.loom-ids"), metadata)
+    let output = path(staging, "output")
+    discard apply_module(merged.token, output, "compiler/std", base, left, right)?
+    assert text_at(path(output, "history/.loom-ids")) == metadata
+    discard vacant(path(output, "history/value.loom"))?
+    let published = read_module(output)?
+    assert length(published.packages) + 1 == length(original.packages)
+    discard review_module(published, published, published, module_context(published, "compiler/std")?)?
+
+    // A later merge cannot silently delete, rewrite or reactivate that scope.
+    discard remove_file(path(output, "history/.loom-ids"))
+    assert match review_module(published, read_module(output)?, published, module_context(published, "compiler/std")?) {
+        Result.Err(message) => contains(message, "retired package history")
+        Result.Ok(_) => false
+    }
+    discard std.file.write_text(path(output, "history/.loom-ids"), concat(metadata, "# rewrite\n"))
+    assert match review_module(published, read_module(output)?, published, module_context(published, "compiler/std")?) {
+        Result.Err(message) => contains(message, "retired package history")
+        Result.Ok(_) => false
+    }
+    discard remove_file(path(output, "history/.loom-ids"))
+    discard std.file.write_text(path(output, "history/value.loom"), "fn replacement() Int { 9 }\n")
+    discard initialize("sample.history", path(output, "history"))?
+    assert match review_module(published, read_module(output)?, published, module_context(published, "compiler/std")?) {
+        Result.Err(message) => contains(message, "retired package history")
+        Result.Ok(_) => false
+    }
+
+    // The archive must belong to the actual baseline package and allocator.
+    discard std.file.write_text(path(left, "history/.loom-ids"), replace(metadata, "package sample.history", "package sample.other"))
+    assert match review_module(original, read_module(left)?, b, context) {
+        Result.Err(message) => contains(message, "package identity")
+        Result.Ok(_) => false
+    }
+    discard std.file.write_text(path(left, "history/.loom-ids"), replace(metadata,
+        concat("next ", to_text(next)), concat("next ", to_text(next - 1))))
+    assert match review_module(original, read_module(left)?, b, context) {
+        Result.Err(message) => contains(message, "allocator")
+        Result.Ok(_) => false
+    }
+    discard remove_file(path(left, "history/.loom-ids"))
+    assert match review_module(original, read_module(left)?, b, context) {
+        Result.Err(message) => contains(message, "lineage history")
+        Result.Ok(_) => false
+    }
+    discard std.file.write_text(path(left, "history/.loom-ids"), metadata)
+    // The Git reader must classify the same source-free sidecar as history;
+    // object-only application retains its original mode and bytes.
+    let repository = path(staging, "repository")
+    discard create_dir(repository)
+    discard git("git", repository, ["init", "--template="])?
+    discard git_fixture_module(repository, original)?
+    let baseline_commit = git_fixture_commit(repository, "")?
+    discard git_fixture_module(repository, a)?
+    let left_commit = git_fixture_commit(repository, baseline_commit)?
+    discard git_fixture_module(repository, b)?
+    let right_commit = git_fixture_commit(repository, baseline_commit)?
+    discard git("git", repository, ["update-ref", "HEAD", right_commit])?
+    let before = git("git", repository, ["status", "--porcelain=v1"])?
+    let scratch = path(staging, "scratch")
+    discard create_dir(scratch)
+    let request = GitAutoRequest {
+        scratch = scratch
+        standard = "compiler/std"
+        cache = staging
+        executable = "git"
+        repository = repository
+        directory = "."
+        base = baseline_commit
+        left = left_commit
+        right = right_commit
+    }
+    let preview = automatic_git_module(request, false, "")?
+    assert contains(preview, "retained package history history\n")
+    assert contains(preview, "git-entry 100644 history/.loom-ids sha256 ")
+    let token = get(split(get(split(preview, "\n"), 1), " "), 2)
+    let applied = automatic_git_module(request, true, token)?
+    let tree = get(split(get(split(applied, "\n"), 0), " "), 4)
+    assert git("git", repository, ["show", concat(tree, ":history/.loom-ids")])? == metadata
+    assert git("git", repository, ["ls-tree", "-r", tree, "--", "history/value.loom"])? == ""
+    assert git("git", repository, ["status", "--porcelain=v1"])? == before
+    assert git_commit("git", repository, "HEAD")? == right_commit
+    Result.Ok("retired history survives reviewed module deletion")
+}
+
+test fn retired_package_history_survives_deletion_and_refuses_stale_or_lost_provenance() {
+    let staging = module_test_directory("retired-history")
+    defer {
+        remove_module_fixture(staging)
+    }
+    assert successful(retired_lifecycle(staging)) == "retired history survives reviewed module deletion"
+}
+
+test fn retired_package_sidecars_require_history_without_active_or_pending_declarations() {
+    let invalid = ["package sample\nnext 1\n", "package sample\nnext 1\norigin a b\nid x fn f f.loom -\n",
+        "package sample\nnext 1\norigin a b\norigin b a\n"]
+    var index = 0
+    while index < length(invalid) {
+        assert match retired_header(to_bytes(get(invalid, index))) {
+            Result.Err(_) => true
+            Result.Ok(_) => false
+        }
+        index = index + 1
+    }
+}

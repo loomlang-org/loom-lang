@@ -110,7 +110,7 @@ fn loop_linear_context(fact Predicate, facts List[Predicate]) Bool {
     var index = 0
     while index < length(facts) {
         match get(facts, index) {
-            Predicate.Compare(_, value) => if length(value.terms) > 2 {
+            Predicate.Compare(_, value) => if term_count(value.terms) > 2 {
                 return true
             }
             _ => {

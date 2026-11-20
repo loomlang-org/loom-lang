@@ -149,14 +149,14 @@ fn smt_scalar(writer SmtWriter, value ArrayScalar, depth Int) Result[Text, Text]
 }
 
 fn smt_number(value Number) Text {
-    if length(value.digits) == 0 {
+    if number_size(value) == 0 {
         return "0"
     }
-    var index = length(value.digits) - 1
-    var text = std.int.to_text(get(value.digits, index))
+    var index = number_size(value) - 1
+    var text = std.int.to_text(digit(value, index))
     while index > 0 {
         index = index - 1
-        let part = std.int.to_text(get(value.digits, index))
+        let part = std.int.to_text(digit(value, index))
         var padding = 9 - std.text.length(part)
         while padding > 0 {
             text = concat(text, "0")
@@ -175,9 +175,9 @@ fn smt_linear(writer SmtWriter, value Linear) Result[Text, Text] {
     let output = std.bytes.new()
     smt_append(output, concat("(+ ", smt_number(value.constant)))
     var index = 0
-    while index < length(value.terms) {
+    while index < term_count(value.terms) {
         discard smt_step(writer, 0)?
-        let term = get(value.terms, index)
+        let term = term_at(value.terms, index)
         let name = smt_name(writer, "n", term.id, "Int")
         smt_append(output, concat(" (* ", concat(smt_number(term.factor), concat(" ", concat(name, ")")))))
         index = index + 1
@@ -597,8 +597,8 @@ fn smt_redundant_fact(facts List[Predicate], index Int) Bool {
                 match get(facts, prior) {
                     Predicate.Forall(other, first, last, conditions) => {
                         if identity == other && same_predicates(body, conditions) {
-                            let lower = Predicate.Compare("<=", add(first, scale(start, integer(-1))))
-                            let upper = Predicate.Compare("<=", add(end, scale(last, integer(-1))))
+                            let lower = Predicate.Compare("<=", add_scaled(first, start, integer(-1)))
+                            let upper = Predicate.Compare("<=", add_scaled(end, last, integer(-1)))
                             if (holds(lower, facts) || difference_holds(lower, facts)) &&
                             (holds(upper, facts) || difference_holds(upper, facts)) {
                                 return true

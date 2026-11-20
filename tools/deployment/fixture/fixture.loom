@@ -15,6 +15,8 @@ import std.storage.ValueKind
 import std.storage.CodecError
 import std.storage.PreparedRowCodec
 import std.storage.record_codec
+import std.storage.sqlite_record_codec
+import std.storage.sqlite_codec_rows
 import std.text.concat
 
 fn column(id Text, kind ValueKind) Column {
@@ -27,11 +29,14 @@ fn column(id Text, kind ValueKind) Column {
 }
 
 fn order_codec[T]() Result[PreparedRowCodec[T], CodecError] {
-    record_codec[T](Table {
+    match sqlite_record_codec[T](Table {
             id = "orders"
             physical_name = "orders"
             columns = [column("id", ValueKind.Int), column("amount", ValueKind.Int)]
-        })
+        }) {
+        Result.Ok(value) => Result.Ok(sqlite_codec_rows(value))
+        Result.Err(_) => Result.Err(CodecError.InvalidSchema)
+    }
 }
 
 fn valid_args(args List[Text]) Bool {

@@ -19,7 +19,7 @@ record SmtSupportLaw {
 // select term and reject any remaining occurrence of its bound index.
 fn smt_support(writer SmtWriter, identity Int, start Linear, end Linear,
     condition Text, premise Text) Result[Bool, Text] {
-    if !writer.extended || length(writer.counts) == 0 || length(start.terms) != 0 || compare(start.constant, integer(0)) != 0 || order_mentions(end, identity) {
+    if !writer.extended || length(writer.counts) == 0 || term_count(start.terms) != 0 || compare(start.constant, integer(0)) != 0 || order_mentions(end, identity) {
         return Result.Ok(true)
     }
     var scope = 0

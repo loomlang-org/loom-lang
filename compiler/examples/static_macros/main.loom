@@ -1,0 +1,86 @@
+import static_macros.generators.field
+import static_macros.generators.chosen
+import static_macros.generators.fixed
+import static_macros.generators.tree
+import std.list.push
+import std.list.length
+
+pub record BeforeFields {
+    lower Int
+    upper Int
+}
+
+pub type Before = BeforeFields where self.lower <= self.upper
+
+pub record AfterFields {
+    right Int
+    left Int
+}
+
+pub type After = AfterFields where self.left <= self.right
+
+fn adapt(value Before) After
+ensures result.left == value.lower && result.right == value.upper {
+    After(AfterFields {
+            right = field!("upper", value)
+            left = field!("lower", value)
+        })
+}
+
+fn projected[T](comptime name Text, value T) Int {
+    field!(name, value)
+}
+
+fn callback(offset Int) fn(Int) Int {
+    fn(value Int) Int {
+        value + offset
+    }
+}
+
+fn next(trace List[Int]) Before {
+    push(trace, 1)
+    Before(BeforeFields {
+            lower = 2,
+            upper = 3
+        })
+}
+
+fn gap[Ts...](trace List[Int], digit Int, values Ts...) (Ts...) {
+    trace[0] = trace[0] * 10 + digit
+    values
+}
+
+fn marked(trace List[Int]) Before {
+    trace[0] = trace[0] * 10 + 3
+    Before(BeforeFields {
+            lower = 2,
+            upper = 3
+        })
+}
+
+fn main() {
+    let original = Before(BeforeFields {
+            lower = 2,
+            upper = 3
+        })
+    let converted = adapt(original)
+    assert converted.left == 2 && converted.right == 3
+    assert projected("lower", original) == 2
+    let trace = [0]
+    assert field!("upper", next(trace)) == 3
+    assert length(trace) == 2
+    assert chosen!(callback(41), 41) == 42
+    assert tree!("$0 + 1", 41) == 42
+    assert field!(("lower", original)...) == 2
+    let order = [0]
+    assert field!(gap(order, 1)..., "lower", gap(order, 2)...,
+        marked(order), gap(order, 4)...) == 2
+    assert order[0] == 1234
+    order[0] = 0
+    assert fixed!(gap(order, 1)..., 42, gap(order, 2)...) == 42
+    assert order[0] == 12
+}
+
+test fn configured_macros_preserve_checked_projection_and_eager_inputs() {
+    main()
+}

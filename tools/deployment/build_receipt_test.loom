@@ -69,9 +69,26 @@ fn receipt_fixture(configuration Text) Result[Bool, Text] {
     discard write_text(receipt, first)
     let bound = read_build_receipt(receipt)?
     assert bound.artifact == hex(bytes) && bound.receipt == hex(to_bytes(first))
+    assert bound.basis == ""
+    let version5 = join(split(first, "loom-build-receipt 4"), "loom-build-receipt 5")
+    discard write_text(receipt, version5)
+    assert match read_build_receipt(receipt) {
+        Result.Err(_) => true
+        _ => false
+    }
+    let identity = hex(to_bytes("checked project basis"))
+    let complete = join(split(version5, "end\n"), concat("basis-sha256 ", concat(identity, "\nend\n")))
+    discard write_text(receipt, complete)
+    assert read_build_receipt(receipt)?.basis == identity
+    discard write_text(receipt, join(split(complete, identity), "invalid"))
+    assert match read_build_receipt(receipt) {
+        Result.Err(_) => true
+        _ => false
+    }
     let legacy = receipt_fixture_text(canonical, false, "", hex(bytes))
     discard write_text(receipt, legacy)
     let prior = read_build_receipt(receipt)?
+    assert prior.basis == ""
     assert prior.artifact == bound.artifact && prior.checked == bound.checked && prior.receipt != bound.receipt
     discard write_text(receipt, receipt_fixture_text(canonical, true, "invalid", hex(bytes)))
     assert match read_build_receipt(receipt) {

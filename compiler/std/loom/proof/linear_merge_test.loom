@@ -1,0 +1,128 @@
+test fn linear_merge_keeps_order_cancellation_and_exact_coefficients() {
+    let large = decimal("123456789012345678901234567890")
+    let negative = negate(large)
+    let left = Linear {
+        constant = large
+        terms = terms_from_list([Term {
+                    id = -3,
+                    factor = large
+                },
+                Term {
+                    id = 2,
+                    factor = integer(-7)
+                },
+                Term {
+                    id = 8,
+                    factor = integer(4)
+                }])
+    }
+    let right = Linear {
+        constant = negative
+        terms = terms_from_list([Term {
+                    id = -2,
+                    factor = negative
+                },
+                Term {
+                    id = 2,
+                    factor = integer(7)
+                },
+                Term {
+                    id = 8,
+                    factor = integer(5)
+                },
+                Term {
+                    id = 20,
+                    factor = integer(-1)
+                }])
+    }
+    let merged = add(left, right)
+    let reverse = add(right, left)
+    assert number_size(merged.constant) == 0
+    assert same_terms(merged.terms, reverse.terms)
+    assert term_count(merged.terms) == 4
+    assert term_at(merged.terms, 0).id == -3
+    assert compare(term_at(merged.terms, 0).factor, large) == 0
+    assert term_at(merged.terms, 1).id == -2
+    assert compare(term_at(merged.terms, 1).factor, negative) == 0
+    assert term_at(merged.terms, 2).id == 8
+    assert compare(term_at(merged.terms, 2).factor, integer(9)) == 0
+    assert term_at(merged.terms, 3).id == 20
+    assert compare(term_at(merged.terms, 3).factor, integer(-1)) == 0
+    assert term_count(left.terms) == 3 && term_count(right.terms) == 4
+    assert compare(term_at(left.terms, 1).factor, integer(-7)) == 0
+    assert compare(term_at(right.terms, 1).factor, integer(7)) == 0
+}
+
+test fn linear_merge_discards_unmatched_zero_terms_and_keeps_inputs() {
+    let zero = integer(0)
+    let left = Linear {
+        constant = zero
+        terms = terms_from_list([Term {
+                    id = -1,
+                    factor = zero
+                },
+                Term {
+                    id = 2,
+                    factor = integer(3)
+                }])
+    }
+    let right = Linear {
+        constant = zero
+        terms = terms_from_list([Term {
+                    id = 1,
+                    factor = zero
+                },
+                Term {
+                    id = 3,
+                    factor = zero
+                }])
+    }
+    let merged = add(left, right)
+    assert same_terms(merged.terms, add(right, left).terms)
+    assert term_count(merged.terms) == 1
+    assert term_at(merged.terms, 0).id == 2
+    assert compare(term_at(merged.terms, 0).factor, integer(3)) == 0
+    assert term_count(left.terms) == 2 && term_count(right.terms) == 2
+    assert same_terms(add(constant(zero), left).terms, left.terms)
+    assert same_terms(add(right, constant(zero)).terms, right.terms)
+}
+
+test fn linear_merge_repeated_disjoint_inputs_retain_all_coefficients() {
+    let zero = integer(0)
+    let one = integer(1)
+    let left_terms = new[Term]()
+    let right_terms = new[Term]()
+    var index = 0
+    while index < 64 {
+        push(left_terms, Term {
+                id = index * 2,
+                factor = one
+            })
+        push(right_terms, Term {
+                id = index * 2 + 1,
+                factor = one
+            })
+        index = index + 1
+    }
+    let left = Linear {
+        constant = zero,
+        terms = terms_from_list(left_terms)
+    }
+    let right = Linear {
+        constant = zero,
+        terms = terms_from_list(right_terms)
+    }
+    var iteration = 0
+    while iteration < 64 {
+        let merged = add(left, right)
+        assert term_count(merged.terms) == 128
+        index = 0
+        while index < term_count(merged.terms) {
+            let term = term_at(merged.terms, index)
+            assert term.id == index && compare(term.factor, one) == 0
+            index = index + 1
+        }
+        iteration = iteration + 1
+    }
+    assert length(left_terms) == 64 && length(right_terms) == 64
+}

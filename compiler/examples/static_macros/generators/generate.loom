@@ -1,0 +1,40 @@
+import std.reflect.Schema
+import std.list.length
+import std.text.concat
+import std.int.to_text
+import std.loom.ast.Node
+import std.loom.parser.parse_expression
+import std.result.Result
+
+// Static operands configure the generator; only the remaining operands have
+// descriptors and positional input names in its output.
+pub fn field(comptime name Text, types List[Schema]) Text {
+    assert length(types) == 1
+    concat("$0.", name)
+}
+
+// The descriptor parameter may precede static parameters in the declaration.
+pub fn chosen(types List[Schema], comptime action fn(Int) Int) Text {
+    assert length(types) == 1
+    if action(1) == 42 {
+        "$0 + 1"
+    } else {
+        "$0"
+    }
+}
+
+pub fn fixed(comptime value Int, types List[Schema]) Text {
+    assert length(types) == 0
+    to_text(value)
+}
+
+pub fn tree(comptime source Text, types List[Schema]) Node {
+    assert length(types) == 1
+    match parse_expression(source) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            assert false
+            tree("0", types)
+        }
+    }
+}

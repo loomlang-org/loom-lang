@@ -110,7 +110,17 @@ fn module_tree(directory Text, relative Text, packages List[ModulePackage], asse
                 loaded = read(location)?
             })
     } else if identities {
-        return Result.Err("identity sidecar has no package source files")
+        let metadata = match read_bytes(path(location, ".loom-ids")) {
+            Result.Ok(value) => value
+            Result.Err(_) => {
+                return Result.Err("cannot read retired package identity sidecar")
+            }
+        }
+        discard retired_header(metadata)?
+        push(assets, Asset {
+                relative = retired_path(relative)
+                bytes = metadata
+            })
     }
     index = 0
     while index < length(children) {
@@ -257,7 +267,10 @@ fn module_package(snapshot ModuleSnapshot, relative Text) Result[Loaded, Text] {
 fn module_next(snapshot ModuleSnapshot, relative Text) Int {
     match module_package(snapshot, relative) {
         Result.Ok(value) => value.next
-        Result.Err(_) => 0
+        Result.Err(_) => match retired_metadata(snapshot, relative) {
+            Result.Ok(value) => value.next
+            Result.Err(_) => 0
+        }
     }
 }
 
@@ -281,6 +294,7 @@ fn reviewed_package(base ModuleSnapshot, left ModuleSnapshot, right ModuleSnapsh
 }
 
 fn review_module(base ModuleSnapshot, left ModuleSnapshot, right ModuleSnapshot, context Context) Result[ModuleReview, Text] {
+    discard retain_retired_packages(base, left, right)?
     let assets = merge_assets(base.assets, left.assets, right.assets)?
     let merged = merge_packages(module_revisions(base, context.directory),
         module_revisions(left, context.directory), module_revisions(right, context.directory),
@@ -319,17 +333,14 @@ fn review_module(base ModuleSnapshot, left ModuleSnapshot, right ModuleSnapshot,
     while index < length(base.packages) {
         let package = get(base.packages, index)
         if !module_relative_present(relative, package.relative) {
-            if length(module_lineage(base, package.relative)?) != 0 ||
-            length(module_lineage(left, package.relative)?) != 0 ||
-            length(module_lineage(right, package.relative)?) != 0 {
-                return Result.Err("package deletion cannot discard derivation history; explicit relocation required")
-            }
+            discard check_retired_deletion(base, left, right, assets, package)?
             push(removed, package.relative)
             frame(bytes, "removed package")
             frame(bytes, package.relative)
         }
         index = index + 1
     }
+    discard check_retired_assets(base, assets, removed)?
     Result.Ok(ModuleReview {
             packages = packages
             relative = relative
@@ -376,6 +387,13 @@ fn show_module(value ModuleReview) Text {
     index = 0
     while index < length(value.assets) {
         let asset = get(value.assets, index)
+        match retired_relative(asset.relative) {
+            Option.Some(relative) => {
+                output = concat(output, concat("retained package history ", concat(if relative == "" { "." } else { relative }, "\n")))
+            }
+            Option.None => {
+            }
+        }
         output = concat(output, concat("asset ", concat(asset.relative, concat(" sha256 ", concat(hex(asset.bytes), "\n")))))
         index = index + 1
     }

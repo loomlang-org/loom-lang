@@ -1,0 +1,101 @@
+import std.loom.project.Project
+import std.loom.project.load
+import std.loom.analysis.Analysis
+import std.loom.analysis.analyze
+import std.loom.analysis.snapshot
+import std.loom.analysis.is_current
+import std.loom.analysis.native_input
+import std.hash.sha256.hex
+import std.bytes.new
+import std.bytes.push
+import std.text.length
+import std.text.byte
+import std.text.concat
+import std.loom.ast.NodeKind
+import std.list.get
+import std.list.length
+import std.list.transfer.take_last
+import std.process.arguments
+import std.result.Result
+import std.io.write_text
+import std.io.write_error
+
+fn checked(project Project) Analysis {
+    match analyze(project, false) {
+        Result.Ok(value) => value
+        Result.Err(problem) => {
+            discard write_error(problem.diagnostic.message)
+            assert false
+            checked(project)
+        }
+    }
+}
+
+fn loaded(path Text, standard Text) Project {
+    match load(path, standard, false) {
+        Result.Ok(value) => value
+        Result.Err(problem) => {
+            discard write_error(problem)
+            assert false
+            loaded(path, standard)
+        }
+    }
+}
+
+fn digest(value Text) Text {
+    let bytes = std.bytes.new()
+    var index = 0
+    while index < std.text.length(value) {
+        std.bytes.push(bytes, std.text.byte(value, index))
+        index = index + 1
+    }
+    hex(bytes)
+}
+
+fn main() {
+    let args = arguments()
+    assert length(args) == 3
+    let project = loaded(get(args, 1), get(args, 2))
+    let original = checked(project)
+    let original_input = native_input(original)
+    var changed = false
+    var file = 0
+    while file < length(project.files) {
+        let source = get(project.files, file)
+        if source.package == project.root {
+            var item = 0
+            while item < length(source.tree.children) {
+                let declaration = get(source.tree.children, item)
+                if declaration.kind == NodeKind.Function && declaration.value == "main" {
+                    let body = get(declaration.children, length(declaration.children) - 1)
+                    assert body.kind == NodeKind.Block
+                    while length(body.children) > 0 {
+                        discard take_last(body.children)
+                    }
+                    changed = true
+                }
+                item = item + 1
+            }
+        }
+        file = file + 1
+    }
+    assert changed && !is_current(original, project, false)
+    let edited = checked(project)
+    let edited_input = native_input(edited)
+    assert edited_input != original_input
+    let before = snapshot(original)
+    let after = snapshot(edited)
+    assert length(before.source.files) == length(after.source.files)
+    file = 0
+    while file < length(before.source.files) {
+        assert get(before.source.files, file).path == get(after.source.files, file).path
+        assert get(before.source.files, file).text == get(after.source.files, file).text
+        file = file + 1
+    }
+    let disk = loaded(get(args, 1), get(args, 2))
+    assert is_current(original, disk, false)
+    assert !is_current(edited, disk, false)
+    assert native_input(original) == original_input
+    discard write_text(concat("original ", concat(digest(original_input), "\n")))
+    discard write_text(concat("edited ", concat(digest(edited_input), "\n")))
+}

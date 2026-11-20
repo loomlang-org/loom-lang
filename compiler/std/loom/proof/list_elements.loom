@@ -17,7 +17,7 @@ fn contains_list_read(value Expr) Bool {
 }
 
 fn index_relation(relation Text, left Linear, right Linear, state State) Bool {
-    let fact = Predicate.Compare(relation, add(left, scale(right, integer(-1))))
+    let fact = Predicate.Compare(relation, add_scaled(left, right, integer(-1)))
     holds(fact, state.facts) || difference_holds(fact, state.facts)
 }
 
@@ -152,7 +152,7 @@ fn frame_observation(cell ListCell, written Linear, state State) ListCell {
     let valid = if index_relation("==", cell.index, written, state) {
         Predicate.Constant(false)
     } else {
-        let separate = Predicate.Compare("!=", add(cell.index, scale(written, integer(-1))))
+        let separate = Predicate.Compare("!=", add_scaled(cell.index, written, integer(-1)))
         if same(cell.valid, separate) {
             cell.valid
         } else if same(cell.valid, Predicate.Constant(true)) {

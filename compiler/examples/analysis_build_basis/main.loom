@@ -1,0 +1,36 @@
+import std.loom.project.load
+import std.loom.analysis.analyze
+import std.loom.analysis.build_basis
+import std.loom.analysis.native_input
+import std.hash.sha256.hex
+import std.text.to_bytes
+import std.text.concat
+import std.process.arguments
+import std.list.get
+import std.list.length
+import std.result.Result
+import std.io.write_text
+import std.io.write_error
+
+fn main() {
+    let args = arguments()
+    assert length(args) == 3
+    let project = match load(get(args, 1), get(args, 2), false) {
+        Result.Ok(value) => value
+        Result.Err(problem) => {
+            discard write_error(problem)
+            assert false
+            return
+        }
+    }
+    match analyze(project, false) {
+        Result.Ok(analysis) => {
+            discard write_text(concat("basis ", concat(build_basis(analysis), "\n")))
+            discard write_text(concat("checked ", concat(hex(to_bytes(native_input(analysis))), "\n")))
+        }
+        Result.Err(problem) => {
+            discard write_error(problem.diagnostic.message)
+            assert false
+        }
+    }
+}

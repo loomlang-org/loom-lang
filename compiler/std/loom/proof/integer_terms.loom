@@ -42,7 +42,7 @@ fn subtracted_integer_terms(left IntegerTerm, right IntegerTerm) IntegerTerm {
     match left {
         IntegerTerm.Linear(a) => match right {
             IntegerTerm.Linear(b) => {
-                return IntegerTerm.Linear(add(a, scale(b, integer(-1))))
+                return IntegerTerm.Linear(add_scaled(a, b, integer(-1)))
             }
             _ => {
             }
@@ -57,7 +57,7 @@ fn integer_predicate(relation Text, left IntegerTerm, right IntegerTerm) Predica
     match left {
         IntegerTerm.Linear(a) => match right {
             IntegerTerm.Linear(b) => {
-                return Predicate.Compare(relation, add(a, scale(b, integer(-1))))
+                return Predicate.Compare(relation, add_scaled(a, b, integer(-1)))
             }
             _ => {
             }

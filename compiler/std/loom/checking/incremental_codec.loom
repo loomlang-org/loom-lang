@@ -8,6 +8,7 @@ record CacheReader {
     integers List[Int]
     expressions List[Expr]
     arms List[Arm]
+    texts List[Text]
 }
 
 fn cache_reader(text Text) CacheReader {
@@ -17,6 +18,7 @@ fn cache_reader(text Text) CacheReader {
         integers = new[Int]()
         expressions = new[Expr]()
         arms = new[Arm]()
+        texts = new[Text]()
     }
 }
 
@@ -134,7 +136,31 @@ fn cache_read_text(reader CacheReader) Result[Text, Text] {
     if span.start == span.end {
         return Result.Ok("")
     }
-    Result.Ok(std.text.slice(reader.text, span.start, span.end))
+    // Repeated names/operators in private IR can share immutable Text. Keep a
+    // bounded table for this import only; source bodies and long literals do
+    // not stay alive merely because the reader encountered them.
+    let size = span.end - span.start
+    if size > 64 {
+        return Result.Ok(std.text.slice(reader.text, span.start, span.end))
+    }
+    while length(reader.texts) < 256 {
+        push(reader.texts, "")
+    }
+    let slot = (size * 11 + std.text.byte(reader.text, span.start) * 3 +
+        std.text.byte(reader.text, span.end - 1)) % 256
+    let previous = get(reader.texts, slot)
+    if std.text.length(previous) == size {
+        var index = 0
+        while index < size && std.text.byte(reader.text, span.start + index) == std.text.byte(previous, index) {
+            index = index + 1
+        }
+        if index == size {
+            return Result.Ok(previous)
+        }
+    }
+    let value = std.text.slice(reader.text, span.start, span.end)
+    set(reader.texts, slot, value)
+    Result.Ok(value)
 }
 
 fn cache_read_int(reader CacheReader) Result[Int, Text] {

@@ -1,0 +1,28 @@
+import std.list.clone
+
+// Source function IDs selected as executable roots by ordinary checking.
+// These IDs address this Analysis, before lowering may add async wrappers.
+pub record ExecutionRoots {
+    entry Option[Int]
+    tests List[Int]
+    test_names List[Text]
+    exports List[Int]
+}
+
+// This query uses the same unfiltered roots as native_input. It does not infer
+// roots from declaration names, public visibility or call-graph reachability.
+// The Lists are detached. Selection is not proof of execution, termination,
+// complete machine-level effects or application/storage compatibility.
+pub fn execution_roots(analysis Analysis) ExecutionRoots {
+    let program = analysis.state.program
+    ExecutionRoots {
+        entry = if program.entry >= 0 {
+            Option.Some(program.entry)
+        } else {
+            Option.None
+        }
+        tests = std.list.clone(program.tests)
+        test_names = std.list.clone(program.test_names)
+        exports = std.list.clone(program.exports)
+    }
+}
