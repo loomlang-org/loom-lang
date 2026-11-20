@@ -1,0 +1,124 @@
+fn reactivated_lifecycle(staging Text) Result[Text, Text] {
+    discard create_dir(staging)
+    let names = ["base", "left", "right"]
+    var index = 0
+    while index < length(names) {
+        let directory = path(staging, get(names, index))
+        discard retired_fixture(directory)?
+        discard retire_fixture(directory)?
+        index = index + 1
+    }
+    let base = path(staging, "base")
+    let left = path(staging, "left")
+    let right = path(staging, "right")
+    let original = read_module(base)?
+    let retained = retired_metadata(original, "history")?
+    let package = path(left, "history")
+    // An explicit refresh starts at the preserved counter, with no former IDs.
+    let source = "fn source() Int { 9 }\nfn copied() Int { 9 }\n"
+    discard std.file.write_text(path(package, "value.loom"), source)
+    let parent = get(get(retained.lineage, 0).parents, 0)
+    discard refresh_command(["trial", "refresh", package, "--derive", parent, "value.loom", "copied", "-"])?
+    let active = read(package)?
+    assert active.next == retained.next + 2
+    assert lineage_declaration(active, "source").id != parent
+    assert lineage_index(loaded_lineage(active)?, lineage_declaration(active, "copied").id) >= 0
+    discard std.file.write_text(path(right, "lib/value.loom"), "fn secret() Int { 7 }\npub fn amount() Int { 2 }\n")
+    let a = read_module(left)?
+    let b = read_module(right)?
+    let context = module_context(original, "compiler/std")?
+    let review = review_module(original, a, b, context)?
+    assert length(review.packages) == length(original.packages) + 1
+    assert asset_index(review.assets, "history/.loom-ids") < 0
+    let output = path(staging, "output")
+    discard apply_module(review.token, output, "compiler/std", base, left, right)?
+    let published = read_module(output)?
+    let restored = module_package(published, "history")?
+    assert restored.next == active.next
+    assert lineage_rows(loaded_lineage(restored)?) == lineage_rows(loaded_lineage(active)?)
+    assert contains(text_at(path(output, "lib/value.loom")), "2")
+    let swapped = review_module(original, b, a, context)?
+    let swap_output = path(staging, "swapped")
+    discard apply_module(swapped.token, swap_output, "compiler/std", base, right, left)?
+    assert text_at(path(swap_output, "history/.loom-ids")) == text_at(path(output, "history/.loom-ids"))
+    assert text_at(path(swap_output, "history/value.loom")) == source
+    // A later active baseline uses ordinary identity/move/edit handling.
+    discard review_module(published, published, published, module_context(published, "compiler/std")?)?
+
+    let metadata = active.sidecar
+    discard std.file.write_text(path(package, ".loom-ids"), replace(metadata,
+            concat("next ", to_text(active.next)), concat("next ", to_text(retained.next))))
+    assert match review_module(original, read_module(left)?, b, context) {
+        Result.Err(message) => contains(message, "retained allocator")
+        Result.Ok(_) => false
+    }
+    discard std.file.write_text(path(package, ".loom-ids"), metadata)
+    // Reusing a former declaration ID is not restoration authority.
+    discard std.file.write_text(path(package, ".loom-ids"), replace(metadata,
+            lineage_declaration(active, "source").id, parent))
+    assert match review_module(original, read_module(left)?, b, context) {
+        Result.Err(message) => contains(message, "retained allocator")
+        Result.Ok(_) => false
+    }
+    discard std.file.write_text(path(package, ".loom-ids"), metadata)
+    let no_history = sidecar(active.revision, active.next)
+    discard std.file.write_text(path(package, ".loom-ids"), no_history)
+    assert match review_module(original, read_module(left)?, b, context) {
+        Result.Err(message) => contains(message, "lineage history")
+        Result.Ok(_) => false
+    }
+    discard std.file.write_text(path(package, ".loom-ids"), metadata)
+    // Concurrently created packages cannot inherit identity equality by name.
+    let other = path(right, "history")
+    discard std.file.write_text(path(other, "value.loom"), replace(source, "9", "10"))
+    discard refresh(other, new[Resolution](), false)?
+    assert match review_module(original, a, read_module(right)?, context) {
+        Result.Err(message) => contains(message, "concurrent package reactivation")
+        Result.Ok(_) => false
+    }
+    discard remove_file(path(other, "value.loom"))
+    discard std.file.write_text(path(other, ".loom-ids"), text_at(path(base, "history/.loom-ids")))
+
+    let repository = path(staging, "repository")
+    discard create_dir(repository)
+    discard git("git", repository, ["init", "--template="])?
+    discard git_fixture_module(repository, original)?
+    let baseline_commit = git_fixture_commit(repository, "")?
+    discard git_fixture_module(repository, a)?
+    let left_commit = git_fixture_commit(repository, baseline_commit)?
+    discard git_fixture_module(repository, b)?
+    let right_commit = git_fixture_commit(repository, baseline_commit)?
+    discard git("git", repository, ["update-ref", "HEAD", right_commit])?
+    let before = git("git", repository, ["status", "--porcelain=v1"])?
+    let scratch = path(staging, "scratch")
+    discard create_dir(scratch)
+    let request = GitAutoRequest {
+        scratch = scratch
+        standard = "compiler/std"
+        cache = staging
+        executable = "git"
+        repository = repository
+        directory = "."
+        base = baseline_commit
+        left = left_commit
+        right = right_commit
+    }
+    let preview = automatic_git_module(request, false, "")?
+    let token = get(split(get(split(preview, "\n"), 1), " "), 2)
+    let applied = automatic_git_module(request, true, token)?
+    let tree = get(split(get(split(applied, "\n"), 0), " "), 4)
+    assert git("git", repository, ["show", concat(tree, ":history/value.loom")])? == source
+    assert lineage_rows(header(git("git", repository, ["show", concat(tree, ":history/.loom-ids")])?, "Git restored history")?.lineage) ==
+    lineage_rows(loaded_lineage(active)?)
+    assert git("git", repository, ["status", "--porcelain=v1"])? == before
+    assert git_commit("git", repository, "HEAD")? == right_commit
+    Result.Ok("fresh reactivation retains history without resurrecting identity")
+}
+
+test fn retired_package_reactivation_requires_fresh_ids_complete_history_and_unambiguous_intent() {
+    let staging = module_test_directory("reactivated-history")
+    defer {
+        remove_module_fixture(staging)
+    }
+    assert successful(reactivated_lifecycle(staging)) == "fresh reactivation retains history without resurrecting identity"
+}
