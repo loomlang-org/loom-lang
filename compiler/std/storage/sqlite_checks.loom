@@ -20,6 +20,7 @@ pub enum SqliteCheckError {
 enum SqliteCheckKind {
     Integer
     Boolean
+    Binary
     Unsupported
 }
 
@@ -97,7 +98,7 @@ fn sqlite_check_scalar(sql Text, kind SqliteCheckKind) SqliteCheckTerm {
 }
 
 fn sqlite_check_cell(field SqliteCheckField) Result[SqliteCheckTerm, SqliteCheckError] {
-    if field.kind == SqliteCheckKind.Unsupported {
+    if field.kind == SqliteCheckKind.Unsupported || field.kind == SqliteCheckKind.Binary {
         return Result.Err(SqliteCheckError.UnsupportedPredicate)
     }
     let guards = [concat("typeof(", concat(field.column, ") = 'integer'"))]

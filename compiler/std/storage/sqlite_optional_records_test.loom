@@ -1,0 +1,195 @@
+import std.bytes.new
+import std.bytes.push
+import std.bytes.get
+import std.bytes.length
+
+pub type CanonicalOptionalAmount = Int where self > 0
+
+pub record CanonicalOptionalFields {
+    id Int
+    payload Bytes
+    count Option[Int]
+    enabled Option[Bool]
+    note Option[Bytes]
+    amount Option[CanonicalOptionalAmount]
+}
+
+pub type CanonicalOptionalRow = CanonicalOptionalFields where self.id >= 0
+
+fn canonical_optional_table() Table {
+    Table {
+        id = "optional"
+        physical_name = "optional source rows"
+        columns = [column("payload", "payload", ValueKind.Bytes, false),
+            column("count", "count", ValueKind.Int, true),
+            column("enabled", "enabled", ValueKind.Int, true),
+            column("note", "note", ValueKind.Bytes, true),
+            column("amount", "amount", ValueKind.Int, true),
+            column("id", "id", ValueKind.Int, false)]
+    }
+}
+
+test fn sqlite_canonical_optional_rows_match_builtin_classes_and_constructors() {
+    let prepared = match sqlite_record_codec[CanonicalOptionalRow](canonical_optional_table()) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            assert false
+            return
+        }
+    }
+    let codec = sqlite_codec_rows(prepared)
+    let bytes = std.bytes.new()
+    std.bytes.push(bytes, 0)
+    std.bytes.push(bytes, 255)
+    let value = CanonicalOptionalRow(CanonicalOptionalFields {
+            id = 3
+            payload = bytes
+            count = Option.Some(-9223372036854775808)
+            enabled = Option.Some(false)
+            note = Option.Some(std.bytes.new())
+            amount = Option.Some(CanonicalOptionalAmount(1))
+        })
+    let encoded = match encode_prepared_row(codec, value) {
+        Result.Ok(row) => row
+        Result.Err(_) => {
+            assert false
+            return
+        }
+    }
+    assert match get(encoded, 0) {
+        Value.Bytes(actual) => std.bytes.length(actual) == 2 && std.bytes.get(actual, 1) == 255
+        _ => false
+    }
+    assert match get(encoded, 1) {
+        Value.Int(-9223372036854775808) => true
+        _ => false
+    }
+    assert match get(encoded, 2) {
+        Value.Int(0) => true
+        _ => false
+    }
+    let decoded = match decode_prepared_row(codec, encoded) {
+        Result.Ok(row) => row
+        Result.Err(_) => {
+            assert false
+            return
+        }
+    }
+    assert decoded.id == 3 && std.bytes.get(decoded.payload, 1) == 255
+    assert match decoded.count {
+        Option.Some(-9223372036854775808) => true,
+        _ => false
+    }
+    assert match decoded.enabled {
+        Option.Some(false) => true,
+        _ => false
+    }
+    assert match decoded.note {
+        Option.Some(value) => std.bytes.length(value) == 0,
+        _ => false
+    }
+    assert match decoded.amount {
+        Option.Some(1) => true,
+        _ => false
+    }
+    assert match decode_prepared_row(codec, [Value.Bytes(bytes), Value.Null, Value.Null,
+            Value.Null, Value.Null, Value.Int(0)]) {
+        Result.Ok(row) => match (row.count, row.enabled, row.note, row.amount) {
+            (Option.None, Option.None, Option.None, Option.None) => true
+            _ => false
+        }
+        _ => false
+    }
+    let invalid = [
+        [Value.Bytes(bytes), Value.Null, Value.Int(2), Value.Null, Value.Null, Value.Int(0)],
+        [Value.Bytes(bytes), Value.Null, Value.Null, Value.Null, Value.Int(0), Value.Int(0)],
+        [Value.Bytes(bytes), Value.Text("1"), Value.Null, Value.Null, Value.Null, Value.Int(0)],
+        [Value.Bytes(bytes), Value.Null, Value.Null, Value.Int(1), Value.Null, Value.Int(0)],
+        [Value.Null, Value.Null, Value.Null, Value.Null, Value.Null, Value.Int(0)],
+        [Value.Bytes(bytes), Value.Null, Value.Null, Value.Null, Value.Null, Value.Int(-1)]
+    ]
+    var index = 0
+    while index < length(invalid) {
+        assert match decode_prepared_row(codec, get(invalid, index)) {
+            Result.Err(_) => true
+            Result.Ok(_) => false
+        }
+        index = index + 1
+    }
+    assert contains(sqlite_codec_check(prepared), "typeof(\"payload\") = 'blob'")
+    assert contains(sqlite_codec_check(prepared), "typeof(\"count\") = 'null'")
+    assert contains(sqlite_codec_check(prepared), "\"enabled\" IN (0, 1)")
+    assert contains(sqlite_codec_check(prepared), "\"amount\" > 0")
+}
+
+enum CanonicalSimilarOption[T] {
+    Some(T)
+    None
+}
+
+pub record CanonicalNestedOptionalFields {
+    value Option[Option[Int]]
+}
+
+pub record CanonicalSimilarOptionalFields {
+    value CanonicalSimilarOption[Int]
+}
+
+pub record CanonicalOptionalTextFields {
+    value Option[Text]
+}
+
+pub type CanonicalOptionalPredicateRow = CanonicalOptionalFields where
+match self.count {
+    Option.Some(value) => value > 0,
+    Option.None => true
+}
+
+test fn sqlite_canonical_optional_rows_reject_ambiguous_and_untranslated_representations() {
+    let table = Table {
+        id = "optional"
+        physical_name = "optional"
+        columns = [column("value", "value", ValueKind.Int, true)]
+    }
+    assert match sqlite_record_codec[CanonicalNestedOptionalFields](table) {
+        Result.Err(SqliteCheckError.UnsupportedType) => true
+        _ => false
+    }
+    assert match sqlite_record_codec[CanonicalSimilarOptionalFields](table) {
+        Result.Err(SqliteCheckError.UnsupportedType) => true
+        _ => false
+    }
+    assert match sqlite_record_codec[CanonicalOptionalTextFields](table) {
+        Result.Err(SqliteCheckError.UnsupportedType) => true
+        _ => false
+    }
+    assert match sqlite_record_codec[CanonicalOptionalPredicateRow](canonical_optional_table()) {
+        Result.Err(SqliteCheckError.UnsupportedPredicate) => true
+        _ => false
+    }
+}
+
+test fn sqlite_canonical_optional_mapping_checks_each_field_and_freezes_descriptors() {
+    let original = canonical_optional_table()
+    let prepared = match sqlite_record_codec[CanonicalOptionalFields](original) {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            assert false
+            return
+        }
+    }
+    set(original.columns, 0, column("changed", "changed", ValueKind.Int, true))
+    assert get(codec_table(sqlite_codec_rows(prepared)).columns, 0).kind == ValueKind.Bytes
+    let wrong_kind = canonical_optional_table()
+    set(wrong_kind.columns, 0, column("payload", "payload", ValueKind.Int, false))
+    assert match sqlite_record_codec[CanonicalOptionalFields](wrong_kind) {
+        Result.Err(SqliteCheckError.InvalidMapping) => true
+        _ => false
+    }
+    let wrong_nullable = canonical_optional_table()
+    set(wrong_nullable.columns, 1, column("count", "count", ValueKind.Int, false))
+    assert match sqlite_record_codec[CanonicalOptionalFields](wrong_nullable) {
+        Result.Err(SqliteCheckError.InvalidMapping) => true
+        _ => false
+    }
+}

@@ -25,12 +25,31 @@ pub fn sqlite_codec_check[T](codec SqliteRecordCodec[T]) Text {
     codec.state.check
 }
 
+// Inspect payload types, then check the exact nominal Option identity. Similar
+// user enums do not acquire a storage representation from their variant names.
+fn sqlite_optional_payload[T]() Option[type] {
+    comptime if std.reflect.describe[T]().types[0].kind == Kind.Enum {
+        comptime for name, Payload in T {
+            discard name
+            comptime for Inner in Payload {
+                comptime if T == Option[Inner] {
+                    return Option.Some(Inner)
+                }
+            }
+        }
+    }
+    Option.None
+}
+
 fn sqlite_canonical_kind[T]() SqliteCheckKind {
     comptime if T == Int {
         return SqliteCheckKind.Integer
     }
     comptime if T == Bool {
         return SqliteCheckKind.Boolean
+    }
+    comptime if T == Bytes {
+        return SqliteCheckKind.Binary
     }
     comptime if std.reflect.describe[T]().types[0].kind == Kind.Refined {
         let Base = comptime {
@@ -45,11 +64,29 @@ fn sqlite_canonical_kind[T]() SqliteCheckKind {
         comptime if Base == Bool && refined_codec_base[T, Base]() {
             return SqliteCheckKind.Boolean
         }
+        comptime if Base == Bytes && refined_codec_base[T, Base]() {
+            return SqliteCheckKind.Binary
+        }
     }
     SqliteCheckKind.Unsupported
 }
 
 fn sqlite_canonical_encode[T](value T) Result[Value, CodecError] {
+    comptime if match sqlite_optional_payload[T]() {
+        Option.Some(_) => true
+        Option.None => false
+    } {
+        let Inner = comptime {
+            match sqlite_optional_payload[T]() {
+                Option.Some(ty) => ty
+                Option.None => T
+            }
+        }
+        return match value {
+            Option.None => Result.Ok(Value.Null)
+            Option.Some(item) => sqlite_canonical_encode(item)
+        }
+    }
     comptime if T == Int {
         return Result.Ok(Value.Int(value))
     }
@@ -60,6 +97,9 @@ fn sqlite_canonical_encode[T](value T) Result[Value, CodecError] {
                     0
                 }))
     }
+    comptime if T == Bytes {
+        return Result.Ok(Value.Bytes(value))
+    }
     comptime if std.reflect.describe[T]().types[0].kind == Kind.Refined {
         let Base = comptime {
             match refinement_base[T]() {
@@ -67,7 +107,7 @@ fn sqlite_canonical_encode[T](value T) Result[Value, CodecError] {
                 Option.None => T
             }
         }
-        comptime if (Base == Int || Base == Bool) && refined_codec_base[T, Base]() {
+        comptime if (Base == Int || Base == Bool || Base == Bytes) && refined_codec_base[T, Base]() {
             let base Base = value
             return sqlite_canonical_encode(base)
         }
@@ -76,6 +116,21 @@ fn sqlite_canonical_encode[T](value T) Result[Value, CodecError] {
 }
 
 fn sqlite_canonical_decode[T](value Value) Result[T, CodecError] {
+    comptime if match sqlite_optional_payload[T]() {
+        Option.Some(_) => true
+        Option.None => false
+    } {
+        let Inner = comptime {
+            match sqlite_optional_payload[T]() {
+                Option.Some(ty) => ty
+                Option.None => T
+            }
+        }
+        return match value {
+            Value.Null => Result.Ok(Option.None)
+            _ => Result.Ok(Option.Some(sqlite_canonical_decode[Inner](value)?))
+        }
+    }
     comptime if T == Int {
         return match value {
             Value.Int(number) => Result.Ok(number)
@@ -89,6 +144,12 @@ fn sqlite_canonical_decode[T](value Value) Result[T, CodecError] {
             _ => Result.Err(CodecError.Rejected)
         }
     }
+    comptime if T == Bytes {
+        return match value {
+            Value.Bytes(bytes) => Result.Ok(bytes)
+            _ => Result.Err(CodecError.Rejected)
+        }
+    }
     comptime if std.reflect.describe[T]().types[0].kind == Kind.Refined {
         let Base = comptime {
             match refinement_base[T]() {
@@ -96,7 +157,7 @@ fn sqlite_canonical_decode[T](value Value) Result[T, CodecError] {
                 Option.None => T
             }
         }
-        comptime if (Base == Int || Base == Bool) && refined_codec_base[T, Base]() {
+        comptime if (Base == Int || Base == Bool || Base == Bytes) && refined_codec_base[T, Base]() {
             return checked_refined_value[T, Base](sqlite_canonical_decode[Base](value)?)
         }
     }
@@ -104,6 +165,27 @@ fn sqlite_canonical_decode[T](value Value) Result[T, CodecError] {
 }
 
 fn sqlite_canonical_field_check[T](column Text) Result[Text, SqliteCheckError] {
+    comptime if match sqlite_optional_payload[T]() {
+        Option.Some(_) => true
+        Option.None => false
+    } {
+        let Inner = comptime {
+            match sqlite_optional_payload[T]() {
+                Option.Some(ty) => ty
+                Option.None => T
+            }
+        }
+        // Some(None) and None must never collapse into the same SQL NULL.
+        comptime if match sqlite_optional_payload[Inner]() {
+            Option.Some(_) => true
+            Option.None => false
+        } {
+            return Result.Err(SqliteCheckError.UnsupportedType)
+        }
+        let present = sqlite_canonical_field_check[Inner](column)?
+        return Result.Ok(concat("(typeof(", concat(column,
+                    concat(") = 'null' OR ", concat(present, ")")))))
+    }
     let kind = sqlite_canonical_kind[T]()
     if kind == SqliteCheckKind.Unsupported {
         return Result.Err(SqliteCheckError.UnsupportedType)
@@ -113,7 +195,11 @@ fn sqlite_canonical_field_check[T](column Text) Result[Text, SqliteCheckError] {
         column = column
         kind = kind
     }
-    let clauses = sqlite_check_cell(field)?.guards
+    let clauses = if kind == SqliteCheckKind.Binary {
+        [concat("typeof(", concat(column, ") = 'blob'"))]
+    } else {
+        sqlite_check_cell(field)?.guards
+    }
     comptime if std.reflect.describe[T]().types[0].kind == Kind.Refined {
         let predicate = match std.reflect.predicates.describe[T]() {
             Option.Some(value) => value.expression
@@ -128,6 +214,28 @@ fn sqlite_canonical_field_check[T](column Text) Result[Text, SqliteCheckError] {
         push(clauses, term.sql)
     }
     Result.Ok(concat("(", concat(join(clauses, ") AND ("), ")")))
+}
+
+fn sqlite_canonical_mapping[T](column Column) Bool {
+    comptime if match sqlite_optional_payload[T]() {
+        Option.Some(_) => true
+        Option.None => false
+    } {
+        let Inner = comptime {
+            match sqlite_optional_payload[T]() {
+                Option.Some(ty) => ty
+                Option.None => T
+            }
+        }
+        let kind = sqlite_canonical_kind[Inner]()
+        return column.nullable &&
+        ((kind == SqliteCheckKind.Binary && column.kind == ValueKind.Bytes) ||
+            ((kind == SqliteCheckKind.Integer || kind == SqliteCheckKind.Boolean) && column.kind == ValueKind.Int))
+    }
+    let kind = sqlite_canonical_kind[T]()
+    !column.nullable &&
+    ((kind == SqliteCheckKind.Binary && column.kind == ValueKind.Bytes) ||
+        ((kind == SqliteCheckKind.Integer || kind == SqliteCheckKind.Boolean) && column.kind == ValueKind.Int))
 }
 
 fn sqlite_canonical_record_rows[T](table Table, positions List[Int]) Result[PreparedRowCodec[T], CodecError] {
@@ -185,9 +293,6 @@ fn sqlite_canonical_record[T, Base](table Table, aliases List[(Text, Text)]) Res
         while index < length(frozen.columns) {
             let column = get(frozen.columns, index)
             discard sqlite_check_identifier(column.physical_name)?
-            if column.kind != ValueKind.Int || column.nullable {
-                return Result.Err(SqliteCheckError.InvalidMapping)
-            }
             var previous = 0
             while previous < index {
                 if sqlite_check_same_name(column.physical_name, get(frozen.columns, previous).physical_name) {
@@ -215,6 +320,13 @@ fn sqlite_canonical_record[T, Base](table Table, aliases List[(Text, Text)]) Res
             Result.Err(_) => {
                 return Result.Err(SqliteCheckError.InvalidMapping)
             }
+        }
+        index = 0
+        comptime for Field in Base {
+            if !sqlite_canonical_mapping[Field](get(frozen.columns, get(positions, index))) {
+                return Result.Err(SqliteCheckError.InvalidMapping)
+            }
+            index = index + 1
         }
         comptime if T != Base {
             let predicate = match std.reflect.predicates.describe[T]() {
@@ -273,8 +385,9 @@ pub fn sqlite_record_codec[T](table Table) Result[SqliteRecordCodec[T], SqliteCh
     sqlite_record_codec[T](table, [])
 }
 
-// All fields use canonical non-null Int/Bool representations, including direct
-// visible refinements over those built-ins. Scalar and whole-record predicates
+// Fields use canonical Int/Bool/Bytes representations, including visible
+// refinements and one nominal Option layer. Nested options reject because SQL
+// NULL cannot distinguish None from Some(None). Scalar and whole-record predicates
 // must use the supported total SQL expression fragment. Unsupported fields or
 // predicates reject even when the whole-record predicate does not mention them.
 // The caller installs the clause; database inspection, schema alteration and
