@@ -5298,6 +5298,13 @@ exhausted endpoints return `UdpError.Connect`. Numeric-only calls omit the
 resolver operation from native IR. Task deadlines can bound lookup, with running
 OS lookup drainage on cancellation. See the [UDP example](examples/udp_echo).
 
+For [scoped UDP ownership](std/net/udp/README.md), `bind_owned` returns a
+`BoundSocket` and `connect_owned` returns a fixed-peer `ConnectedSocket`.
+Scope exit, faults, cancellation and unclaimed completed Task results retain
+cleanup. Borrowed I/O is directly awaited; `detach` explicitly transfers the
+socket to manual management. Both types support idempotent `close` and buffer
+options; bound owners also support broadcast and multicast configuration.
+
 `std.net.dns.resolve(host, port).await` returns numeric socket addresses in OS
 resolver order, including hosts-file entries, as `Result[List[Text], ResolveError]`.
 `std.net.tcp.connect(host, port).await` interleaves address families, preserving

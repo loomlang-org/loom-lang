@@ -1,5 +1,10 @@
 # UDP echo
 
+The [scoped exchange](owned.loom) uses
+[owned UDP sockets](../../std/net/udp/README.md) for cleanup on normal exit,
+faults and cancellation. Binding returns a `BoundSocket`; connecting returns a
+fixed-peer `ConnectedSocket`. Their borrowed I/O calls are directly awaited.
+
 ```sh
 target/loom check compiler/examples/udp_echo
 target/loom build compiler/examples/udp_echo --output target/udp-echo
@@ -7,7 +12,8 @@ target/loom test compiler/examples/udp_echo
 target/loom run compiler/examples/udp_echo
 ```
 
-Two ordinary Tasks exchange a Unicode datagram over real IPv4 loopback sockets.
+The manually managed exchange also uses two ordinary Tasks to send a Unicode
+datagram over real IPv4 loopback sockets.
 The server checks its default-off broadcast permission and explicitly toggles
 it without changing its identity. The client uses a fixed-peer `Connection`; its delayed send lets the server
 register a read with the platform reactor.

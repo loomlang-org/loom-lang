@@ -816,6 +816,10 @@ tuple/List joins are implemented; join policy lives in Loom.
 DNS, asynchronous files, TCP/UDP, selected socket policies/multicast, process
 capture and verified client/server TLS work through source policy and narrow
 native boundaries. TLS uses a separately linked Rustls provider.
+UDP bound and fixed-peer sockets also have scoped acquisition, directly awaited
+borrows, idempotent close and explicit handoff to manual management. Their
+acquiring Tasks retain cleanup through cancellation, faults and unclaimed
+completed results, using the existing packet/reactor operations.
 Revocation and broader application networking remain open. Blocking OS calls
 use bounded workers and copied native data; cancellation waits for completion.
 Async process capture supports explicit per-stream output limits and truncation

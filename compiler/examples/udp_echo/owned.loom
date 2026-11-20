@@ -1,0 +1,17 @@
+import std.net.udp.bind_owned
+import std.net.udp.connect_owned
+import std.net.udp.receive_buffer_size
+import std.net.udp.set_receive_buffer_size
+
+async fn exercise_owned() Result[Bool, UdpError] {
+    scoped server = bind_owned("127.0.0.1:0").await?
+    scoped client = connect_owned(local_address(server)?).await?
+    discard set_receive_buffer_size(server, 32768)?
+    assert receive_buffer_size(server)? > 0
+    discard send(client, to_bytes("scoped packet")).await?
+    let incoming = receive(server).await?
+    assert incoming.sender == local_address(client)?
+    discard send(server, incoming.data, incoming.sender).await?
+    let replied = receive(client).await?
+    Result.Ok(to_text(replied.data) == "scoped packet")
+}
