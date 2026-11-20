@@ -4,6 +4,26 @@ import std.task.outcome
 async fn owned_tick() {
 }
 
+async fn owned_scope_exit() Result[Bool, UdpError] {
+    var bound_token = -1
+    var connected_token = -1
+    {
+        scoped bound = bind_owned("127.0.0.1:0").await?
+        scoped connected = connect_owned(local_address(bound)?).await?
+        bound_token = bound.state.token
+        connected_token = connected.state.token
+    }
+    Result.Ok(bound_token >= 0 && connected_token >= 0 &&
+        socket_address(bound_token, 0) == "" && socket_address(connected_token, 0) == "")
+}
+
+test async fn owned_udp_normal_scope_exit_closes_both_socket_modes() {
+    assert match owned_scope_exit().await {
+        Result.Ok(value) => value
+        _ => false
+    }
+}
+
 async fn owned_packets() Result[Bool, UdpError] {
     scoped server = bind_owned("127.0.0.1:0").await?
     let address = local_address(server)?
