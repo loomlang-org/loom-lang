@@ -1,0 +1,149 @@
+import deployment.artifact_analysis.ArtifactAnalysis
+import deployment.ReproductionRequest
+import deployment.artifact_analysis.reproduce_analysis
+import deployment.artifact_analysis.artifact_analysis_snapshot
+import deployment.artifact_analysis.artifact_analysis_calls
+import deployment.artifact_analysis.artifact_analysis_evidence
+import std.loom.project.load
+import std.loom.project.join_path
+import std.loom.project.BuildOption
+import std.loom.analysis.AnalysisData
+import std.loom.analysis.analyze_with_inputs
+import std.loom.analysis.is_current
+import std.loom.checking.build_inputs
+import std.loom.checking.no_input_reader
+import std.file.read_text
+import std.file.write_text
+import std.file.read_bytes
+import std.file.write_bytes
+import std.bytes.push
+import std.list.get
+import std.list.length
+import std.list.transfer.take_last
+import std.option.Option
+import std.process.arguments
+import std.process.EnvChange
+import std.process.Options
+import std.process.exit_code
+import std.result.Result
+import std.text.concat
+import std.io.write_text
+import std.io.write_error
+
+fn must[T, E](outcome Result[T, E]) T {
+    match outcome {
+        Result.Ok(value) => value
+        Result.Err(_) => {
+            assert false
+            must(outcome)
+        }
+    }
+}
+
+fn named(data AnalysisData, name Text) Int {
+    var found = -1
+    var index = 0
+    while index < length(data.functions) {
+        let symbol = get(data.functions, index)
+        if symbol >= 0 {
+            let declaration = get(data.bindings.symbols, symbol)
+            if declaration.name == name && get(data.bindings.files, declaration.file).package == data.source.root {
+                assert found < 0
+                found = index
+            }
+        }
+        index = index + 1
+    }
+    assert found >= 0
+    found
+}
+
+fn query(bound ArtifactAnalysis, root Int) {
+    assert match must(artifact_analysis_calls(bound, root, [])) {
+        Option.Some(report) => report.root == root && length(report.functions) >= 1
+        Option.None => false
+    }
+    assert match must(artifact_analysis_calls(bound, -1, [])) {
+        Option.None => true
+        _ => false
+    }
+    assert match must(artifact_analysis_calls(bound, root, [-1])) {
+        Option.None => true
+        _ => false
+    }
+}
+
+fn main() {
+    let args = arguments()
+    assert length(args) == 13
+    let project = must(load(get(args, 5), get(args, 6), false))
+    let analysis = must(analyze_with_inputs(project, false, build_inputs(no_input_reader,
+                [BuildOption {
+                        name = "mode",
+                        value = get(args, 11)
+                    }])))
+    let request = ReproductionRequest {
+        compiler = get(args, 1)
+        compiler_sha256 = get(args, 2)
+        native_tool = get(args, 3)
+        native_sha256 = get(args, 4)
+        source = get(args, 5)
+        standard = get(args, 6)
+        receipt_path = get(args, 7)
+        output_directory = get(args, 8)
+        build_options = [BuildOption {
+                name = "mode",
+                value = get(args, 10)
+            }]
+        process = Options {
+            directory = Option.None
+            clear_environment = false
+            environment = [EnvChange.Remove("LOOM_GC_STRESS"), EnvChange.Set("LOOM_OPT_LEVEL", get(args, 9))]
+        }
+    }
+    let bound = match reproduce_analysis(analysis, request) {
+        Result.Ok(value) => value
+        Result.Err(problem) => {
+            discard write_error(concat(problem, "\n"))
+            exit_code(1)
+            return
+        }
+    }
+    let data = must(artifact_analysis_snapshot(bound))
+    let root = named(data, "main")
+    let size = length(data.functions)
+    query(bound, root)
+    discard take_last(data.functions)
+    discard take_last(data.bindings.symbols)
+    assert length(must(artifact_analysis_snapshot(bound)).functions) == size
+    query(bound, root)
+    if get(args, 12) == "mutate" {
+        let source = join_path(get(args, 5), "main.loom")
+        let original_source = must(std.file.read_text(source))
+        discard must(std.file.write_text(source, "fn main() { discard 3 }\n"))
+        let changed = must(load(get(args, 5), get(args, 6), false))
+        assert !is_current(analysis, changed, false)
+        query(bound, root)
+        assert get(must(artifact_analysis_snapshot(bound)).source.files, 0).text == original_source
+        discard must(std.file.write_text(source, original_source))
+        let original_receipt = must(std.file.read_text(get(args, 7)))
+        discard must(std.file.write_text(get(args, 7), concat(original_receipt, "\n")))
+        assert match artifact_analysis_snapshot(bound) {
+            Result.Err(_) => true
+            _ => false
+        }
+        discard must(std.file.write_text(get(args, 7), original_receipt))
+        let evidence = must(artifact_analysis_evidence(bound))
+        let original_artifact = must(read_bytes(evidence.claimed.artifact_path))
+        let changed_artifact = must(read_bytes(evidence.claimed.artifact_path))
+        std.bytes.push(changed_artifact, 0)
+        discard must(write_bytes(evidence.claimed.artifact_path, changed_artifact))
+        assert match artifact_analysis_calls(bound, root, []) {
+            Result.Err(_) => true
+            _ => false
+        }
+        discard must(write_bytes(evidence.claimed.artifact_path, original_artifact))
+        query(bound, root)
+    }
+    discard std.io.write_text("analysis bound\n")
+}
