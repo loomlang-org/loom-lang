@@ -87,8 +87,17 @@ rows and incompatible concurrent origins reject. History survives declaration
 deletion, later refresh/drafts and reviewed directory/Git output. Existing
 origins cannot be removed or rewritten by a merge. Derivation choices require
 resolved identities; save an ambiguous draft separately before resolving it.
-Cross-package derivation and automatic relocation of a deleted package's history
-remain unsupported; whole-package deletion cannot silently discard that history.
+Cross-package derivation and history relocation remain unsupported. A deleted
+package can retain its history in its existing directory: remove its `.loom`
+sources, then run `refresh DIR --delete ID...` for its retired declarations.
+Keep the resulting `.loom-ids`, with no active identities or unresolved draft,
+its original package name, allocator and complete origin rows. Module review
+labels this retained package history, excludes it from the active import graph,
+and preserves its bytes in directory and Git-tree output. Consumers must still
+pass ordinary checks without the deleted package. Later merges require that
+retired sidecar unchanged; deleting, relocating, rewriting or reactivating its
+scope needs explicit resolution outside this bounded workflow. A source-free
+sidecar with no derivation history remains invalid.
 
 For a method target, name its identified concept or impl explicitly:
 
