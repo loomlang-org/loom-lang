@@ -61,6 +61,8 @@ fn git_basis_lifecycle(repository Text) Result[Text, Text] {
     }
     let a = basis_fixture_commit(repository, "left merge", [left, right])?
     let b = basis_fixture_commit(repository, "right merge", [right, left])?
+    assert git_basis("git", repository, left, a, b)?.base == left
+    assert git_basis("git", repository, right, b, a)?.base == right
     assert match git_basis("git", repository, base, a, b) {
         Result.Err(message) => contains(message, "multiple common baselines")
         Result.Ok(_) => false
@@ -79,4 +81,76 @@ test fn git_merges_require_the_unique_actual_baseline_and_complete_local_history
         remove_module_fixture(repository)
     }
     assert successful(git_basis_lifecycle(repository)) == "Git merge bases checked without guessing or fetching"
+}
+
+fn equivalent_git_module_lifecycle(staging Text) Result[Text, Text] {
+    discard module_fixture_branches(staging)?
+    let repository = path(staging, "repository")
+    discard create_dir(repository)
+    discard git("git", repository, ["init", "--template="])?
+    let original = read_module(path(staging, "base"))?
+    discard git_fixture_module(repository, original)?
+    let ancestor = git_fixture_commit(repository, "")?
+    let first = basis_fixture_commit(repository, "first actual baseline", [ancestor])?
+    let second = basis_fixture_commit(repository, "second actual baseline", [ancestor])?
+    assert first != second && git_baseline_tree("git", repository, first)? == git_baseline_tree("git", repository, second)?
+    discard git_fixture_module(repository, read_module(path(staging, "left"))?)?
+    discard git("git", repository, ["-c", "core.autocrlf=false", "add", "--all"])?
+    let left = basis_fixture_commit(repository, "left criss-cross merge", [first, second])?
+    discard git_fixture_module(repository, read_module(path(staging, "right"))?)?
+    discard git("git", repository, ["-c", "core.autocrlf=false", "add", "--all"])?
+    let right = basis_fixture_commit(repository, "right criss-cross merge", [second, first])?
+    discard git("git", repository, ["update-ref", "HEAD", right])?
+    let before = git("git", repository, ["status", "--porcelain=v1"])?
+    let scratch = path(staging, "scratch")
+    discard create_dir(scratch)
+    let request = GitAutoRequest {
+        scratch = scratch
+        standard = "compiler/std"
+        cache = staging
+        executable = "git"
+        repository = repository
+        directory = "."
+        base = first
+        left = left
+        right = right
+    }
+    let other = GitAutoRequest { base = second, ..request }
+    let preview = automatic_git_module(request, false, "")?
+    let alternative = automatic_git_module(other, false, "")?
+    let token = get(split(get(split(preview, "\n"), 1), " "), 2)
+    let alternative_token = get(split(get(split(alternative, "\n"), 1), " "), 2)
+    assert token != alternative_token
+    assert contains(preview, "pub fn amount()") && contains(preview, "=== lib/moved.loom ===")
+    let applied = automatic_git_module(request, true, token)?
+    assert automatic_git_module(other, true, alternative_token)? == applied
+    let tree = get(split(get(split(applied, "\n"), 0), " "), 4)
+    assert contains(git("git", repository, ["show", concat(tree, ":lib/moved.loom")])?, "2")
+    assert git("git", repository, ["status", "--porcelain=v1"])? == before
+    assert git_commit("git", repository, "HEAD")? == right
+    assert match automatic_git_module(GitAutoRequest { base = ancestor, ..request }, false, "") {
+        Result.Err(message) => contains(message, "actual equal-tree merge base")
+        Result.Ok(_) => false
+    }
+    // Equal selected package trees do not permit different repository context.
+    discard git_fixture_module(repository, original)?
+    discard std.file.write_text(path(repository, "outside.txt"), "different context outside lib\n")
+    discard git("git", repository, ["-c", "core.autocrlf=false", "add", "--all"])?
+    let different = basis_fixture_commit(repository, "different repository baseline", [ancestor])?
+    assert trim(git("git", repository, ["rev-parse", concat(first, ":lib")])?) ==
+    trim(git("git", repository, ["rev-parse", concat(different, ":lib")])?)
+    let a = basis_fixture_commit(repository, "different left merge", [first, different])?
+    let b = basis_fixture_commit(repository, "different right merge", [different, first])?
+    assert match preview_git("git", repository, "lib", first, a, b) {
+        Result.Err(message) => contains(message, "different repository trees")
+        Result.Ok(_) => false
+    }
+    Result.Ok("explicit equivalent actual baselines preserve Git provenance and merged source")
+}
+
+test fn equivalent_actual_git_baselines_merge_moves_and_edits_without_guessing_ancestry() {
+    let staging = module_test_directory("equivalent-git-bases")
+    defer { remove_module_fixture(staging) }
+    assert successful(equivalent_git_module_lifecycle(staging)) ==
+    "explicit equivalent actual baselines preserve Git provenance and merged source"
 }

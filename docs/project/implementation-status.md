@@ -928,9 +928,11 @@ and each package's private tests. Defaults stay I/O-free; unknown proofs reject.
 Ambiguities can persist as source-bound drafts; compilation ignores that metadata.
 Git-object package and module merges accept an explicit exact-baseline project
 context, binding resolved commits and the offline dependency closure into review.
-Git modes require a unique actual merge base and complete local ancestry;
-older ancestors, unrelated or ambiguous histories and shallow repositories
-cannot authorize automatic merging.
+Git modes require an explicitly selected actual merge base and complete local
+ancestry. Multiple actual bases are accepted only when their complete repository
+trees match; review retains the selected commit's provenance. Older ancestors,
+different baseline trees, unrelated histories and shallow repositories cannot
+authorize automatic merging.
 Module input includes package sidecars and binary assets. Automatic Git mode
 extracts baseline configuration and monorepo dependencies into an owned temporary
 stage and reuses verified offline Git sources. Logical source paths keep review
