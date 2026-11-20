@@ -1,0 +1,175 @@
+import std.resource.Dispose
+import std.resource.MustScope
+
+pub record BoundSocket {
+    state DatagramOwner
+}
+
+pub record ConnectedSocket {
+    state DatagramOwner
+}
+
+// Projecting a private payload cannot create another fresh socket owner.
+record DatagramOwner {
+    token Int
+    closed List[Bool]
+}
+
+fn owned_bound(token Int) BoundSocket {
+    BoundSocket {
+        state = DatagramOwner { token = token closed = [false] }
+    }
+}
+
+fn owned_connected(token Int) ConnectedSocket {
+    ConnectedSocket {
+        state = DatagramOwner { token = token closed = [false] }
+    }
+}
+
+// The acquiring Task constructs the resource before returning. Awaiting the
+// copyable bind/connect result in a wrapper would leave a cancellation gap.
+pub async fn bind_owned(address Text) Result[BoundSocket, UdpError] {
+    let token = socket_bind_datagram(address)
+    if token < 0 {
+        return Result.Err(UdpError.Bind)
+    }
+    Result.Ok(owned_bound(token))
+}
+
+pub async fn connect_owned(address Text) Result[ConnectedSocket, UdpError] {
+    let connection = connect_address(address)?
+    Result.Ok(owned_connected(connection.state.token))
+}
+
+pub async fn connect_owned(host Text, port Int) Result[ConnectedSocket, UdpError] {
+    if port <= 0 || port > 65535 {
+        return Result.Err(UdpError.Connect)
+    }
+    let addresses = match resolve(host, port).await {
+        Result.Ok(values) => values
+        Result.Err(_) => {
+            return Result.Err(UdpError.Resolve)
+        }
+    }
+    // Resolution suspends before any socket exists. Endpoint selection and
+    // resource construction then run together in this acquiring Task.
+    let connection = connect_resolved(addresses)?
+    Result.Ok(owned_connected(connection.state.token))
+}
+
+fn owner_socket(state DatagramOwner) Result[Socket, UdpError] {
+    if state.closed[0] {
+        return Result.Err(UdpError.Close)
+    }
+    Result.Ok(Socket { state = State { token = state.token } })
+}
+
+fn owner_connection(state DatagramOwner) Result[Connection, UdpError] {
+    if state.closed[0] {
+        return Result.Err(UdpError.Close)
+    }
+    Result.Ok(Connection { state = State { token = state.token } })
+}
+
+fn close_datagram_owner(state DatagramOwner) Result[Int, UdpError] {
+    if state.closed[0] {
+        return Result.Ok(0)
+    }
+    let status = close(owner_socket(state)?)
+    match status {
+        Result.Ok(_) => { state.closed[0] = true }
+        Result.Err(_) => {
+        }
+    }
+    status
+}
+
+pub fn close(socket BoundSocket) Result[Int, UdpError] {
+    close_datagram_owner(socket.state)
+}
+
+pub fn close(connection ConnectedSocket) Result[Int, UdpError] {
+    close_datagram_owner(connection.state)
+}
+
+pub fn detach(socket BoundSocket) Result[Socket, UdpError] {
+    let raw = owner_socket(socket.state)?
+    socket.state.closed[0] = true
+    Result.Ok(raw)
+}
+
+pub fn detach(connection ConnectedSocket) Result[Connection, UdpError] {
+    let raw = owner_connection(connection.state)?
+    connection.state.closed[0] = true
+    Result.Ok(raw)
+}
+
+pub fn local_address(socket BoundSocket) Result[Text, UdpError] {
+    local_address(owner_socket(socket.state)?)
+}
+
+pub fn local_address(connection ConnectedSocket) Result[Text, UdpError] {
+    local_address(owner_connection(connection.state)?)
+}
+
+pub fn peer_address(connection ConnectedSocket) Result[Text, UdpError] {
+    peer_address(owner_connection(connection.state)?)
+}
+
+pub async fn receive(socket BoundSocket, limit Int) Result[Datagram, UdpError] {
+    receive(owner_socket(socket.state)?, limit).await
+}
+
+pub async fn receive(socket BoundSocket) Result[Datagram, UdpError] {
+    receive(socket, 65535).await
+}
+
+pub async fn receive(connection ConnectedSocket, limit Int) Result[Datagram, UdpError] {
+    receive(owner_connection(connection.state)?, limit).await
+}
+
+pub async fn receive(connection ConnectedSocket) Result[Datagram, UdpError] {
+    receive(connection, 65535).await
+}
+
+pub async fn send(socket BoundSocket, value Bytes, address Text) Result[Int, UdpError] {
+    send(owner_socket(socket.state)?, value, address).await
+}
+
+pub async fn send(connection ConnectedSocket, value Bytes) Result[Int, UdpError] {
+    send(owner_connection(connection.state)?, value).await
+}
+
+pub fn set_broadcast(socket BoundSocket, enabled Bool) Result[Int, UdpError] {
+    set_broadcast(owner_socket(socket.state)?, enabled)
+}
+
+pub fn broadcast(socket BoundSocket) Result[Bool, UdpError] {
+    broadcast(owner_socket(socket.state)?)
+}
+
+impl MustScope for BoundSocket {
+}
+
+impl Dispose for BoundSocket {
+    fn dispose(self BoundSocket) {
+    }
+}
+
+impl MustScope for ConnectedSocket {
+}
+
+impl Dispose for ConnectedSocket {
+    fn dispose(self ConnectedSocket) {
+    }
+}
+
+impl MustScope for DatagramOwner {
+}
+
+impl Dispose for DatagramOwner {
+    fn dispose(self DatagramOwner) {
+        discard close_datagram_owner(self)
+    }
+}
